@@ -1,22 +1,22 @@
 {
   "name": "Suhag Price Checker",
-  "short_name": "Suhag",
-  "start_url": ".",
+  "short_name": "SuhagPrice",
+  "start_url": "./",
   "display": "standalone",
-  "background_color": "#f5f5f5",
   "theme_color": "#1a1a1a",
-  "description": "A calculator for jewelry prices.",
+  "background_color": "#ffffff",
   "icons": [
     {
-      "src": "images/icon-192.png",
+      // Updated source path: Points to icon-192.png in the root directory
+      "src": "icon-192.png", 
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "images/icon-512.png",
+      // Assuming you have a 512x512 icon also in the root
+      "src": "icon-512.png", 
       "sizes": "512x512",
       "type": "image/png"
     }
   ]
-
 }
