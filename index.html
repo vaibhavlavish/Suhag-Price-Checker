@@ -11,8 +11,8 @@
 
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="JewelryCalc">
-    <link rel="apple-touch-icon" href="images/icon-192.png">
+    <meta name="apple-mobile-web-app-title" content="SuhagPrice">
+    <link rel="apple-touch-icon" href="icon-192.png">
 
     <script type="module">
         // Import the functions you need from the Firebase SDKs
@@ -409,7 +409,7 @@ const firebaseConfig = {
             font-size: 16px;
         }
         #manage-stamps hr {
-            margin: 12px 0;
+            border: none;
             border-top: 1px solid #ccc;
         }
         .manage-row {
@@ -500,10 +500,10 @@ const firebaseConfig = {
         <button onclick="showSection('main')" class="active">Main</button>
         <button id="options-btn" onclick="toggleOptions()">More</button>
         <div id="options-menu">
-            <button onclick="showSection('update-rates')">Update Rates</button>
-            <button onclick="showSection('excel-upload')">Upload Excel</button>
+            <button onclick="accessAdminSection('update-rates')">Update Rates</button>
+            <button onclick="accessAdminSection('excel-upload')">Upload Excel</button>
             <button onclick="clearAll()">Clear Screen</button>
-            <button onclick="clearAllData()" class="danger">Clear All Data (Cloud)</button>
+            <button onclick="clearAllDataWithPin()" class="danger">Clear All Data (Cloud)</button>
         </div>
     </div>
     <div id="main-screen">
@@ -593,6 +593,34 @@ const firebaseConfig = {
         <button onclick="showSection('main')">Back to Main</button>
     </div>
     <script>
+        // --- NEW PIN LOGIC START ---
+        const ADMIN_PIN = '9898'; // Change this PIN to your desired password!
+
+        function checkPin() {
+            const input = prompt("Enter Admin PIN (Default: 9898) to proceed:");
+            return input === ADMIN_PIN;
+        }
+
+        function accessAdminSection(sectionName) {
+            closeOptions();
+            if (checkPin()) {
+                showSection(sectionName);
+            } else {
+                alert("Incorrect PIN. Access denied.");
+            }
+        }
+
+        function clearAllDataWithPin() {
+            closeOptions();
+            if (checkPin()) {
+                clearAllData();
+            } else {
+                alert("Incorrect PIN. Access denied.");
+            }
+        }
+        // --- NEW PIN LOGIC END ---
+
+
         // Default rates structure
         const defaultRates = {
             gold: { '999': 0, '916': 0, '750': 0 },
@@ -683,6 +711,7 @@ const firebaseConfig = {
 
         function clearAllData() {
             if (!window.dbSet) return;
+            // Confirmation kept here, PIN check is in clearAllDataWithPin()
             if (confirm('Clear ALL synced data (rates, tax, products)? This cannot be undone.')) {
                 // Clear data in Firebase by setting it to an empty object
                 window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), {})
@@ -727,7 +756,7 @@ const firebaseConfig = {
                 populateStamps('manage-stamp', metal);
                 updateRemoveButton();
             }
-            closeOptions();
+            // Note: closeOptions() is now handled by the accessAdminSection() wrapper functions
         }
         function toggleOptions() {
             const menu = document.getElementById('options-menu');
