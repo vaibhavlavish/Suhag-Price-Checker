@@ -500,10 +500,10 @@ const firebaseConfig = {
         <button onclick="showSection('main')" class="active">Main</button>
         <button id="options-btn" onclick="toggleOptions()">More</button>
         <div id="options-menu">
-            <button onclick="accessAdminSection('update-rates')">Update Rates</button>
-            <button onclick="accessAdminSection('excel-upload')">Upload Excel</button>
+            <button onclick="showSection('update-rates')">Update Rates</button>
+            <button onclick="showSection('excel-upload')">Upload Excel</button>
             <button onclick="clearAll()">Clear Screen</button>
-            <button onclick="clearAllDataWithPin()" class="danger">Clear All Data (Cloud)</button>
+            <button onclick="clearAllDataWrapper()" class="danger">Clear All Data (Cloud)</button>
         </div>
     </div>
     <div id="main-screen">
@@ -598,24 +598,17 @@ const firebaseConfig = {
 
         function checkPin() {
             const input = prompt("Enter Admin PIN to proceed:");
-            return input === ADMIN_PIN;
-        }
-
-        function accessAdminSection(sectionName) {
-            closeOptions();
-            if (checkPin()) {
-                showSection(sectionName);
-            } else {
-                alert("Incorrect PIN. Access denied.");
+            if (input === ADMIN_PIN) {
+                return true;
             }
+            alert("Incorrect PIN. Access denied.");
+            return false;
         }
 
-        function clearAllDataWithPin() {
+        function clearAllDataWrapper() {
             closeOptions();
             if (checkPin()) {
                 clearAllData();
-            } else {
-                alert("Incorrect PIN. Access denied.");
             }
         }
         // --- NEW PIN LOGIC END ---
@@ -682,11 +675,8 @@ const firebaseConfig = {
 
             }, (error) => {
                 console.error("Firebase read failed:", error);
-                // Fallback: If Firebase fails, try local storage (if any was left)
-                rates = loadFromStorage('jewelryRates') || JSON.parse(JSON.stringify(defaultRates));
-                taxRate = parseFloat(localStorage.getItem('jewelryTaxRate')) || 0;
-                productData = loadFromStorage('jewelryProducts') || {};
-                alert("Error connecting to cloud database. Using local data if available.");
+                // Fallback (Removed local storage fallback to force cloud reliance/error awareness)
+                alert("Error connecting to cloud database. Please check your connection.");
             });
         }
 
@@ -711,7 +701,7 @@ const firebaseConfig = {
 
         function clearAllData() {
             if (!window.dbSet) return;
-            // Confirmation kept here, PIN check is in clearAllDataWithPin()
+            // PIN is checked in clearAllDataWrapper()
             if (confirm('Clear ALL synced data (rates, tax, products)? This cannot be undone.')) {
                 // Clear data in Firebase by setting it to an empty object
                 window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), {})
@@ -756,7 +746,7 @@ const firebaseConfig = {
                 populateStamps('manage-stamp', metal);
                 updateRemoveButton();
             }
-            // Note: closeOptions() is now handled by the accessAdminSection() wrapper functions
+            closeOptions();
         }
         function toggleOptions() {
             const menu = document.getElementById('options-menu');
@@ -819,6 +809,7 @@ const firebaseConfig = {
             showSection('main');
         });
         function addStamp() {
+            if (!checkPin()) return; // PIN check added
             const metal = document.getElementById('metal-select').value.toLowerCase();
             const newStamp = document.getElementById('new-stamp').value.trim().toUpperCase();
             if (!metal || !newStamp) {
@@ -840,6 +831,7 @@ const firebaseConfig = {
             alert(`Added ${newStamp} for ${metal}`);
         }
         function removeStamp() {
+            if (!checkPin()) return; // PIN check added
             const metal = document.getElementById('metal-select').value.toLowerCase();
             const stamp = document.getElementById('manage-stamp').value;
             if (!stamp) {
@@ -861,6 +853,7 @@ const firebaseConfig = {
             }
         }
         function renameStamp() {
+            if (!checkPin()) return; // PIN check added
             const metal = document.getElementById('metal-select').value.toLowerCase();
             const oldStamp = document.getElementById('manage-stamp').value;
             const newName = document.getElementById('rename-to').value.trim().toUpperCase();
@@ -888,8 +881,15 @@ const firebaseConfig = {
             alert(`Renamed ${oldStamp} to ${newName}`);
         }
         function loadExcel() {
+            if (!checkPin()) { // PIN check added
+                // Clear the file input if PIN fails to prevent accidental upload on re-try
+                document.getElementById('excel-file').value = ''; 
+                return; 
+            }
+            
             const file = document.getElementById('excel-file').files[0];
             if (!file) return;
+
             const reader = new FileReader();
             reader.onload = function(e) {
                 const data = new Uint8Array(e.target.result);
@@ -1126,6 +1126,7 @@ const firebaseConfig = {
             closeOptions();
         }
         function updateRate() {
+            if (!checkPin()) return; // PIN check added
             const metal = document.getElementById('metal-select').value.toLowerCase();
             const stamp = document.getElementById('stamp-select').value;
             const price = parseFloat(document.getElementById('price-per-gram').value);
@@ -1140,6 +1141,7 @@ const firebaseConfig = {
             }
         }
         function updateTax() {
+            if (!checkPin()) return; // PIN check added
             const tax = parseFloat(document.getElementById('tax-percent').value);
             if (!isNaN(tax)) {
                 taxRate = tax;
