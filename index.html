@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jewelry Price Calculator</title>
+
+    <link rel="manifest" href="manifest.json">
+
+    <meta name="theme-color" content="#1a1a1a">
+
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="JewelryCalc">
+    <link rel="apple-touch-icon" href="images/icon-192.png">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            touch-action: manipulation;
+        }
+        #taskbar {
+            background-color: #1a1a1a;
+            color: white;
+            padding: 8px 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: nowrap;
+            gap: 4px;
+            -webkit-overflow-scrolling: touch;
+            position: relative;
+        }
+        #taskbar button {
+            background-color: #333;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            margin: 0;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+            flex: 1;
+            max-width: 120px;
+        }
+        #taskbar button:hover {
+            background-color: #555;
+        }
+        #taskbar button.active {
+            background-color: #4CAF50;
+        }
+        #options-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            padding: 8px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #options-menu {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 12px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            overflow: hidden;
+            z-index: 1000;
+            min-width: 180px;
+            margin-top: 4px;
+        }
+        #options-menu.show {
+            display: block;
+            animation: fadeIn 0.2s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        #options-menu button {
+            display: block;
+            width: 100%;
+            background: none;
+            border: none;
+            padding: 14px 16px;
+            text-align: left;
+            font-size: 15px;
+            color: #333;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+        }
+        #options-menu button:last-child {
+            border-bottom: none;
+        }
+        #options-menu button:hover {
+            background-color: #f0f0f0;
+        }
+        #options-menu button.danger {
+            color: #d32f2f;
+        }
+        #options-menu button.danger:hover {
+            background-color: #ffebee;
+        }
+        #main-screen {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px 15px;
+            background-color: #f5f5f5;
+            overflow-y: auto;
+            min-height: calc(100vh - 60px);
+        }
+        #barcode {
+            font-size: 20px;
+            padding: 16px;
+            width: 100%;
+            max-width: 100%;
+            text-align: center;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            margin-bottom: 16px;
+            background: white;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        #barcode:focus {
+            border-color: #4CAF50;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+        }
+        #product-code {
+            font-size: 16px;
+            color: #555;
+            margin: 8px 0;
+            text-align: center;
+            width: 100%;
+            word-wrap: break-word;
+        }
+        #price-display {
+            font-size: 48px;
+            font-weight: 700;
+            color: #4CAF50;
+            margin: 8px 0;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #price-display.show {
+            opacity: 1;
+        }
+        #detail-btn, #alter-btn, .clear-btn {
+            margin: 8px 4px 0;
+            padding: 12px 28px;
+            font-size: 16px;
+            font-weight: 600;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            display: none;
+            box-shadow: 0 3px 8px;
+            transition: all 0.2s;
+        }
+        #detail-btn {
+            background-color: #2196F3;
+            box-shadow: 0 3px 8px rgba(33, 150, 243, 0.3);
+        }
+        #alter-btn {
+            background-color: #FF9800;
+            box-shadow: 0 3px 8px rgba(255, 152, 0, 0.3);
+        }
+        .clear-btn {
+            background-color: #f44336;
+            box-shadow: 0 3px 8px rgba(244, 67, 54, 0.3);
+        }
+        #detail-btn:active, #alter-btn:active, .clear-btn:active {
+            transform: translateY(1px);
+            box-shadow: 0 1px 4px;
+        }
+        #detail-modal, #alter-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.75);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            padding: 15px;
+        }
+        #detail-content, #alter-content {
+            background: white;
+            padding: 20px;
+            border-radius: 16px;
+            max-width: 380px;
+            width: 100%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        #detail-content h3, #alter-content h3 {
+            margin: 0 0 16px 0;
+            color: #333;
+            font-size: 20px;
+            text-align: center;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 12px;
+        }
+        #detail-content p {
+            margin: 10px 0;
+            font-size: 15px;
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px dashed #eee;
+        }
+        #detail-content p:last-of-type {
+            border-bottom: none;
+            font-weight: 600;
+            font-size: 16px;
+            color: #4CAF50;
+        }
+        #detail-content p strong {
+            color: #333;
+            min-width: 120px;
+        }
+        #close-modal {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin-top: 16px;
+            border-radius: 25px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+            font-weight: 600;
+            box-shadow: 0 3px 8px rgba(244, 67, 54, 0.3);
+        }
+        #close-modal:active {
+            transform: translateY(1px);
+        }
+        #alter-body p {
+            margin: 10px 0;
+            font-size: 15px;
+            text-align: center;
+            color: #666;
+        }
+        #new-making {
+            margin: 16px 0;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            width: 100%;
+            font-size: 16px;
+        }
+        #new-making:focus {
+            border-color: #4CAF50;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+        }
+        #alter-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+        #alter-buttons button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            color: white;
+            box-shadow: 0 3px 8px;
+            transition: all 0.2s;
+        }
+        #update-making-btn {
+            background-color: #4CAF50;
+            box-shadow: 0 3px 8px rgba(76, 175, 80, 0.3);
+        }
+        #cancel-making-btn {
+            background-color: #f44336;
+            box-shadow: 0 3px 8px rgba(244, 67, 54, 0.3);
+        }
+        #alter-buttons button:active {
+            transform: translateY(1px);
+            box-shadow: 0 1px 4px;
+        }
+        /* Hidden sections */
+        #update-rates, #excel-upload {
+            display: none;
+            max-width: 100%;
+            margin: 0;
+            background: white;
+            padding: 20px 15px;
+            border-radius: 0;
+            box-shadow: none;
+            flex: 1;
+            overflow-y: auto;
+        }
+        #update-rates h2, #excel-upload h2 {
+            color: #333;
+            font-size: 18px;
+            margin-top: 0;
+            text-align: center;
+        }
+        input, select, button, #excel-file {
+            margin: 8px 0;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            width: 100%;
+            font-size: 16px;
+        }
+        input:focus, select:focus {
+            border-color: #4CAF50;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+        }
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn) {
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            font-weight: 600;
+            box-shadow: 0 3px 8px rgba(76, 175, 80, 0.3);
+            margin: 4px 0;
+            width: auto;
+            padding: 10px 16px;
+        }
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):active {
+            transform: translateY(1px);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        #manage-stamps {
+            margin-top: 20px;
+            padding: 16px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        #manage-stamps h4 {
+            margin: 0 0 12px 0;
+            color: #333;
+            font-size: 16px;
+        }
+        #manage-stamps hr {
+            margin: 12px 0;
+            border-top: 1px solid #ccc;
+        }
+        .manage-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: end;
+            margin-bottom: 12px;
+        }
+        .manage-row label {
+            min-width: 140px;
+            margin: 0;
+        }
+        .manage-row input, .manage-row select {
+            flex: 1;
+            min-width: 120px;
+        }
+        .manage-row button {
+            flex-shrink: 0;
+            width: auto;
+            padding: 8px 12px;
+            font-size: 14px;
+        }
+        #excel-info {
+            background-color: #fff8e1;
+            border: 1px solid #ffe082;
+            color: #5d4037;
+            padding: 12px;
+            margin: 12px 0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        label {
+            display: block;
+            margin: 12px 0 4px 0;
+            font-weight: 600;
+            font-size: 14px;
+            color: #333;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 16px;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 10px 8px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #333;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid #eee;
+            margin: 20px 0;
+        }
+        /* Responsive adjustments */
+        @media (min-width: 480px) {
+            #taskbar {
+                padding: 10px 16px;
+            }
+            #taskbar button {
+                font-size: 15px;
+                padding: 12px 18px;
+            }
+            #barcode {
+                font-size: 22px;
+                padding: 18px;
+            }
+            #price-display {
+                font-size: 56px;
+            }
+            #detail-content, #alter-content {
+                max-width: 420px;
+            }
+            .manage-row {
+                flex-wrap: nowrap;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="taskbar">
+        <button onclick="showSection('main')" class="active">Main</button>
+        <button id="options-btn" onclick="toggleOptions()">More</button>
+        <div id="options-menu">
+            <button onclick="showSection('update-rates')">Update Rates</button>
+            <button onclick="showSection('excel-upload')">Upload Excel</button>
+            <button onclick="clearAll()" class="danger">Clear Screen</button>
+            <button onclick="clearAllData()" class="danger">Clear All Data</button>
+        </div>
+    </div>
+    <div id="main-screen">
+        <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus oninput="lookupProduct()">
+        <div id="product-code"></div>
+        <h1 id="price-display">0.00</h1>
+        <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
+            <button onclick="clearAll()" class="clear-btn" id="clear-screen-btn">Clear Screen</button>
+            <button id="detail-btn" onclick="showDetails()">View Details</button>
+            <button id="alter-btn" onclick="openAlterDialog()">Alter</button>
+        </div>
+    </div>
+    <div id="detail-modal">
+        <div id="detail-content">
+            <h3>Product Details</h3>
+            <div id="detail-body"></div>
+            <button id="close-modal" onclick="closeDetails()">Close</button>
+        </div>
+    </div>
+    <div id="alter-modal">
+        <div id="alter-content">
+            <h3>Alter Making Charge</h3>
+            <div id="alter-body"></div>
+            <label for="new-making">New Making Charge (same unit):</label>
+            <input type="number" id="new-making" step="0.01">
+            <div id="alter-buttons">
+                <button id="update-making-btn" onclick="updateMaking()">Update</button>
+                <button id="cancel-making-btn" onclick="closeAlter()">Cancel</button>
+            </div>
+        </div>
+    </div>
+    <div id="update-rates">
+        <h2>Update Stamp-Wise Rates</h2>
+        <p style="font-size:14px; text-align:center; color:#666;"><em>Enter market rate per gram for purity</em></p>
+      
+        <label for="metal-select">Metal Type:</label>
+        <select id="metal-select">
+            <option value="Gold">Gold</option>
+            <option value="Silver">Silver</option>
+            <option value="PC">PC</option>
+        </select>
+      
+        <label for="stamp-select">Stamp/Purity:</label>
+        <select id="stamp-select"></select>
+      
+        <label for="price-per-gram">Price per Gram (₹):</label>
+        <input type="number" id="price-per-gram" placeholder="e.g., 11185" step="0.01">
+      
+        <button onclick="updateRate()">Update Rate</button>
+      
+        <div id="rates-table"></div>
+        <div id="manage-stamps">
+            <h4>Manage Stamps for Selected Metal</h4>
+            <div class="manage-row">
+                <label for="new-stamp">Add New Stamp:</label>
+                <input type="text" id="new-stamp" placeholder="e.g., 20K">
+                <button onclick="addStamp()">Add</button>
+            </div>
+            <hr>
+            <div class="manage-row">
+                <label for="manage-stamp">Select Stamp to Remove/Rename:</label>
+                <select id="manage-stamp"></select>
+                <button id="remove-stamp-btn" onclick="removeStamp()" style="background-color: #f44336; color: white;">Remove</button>
+            </div>
+            <div class="manage-row">
+                <label for="rename-to">Rename to:</label>
+                <input type="text" id="rename-to" placeholder="New name">
+                <button onclick="renameStamp()">Rename</button>
+            </div>
+        </div>
+      
+        <hr>
+      
+        <label for="tax-percent">Global Tax (%):</label>
+        <input type="number" id="tax-percent" placeholder="e.g., 3" step="0.01">
+        <button onclick="updateTax()">Update Tax</button>
+      
+        <button onclick="showSection('main')">Back to Main</button>
+    </div>
+    <div id="excel-upload">
+        <h2>Upload Excel Sheet</h2>
+        <p style="font-size:14px; text-align:center; color:#666;">
+            Columns: Tag No, Item Name, Gr. Wt., N. Wt., Making (%), Making (per g), Making (per pc), MRP, Other Charge, Metal, Stamp
+        </p>
+        <input type="file" id="excel-file" accept=".xlsx, .xls" onchange="loadExcel()">
+        <div id="excel-info"></div>
+        <button onclick="showSection('main')">Back to Main</button>
+    </div>
+    <script>
+        // Default rates
+        const defaultRates = {
+            gold: { '999': 0, '916': 0, '750': 0 },
+            silver: { '999': 0, 'S925': 0, 'S8': 0 },
+            pc: { '950': 0, '900': 0 }
+        };
+        let rates = loadFromStorage('jewelryRates') || JSON.parse(JSON.stringify(defaultRates));
+        let taxRate = parseFloat(localStorage.getItem('jewelryTaxRate')) || 0;
+        let productData = loadFromStorage('jewelryProducts') || {};
+        let currentProduct = null;
+        let currentFinalPrice = 0;
+        let currentTaxAmount = 0;
+        let currentMakingType = '';
+        let currentMakingInput = 0;
+        let makingOverride = null;
+        let currentBarcode = '';
+        function saveToStorage(key, data) {
+            try { localStorage.setItem(key, JSON.stringify(data)); }
+            catch (e) { console.warn('Storage failed:', e); }
+        }
+        function loadFromStorage(key) {
+            try {
+                const data = localStorage.getItem(key);
+                return data ? JSON.parse(data) : null;
+            } catch (e) {
+                console.warn('Load failed:', e);
+                return null;
+            }
+        }
+        function clearAndFocus() {
+            const input = document.getElementById('barcode');
+            input.value = '';
+            currentBarcode = '';
+            document.getElementById('product-code').textContent = '';
+            input.focus();
+        }
+        function showSection(section) {
+            document.getElementById('main-screen').style.display = 'none';
+            document.getElementById('update-rates').style.display = 'none';
+            document.getElementById('excel-upload').style.display = 'none';
+            const buttons = document.querySelectorAll('#taskbar button:not(#options-btn)');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            if (section === 'main') {
+                document.getElementById('main-screen').style.display = 'flex';
+                document.querySelector('#taskbar button[onclick="showSection(\'main\')"]').classList.add('active');
+                setTimeout(() => document.getElementById('barcode').focus(), 100);
+            } else {
+                document.getElementById(section).style.display = 'block';
+            }
+            if (section === 'update-rates') {
+                renderRatesTable();
+                const metal = document.getElementById('metal-select').value;
+                populateStamps('stamp-select', metal);
+                populateStamps('manage-stamp', metal);
+                updateRemoveButton();
+            }
+            closeOptions();
+        }
+        function toggleOptions() {
+            const menu = document.getElementById('options-menu');
+            menu.classList.toggle('show');
+        }
+        function closeOptions() {
+            document.getElementById('options-menu').classList.remove('show');
+        }
+        // Close menu when clicking outside
+        document.addEventListener('click', function(e) {
+            const menu = document.getElementById('options-menu');
+            const btn = document.getElementById('options-btn');
+            if (!btn.contains(e.target) && !menu.contains(e.target)) {
+                closeOptions();
+            }
+        });
+        function renderRatesTable() {
+            let html = '<h3 style="font-size:16px;margin:16px 0 8px;">Current Rates</h3><table>';
+            html += '<tr><th>Metal</th><th>Stamp</th><th>₹/g</th></tr>';
+            for (let metal in rates) {
+                for (let stamp in rates[metal]) {
+                    const m = metal.charAt(0).toUpperCase() + metal.slice(1);
+                    html += `<tr><td>${m}</td><td>${stamp}</td><td>${rates[metal][stamp].toFixed(2)}</td></tr>`;
+                }
+            }
+            html += '</table><p style="margin-top:12px;"><strong>Tax:</strong> ' + taxRate + '%</p>';
+            document.getElementById('rates-table').innerHTML = html;
+        }
+        function populateStamps(selectId, metal) {
+            const select = document.getElementById(selectId);
+            const lower = metal.toLowerCase();
+            select.innerHTML = '<option value="">-- Select --</option>';
+            if (rates[lower]) {
+                for (let stamp in rates[lower]) {
+                    let opt = document.createElement('option');
+                    opt.value = stamp; opt.textContent = stamp;
+                    select.add(opt);
+                }
+            }
+        }
+        function updateRemoveButton() {
+            const stamp = document.getElementById('manage-stamp').value;
+            const btn = document.getElementById('remove-stamp-btn');
+            if (btn) {
+                btn.disabled = !stamp;
+            }
+        }
+        document.addEventListener('DOMContentLoaded', () => {
+            const metalSelect = document.getElementById('metal-select');
+            metalSelect.addEventListener('change', () => {
+                const value = metalSelect.value;
+                populateStamps('stamp-select', value);
+                populateStamps('manage-stamp', value);
+                updateRemoveButton();
+            });
+            populateStamps('stamp-select', 'Gold');
+            populateStamps('manage-stamp', 'Gold');
+            updateRemoveButton();
+            document.getElementById('manage-stamp').addEventListener('change', updateRemoveButton);
+            showSection('main');
+        });
+        function addStamp() {
+            const metal = document.getElementById('metal-select').value.toLowerCase();
+            const newStamp = document.getElementById('new-stamp').value.trim().toUpperCase();
+            if (!metal || !newStamp) {
+                alert('Please select metal and enter stamp name');
+                return;
+            }
+            if (rates[metal][newStamp]) {
+                alert('Stamp already exists');
+                return;
+            }
+            rates[metal][newStamp] = 0;
+            saveToStorage('jewelryRates', rates);
+            document.getElementById('new-stamp').value = '';
+            const metalValue = document.getElementById('metal-select').value;
+            populateStamps('stamp-select', metalValue);
+            populateStamps('manage-stamp', metalValue);
+            updateRemoveButton();
+            renderRatesTable();
+            alert(`Added ${newStamp} for ${metal}`);
+        }
+        function removeStamp() {
+            const metal = document.getElementById('metal-select').value.toLowerCase();
+            const stamp = document.getElementById('manage-stamp').value;
+            if (!stamp) {
+                alert('Please select a stamp to remove');
+                return;
+            }
+            if (confirm(`Remove ${stamp} for ${metal.toUpperCase()}?`)) {
+                delete rates[metal][stamp];
+                if (Object.keys(rates[metal]).length === 0) {
+                    delete rates[metal];
+                }
+                saveToStorage('jewelryRates', rates);
+                const metalValue = document.getElementById('metal-select').value;
+                populateStamps('stamp-select', metalValue);
+                populateStamps('manage-stamp', metalValue);
+                updateRemoveButton();
+                renderRatesTable();
+                alert(`Removed ${stamp}`);
+            }
+        }
+        function renameStamp() {
+            const metal = document.getElementById('metal-select').value.toLowerCase();
+            const oldStamp = document.getElementById('manage-stamp').value;
+            const newName = document.getElementById('rename-to').value.trim().toUpperCase();
+            if (!oldStamp) {
+                alert('Please select a stamp to rename');
+                return;
+            }
+            if (!newName || newName === oldStamp) {
+                alert('Please enter a different new name');
+                return;
+            }
+            if (rates[metal][newName]) {
+                alert('New name already exists');
+                return;
+            }
+            rates[metal][newName] = rates[metal][oldStamp];
+            delete rates[metal][oldStamp];
+            saveToStorage('jewelryRates', rates);
+            document.getElementById('rename-to').value = '';
+            const metalValue = document.getElementById('metal-select').value;
+            populateStamps('stamp-select', metalValue);
+            populateStamps('manage-stamp', metalValue);
+            updateRemoveButton();
+            renderRatesTable();
+            alert(`Renamed ${oldStamp} to ${newName}`);
+        }
+        function loadExcel() {
+            const file = document.getElementById('excel-file').files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(sheet, {header: 1});
+                const headers = (json[0] || []).map(h => (h || '').toString().trim().toLowerCase());
+                const cols = {
+                    tagNo: findColumn(headers, ['tag no', 'tagno', 'barcode']),
+                    itemName: findColumn(headers, ['item name', 'name', 'product name', 'item']),
+                    grossWeight: findColumn(headers, ['gr. wt.', 'gr wt', 'gross weight', 'gross wt', 'grossweight']),
+                    netWeight: findColumn(headers, ['n. wt.', 'n wt', 'net weight', 'net wt', 'netweight']),
+                    makingPct: findColumn(headers, ['making (%)', 'making%', 'making percent']),
+                    mGram: findColumn(headers, ['making (per g)', 'making per g', 'making/g', 'mc/g']),
+                    mPc: findColumn(headers, ['making (per pc)', 'making per pc', 'making/pc', 'mc/pc']),
+                    mrp: findColumn(headers, ['mrp', 'price', 'selling price', 'final price']),
+                    otherCharge: findColumn(headers, ['other charge', 'other', 'extra charge']),
+                    metal: findColumn(headers, ['metal']),
+                    stamp: findColumn(headers, ['stamp'])
+                };
+                if (cols.tagNo === -1) {
+                    document.getElementById('excel-info').innerHTML = '<p style="color:red;">Error: Tag No column required</p>';
+                    return;
+                }
+                let count = 0;
+                for (let i = 1; i < json.length; i++) {
+                    const row = json[i];
+                    const tagNo = (row[cols.tagNo] || '').toString().trim().toUpperCase();
+                    if (!tagNo) continue;
+                    const grossWt = cols.grossWeight !== -1 ? parseFloat(row[cols.grossWeight]) || 0 : 0;
+                    const netWt = cols.netWeight !== -1 ? parseFloat(row[cols.netWeight]) || 0 : grossWt;
+                    productData[tagNo] = {
+                        itemName: cols.itemName !== -1 ? (row[cols.itemName] || '').toString().trim() : '',
+                        grossWeight: grossWt,
+                        netWeight: netWt,
+                        makingPercent: cols.makingPct !== -1 ? parseFloat(row[cols.makingPct]) || 0 : 0,
+                        makingPerGram: cols.mGram !== -1 ? parseFloat(row[cols.mGram]) || 0 : 0,
+                        makingPerPc: cols.mPc !== -1 ? parseFloat(row[cols.mPc]) || 0 : 0,
+                        mrp: cols.mrp !== -1 ? parseFloat(row[cols.mrp]) || 0 : 0,
+                        otherCharge: cols.otherCharge !== -1 ? parseFloat(row[cols.otherCharge]) || 0 : 0,
+                        metal: cols.metal !== -1 ? (row[cols.metal] || '').toString().trim().toLowerCase() : '',
+                        stamp: cols.stamp !== -1 ? (row[cols.stamp] || '').toString().trim().toUpperCase() : ''
+                    };
+                    count++;
+                }
+                saveToStorage('jewelryProducts', productData);
+                document.getElementById('excel-info').innerHTML = `<p>Loaded ${count} products</p>`;
+            };
+            reader.readAsArrayBuffer(file);
+        }
+        function findColumn(headers, names) {
+            for (let i = 0; i < headers.length; i++) {
+                for (let name of names) {
+                    if (headers[i] === name.toLowerCase()) return i;
+                }
+            }
+            return -1;
+        }
+        function lookupProduct() {
+            const barcode = document.getElementById('barcode').value.trim().toUpperCase();
+            document.getElementById('product-code').textContent = '';
+            document.getElementById('price-display').textContent = '0.00';
+            document.getElementById('price-display').classList.remove('show');
+            document.getElementById('detail-btn').style.display = 'none';
+            document.getElementById('alter-btn').style.display = 'none';
+            document.getElementById('clear-screen-btn').style.display = 'none';
+            makingOverride = null;
+            currentMakingType = '';
+            currentMakingInput = 0;
+            currentBarcode = barcode;
+            if (!barcode) return;
+            if (!productData[barcode]) {
+                document.getElementById('product-code').textContent = `Barcode: ${barcode} - Not found`;
+                document.getElementById('clear-screen-btn').style.display = 'inline-block';
+                return;
+            }
+            currentProduct = productData[barcode];
+            const d = currentProduct;
+            let final = 0, making = 0, otherCharge = d.otherCharge || 0;
+            currentTaxAmount = 0;
+            const weight = d.netWeight;
+            if (d.mrp > 0) {
+                let total = d.mrp + otherCharge;
+                currentTaxAmount = total * (taxRate / 100);
+                final = total + currentTaxAmount;
+            } else {
+                const mKey = d.metal, stamp = d.stamp;
+                if (!mKey || !stamp || !rates[mKey] || rates[mKey][stamp] === 0) {
+                    document.getElementById('product-code').textContent = `Barcode: ${barcode} - Rates missing`;
+                    document.getElementById('clear-screen-btn').style.display = 'inline-block';
+                    return;
+                }
+                const rate = rates[mKey][stamp];
+                const metalVal = weight * rate;
+                if (d.makingPerPc > 0) {
+                    making = d.makingPerPc;
+                    currentMakingType = 'per pc';
+                    currentMakingInput = d.makingPerPc;
+                } else if (d.makingPerGram > 0) {
+                    making = d.makingPerGram * weight;
+                    currentMakingType = 'per g';
+                    currentMakingInput = d.makingPerGram;
+                } else if (d.makingPercent > 0) {
+                    making = metalVal * (d.makingPercent / 100);
+                    currentMakingType = '%';
+                    currentMakingInput = d.makingPercent;
+                } else {
+                    currentMakingType = '';
+                }
+                let total = metalVal + making + otherCharge;
+                currentTaxAmount = total * (taxRate / 100);
+                final = total + currentTaxAmount;
+                if (currentMakingType !== '') {
+                    document.getElementById('alter-btn').style.display = 'inline-block';
+                }
+            }
+            currentFinalPrice = final;
+            document.getElementById('product-code').textContent = `Barcode: ${barcode} | Product: ${d.itemName || 'Unknown'}`;
+            document.getElementById('price-display').textContent = `${final.toFixed(2)}`;
+            document.getElementById('price-display').classList.add('show');
+            document.getElementById('detail-btn').style.display = 'inline-block';
+            document.getElementById('clear-screen-btn').style.display = 'inline-block';
+        }
+        function openAlterDialog() {
+            if (!currentProduct || currentMakingType === '') {
+                alert('No making charge to alter.');
+                return;
+            }
+            const html = `<p><strong>Current:</strong> ${currentMakingInput.toFixed(2)} ${currentMakingType}</p>`;
+            document.getElementById('alter-body').innerHTML = html;
+            document.getElementById('new-making').placeholder = `Enter new value (in ${currentMakingType})`;
+            document.getElementById('new-making').value = '';
+            document.getElementById('alter-modal').style.display = 'flex';
+            document.getElementById('new-making').focus();
+        }
+        function closeAlter() {
+            document.getElementById('alter-modal').style.display = 'none';
+        }
+        function updateMaking() {
+            const newInput = parseFloat(document.getElementById('new-making').value);
+            if (isNaN(newInput) || newInput < 0) {
+                alert('Enter a valid positive number.');
+                return;
+            }
+            makingOverride = { type: currentMakingType, input: newInput };
+            const weight = currentProduct.netWeight;
+            const rate = rates[currentProduct.metal][currentProduct.stamp];
+            const metalVal = weight * rate;
+            let newMaking = 0, otherCharge = currentProduct.otherCharge || 0;
+            if (currentMakingType === '%') {
+                newMaking = metalVal * (newInput / 100);
+            } else if (currentMakingType === 'per g') {
+                newMaking = newInput * weight;
+            } else { // per pc
+                newMaking = newInput;
+            }
+            let total = metalVal + newMaking + otherCharge;
+            currentTaxAmount = total * (taxRate / 100);
+            currentFinalPrice = total + currentTaxAmount;
+            document.getElementById('price-display').textContent = `${currentFinalPrice.toFixed(2)}`;
+            closeAlter();
+        }
+        function showDetails() {
+            if (!currentProduct) return;
+            const d = currentProduct;
+            let html = `
+                <p><strong>Item Name:</strong> <span>${d.itemName || ''}</span></p>
+                <p><strong>Barcode:</strong> <span>${currentBarcode}</span></p>
+                <p><strong>Gr. Wt.:</strong> <span>${d.grossWeight.toFixed(2)}g</span></p>
+                <p><strong>N. Wt.:</strong> <span>${d.netWeight.toFixed(2)}g</span></p>
+                <p><strong>Other Charge:</strong> <span>${(d.otherCharge || 0).toFixed(2)}</span></p>
+            `;
+            if (d.mrp > 0) {
+                html += `
+                    <p><strong>Type:</strong> <span>Fixed MRP</span></p>
+                    <p><strong>MRP:</strong> <span>${d.mrp.toFixed(2)}</span></p>
+                    <hr>
+                    <p><strong>Tax (${taxRate}%):</strong> <span>${currentTaxAmount.toFixed(2)}</span></p>
+                    <p><strong>Final Amount:</strong> <span>${currentFinalPrice.toFixed(2)}</span></p>
+                `;
+            } else {
+                const mKey = d.metal, stamp = d.stamp, rate = rates[mKey][stamp];
+                let makingStr = '0';
+                if (makingOverride) {
+                    const ov = makingOverride;
+                    if (ov.type === '%') {
+                        makingStr = `${ov.input}%`;
+                    } else if (ov.type === 'per g') {
+                        makingStr = `${ov.input.toFixed(2)} (per g)`;
+                    } else {
+                        makingStr = `${ov.input.toFixed(2)} (per pc)`;
+                    }
+                } else {
+                    if (d.makingPerPc > 0) {
+                        makingStr = `${d.makingPerPc.toFixed(2)} (per pc)`;
+                    } else if (d.makingPerGram > 0) {
+                        makingStr = `${d.makingPerGram.toFixed(2)} (per g)`;
+                    } else if (d.makingPercent > 0) {
+                        makingStr = `${d.makingPercent}%`;
+                    }
+                }
+                html += `
+                    <p><strong>Metal:</strong> <span>${mKey.charAt(0).toUpperCase() + mKey.slice(1)}</span></p>
+                    <p><strong>Stamp:</strong> <span>${stamp}</span></p>
+                    <p><strong>Making:</strong> <span>${makingStr}</span></p>
+                    <p><strong>Rate/g:</strong> <span>${rate.toFixed(2)}</span></p>
+                    <hr>
+                    <p><strong>Tax (${taxRate}%):</strong> <span>${currentTaxAmount.toFixed(2)}</span></p>
+                    <p><strong>Final Amount:</strong> <span>${currentFinalPrice.toFixed(2)}</span></p>
+                `;
+            }
+            document.getElementById('detail-body').innerHTML = html;
+            document.getElementById('detail-modal').style.display = 'flex';
+        }
+        function closeDetails() {
+            document.getElementById('detail-modal').style.display = 'none';
+        }
+        function clearAll() {
+            document.getElementById('barcode').value = '';
+            document.getElementById('product-code').textContent = '';
+            document.getElementById('price-display').textContent = '0.00';
+            document.getElementById('price-display').classList.remove('show');
+            document.getElementById('detail-btn').style.display = 'none';
+            document.getElementById('alter-btn').style.display = 'none';
+            document.getElementById('clear-screen-btn').style.display = 'none';
+            makingOverride = null;
+            currentMakingType = '';
+            currentMakingInput = 0;
+            currentBarcode = '';
+            document.getElementById('barcode').focus();
+            closeOptions();
+        }
+        function updateRate() {
+            const metal = document.getElementById('metal-select').value.toLowerCase();
+            const stamp = document.getElementById('stamp-select').value;
+            const price = parseFloat(document.getElementById('price-per-gram').value);
+            if (rates[metal] && rates[metal][stamp] !== undefined && !isNaN(price)) {
+                rates[metal][stamp] = price;
+                saveToStorage('jewelryRates', rates);
+                alert(`Updated: ${metal} ${stamp} → ₹${price}/g`);
+                document.getElementById('price-per-gram').value = '';
+                renderRatesTable();
+            } else {
+                alert('Invalid input');
+            }
+        }
+        function updateTax() {
+            const tax = parseFloat(document.getElementById('tax-percent').value);
+            if (!isNaN(tax)) {
+                taxRate = tax;
+                localStorage.setItem('jewelryTaxRate', taxRate);
+                alert(`Tax updated to ${tax}%`);
+                document.getElementById('tax-percent').value = '';
+                renderRatesTable();
+            } else {
+                alert('Invalid tax');
+            }
+        }
+        function clearAllData() {
+            if (confirm('Clear ALL data (rates, tax, products)? This cannot be undone.')) {
+                localStorage.clear();
+                rates = JSON.parse(JSON.stringify(defaultRates));
+                taxRate = 0;
+                productData = {};
+                makingOverride = null;
+                renderRatesTable();
+                alert('All data cleared');
+                location.reload();
+            }
+        }
+    </script>
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(registration => {
+              console.log('ServiceWorker registration successful');
+            })
+            .catch(err => {
+              console.log('ServiceWorker registration failed: ', err);
+            });
+        });
+      }
+    </script>
+    </body>
+</html>
