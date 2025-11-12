@@ -14,6 +14,46 @@
     <meta name="apple-mobile-web-app-title" content="JewelryCalc">
     <link rel="apple-touch-icon" href="images/icon-192.png">
 
+    <script type="module">
+        // Import the functions you need from the Firebase SDKs
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+
+        // Your web app's Firebase configuration
+
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+
+const firebaseConfig = {
+
+  apiKey: "AIzaSyDaRjbdCnfx5-C4OXQaByZMxK2r0Cu19bI",
+
+  authDomain: "suhag-f53e4.firebaseapp.com",
+
+  databaseURL: "https://suhag-f53e4-default-rtdb.asia-southeast1.firebasedatabase.app",
+
+  projectId: "suhag-f53e4",
+
+  storageBucket: "suhag-f53e4.firebasestorage.app",
+
+  messagingSenderId: "231258063675",
+
+  appId: "1:231258063675:web:1c79c2a0d4d5796a6d2d1e",
+
+  measurementId: "G-MJ1BBWZFVW"
+
+};
+
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // Expose Firebase functions to the global scope for the main script
+        window.firebaseDB = db;
+        window.dbRef = ref;
+        window.dbSet = set;
+        window.dbOnValue = onValue;
+    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         * {
@@ -462,8 +502,8 @@
         <div id="options-menu">
             <button onclick="showSection('update-rates')">Update Rates</button>
             <button onclick="showSection('excel-upload')">Upload Excel</button>
-            <button onclick="clearAll()" class="danger">Clear Screen</button>
-            <button onclick="clearAllData()" class="danger">Clear All Data</button>
+            <button onclick="clearAll()">Clear Screen</button>
+            <button onclick="clearAllData()" class="danger">Clear All Data (Cloud)</button>
         </div>
     </div>
     <div id="main-screen">
@@ -553,15 +593,17 @@
         <button onclick="showSection('main')">Back to Main</button>
     </div>
     <script>
-        // Default rates
+        // Default rates structure
         const defaultRates = {
             gold: { '999': 0, '916': 0, '750': 0 },
             silver: { '999': 0, 'S925': 0, 'S8': 0 },
             pc: { '950': 0, '900': 0 }
         };
-        let rates = loadFromStorage('jewelryRates') || JSON.parse(JSON.stringify(defaultRates));
-        let taxRate = parseFloat(localStorage.getItem('jewelryTaxRate')) || 0;
-        let productData = loadFromStorage('jewelryProducts') || {};
+        // Data variables now initialized to empty/default, filled by Firebase
+        let rates = JSON.parse(JSON.stringify(defaultRates));
+        let taxRate = 0;
+        let productData = {};
+        
         let currentProduct = null;
         let currentFinalPrice = 0;
         let currentTaxAmount = 0;
@@ -569,19 +611,95 @@
         let currentMakingInput = 0;
         let makingOverride = null;
         let currentBarcode = '';
-        function saveToStorage(key, data) {
-            try { localStorage.setItem(key, JSON.stringify(data)); }
-            catch (e) { console.warn('Storage failed:', e); }
+
+
+        // === NEW FIREBASE SYNC FUNCTIONS (REPLACING LOCALSTORAGE) ===
+
+        function syncData() {
+            // Check for Firebase variables created in the module script
+            if (!window.dbOnValue) {
+                console.error("Firebase SDK not loaded correctly. Check console/network tab.");
+                return;
+            }
+
+            const dataRef = window.dbRef(window.firebaseDB, 'jewelryData');
+
+            // 'onValue' triggers once immediately and then every time data changes
+            window.dbOnValue(dataRef, (snapshot) => {
+                const cloudData = snapshot.val() || {};
+
+                // 1. Update Rates
+                rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
+                
+                // 2. Update Tax Rate
+                taxRate = cloudData.taxRate || 0;
+                
+                // 3. Update Product Data (The Excel sheet data)
+                productData = cloudData.products || {};
+
+                console.log("Data synced from Firebase:", cloudData);
+                
+                // CRITICAL: Re-render UI elements that rely on initial load
+                renderRatesTable();
+                
+                // Since data can change at any time, re-lookup the current barcode
+                if (currentBarcode) {
+                    lookupProduct();
+                } else {
+                    // Update tax input field on rate update
+                    document.getElementById('tax-percent').value = taxRate;
+                }
+                populateStamps('stamp-select', document.getElementById('metal-select').value);
+                populateStamps('manage-stamp', document.getElementById('metal-select').value);
+
+            }, (error) => {
+                console.error("Firebase read failed:", error);
+                // Fallback: If Firebase fails, try local storage (if any was left)
+                rates = loadFromStorage('jewelryRates') || JSON.parse(JSON.stringify(defaultRates));
+                taxRate = parseFloat(localStorage.getItem('jewelryTaxRate')) || 0;
+                productData = loadFromStorage('jewelryProducts') || {};
+                alert("Error connecting to cloud database. Using local data if available.");
+            });
         }
-        function loadFromStorage(key) {
-            try {
-                const data = localStorage.getItem(key);
-                return data ? JSON.parse(data) : null;
-            } catch (e) {
-                console.warn('Load failed:', e);
-                return null;
+
+        // Save ALL data to Firebase at once
+        function saveAllDataToCloud() {
+            if (!window.dbSet) return;
+            const dataToSave = {
+                rates: rates,
+                taxRate: taxRate,
+                products: productData
+            };
+            // Set the entire object to the root of our application data path
+            window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToSave)
+                .then(() => {
+                    console.log("Data saved to Firebase successfully.");
+                })
+                .catch((error) => {
+                    console.error("Firebase write failed:", error);
+                    alert("Data save failed. Check your Firebase Rules/Connection.");
+                });
+        }
+
+        function clearAllData() {
+            if (!window.dbSet) return;
+            if (confirm('Clear ALL synced data (rates, tax, products)? This cannot be undone.')) {
+                // Clear data in Firebase by setting it to an empty object
+                window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), {})
+                    .then(() => {
+                        alert('All data cleared from the cloud.');
+                        location.reload();
+                    })
+                    .catch((error) => {
+                        console.error("Firebase clear failed:", error);
+                        alert("Data clear failed. Check console.");
+                    });
             }
         }
+        
+        // --- END NEW FIREBASE SYNC FUNCTIONS ---
+
+
         function clearAndFocus() {
             const input = document.getElementById('barcode');
             input.value = '';
@@ -683,7 +801,7 @@
                 return;
             }
             rates[metal][newStamp] = 0;
-            saveToStorage('jewelryRates', rates);
+            saveAllDataToCloud(); // SAVE TO CLOUD
             document.getElementById('new-stamp').value = '';
             const metalValue = document.getElementById('metal-select').value;
             populateStamps('stamp-select', metalValue);
@@ -702,9 +820,9 @@
             if (confirm(`Remove ${stamp} for ${metal.toUpperCase()}?`)) {
                 delete rates[metal][stamp];
                 if (Object.keys(rates[metal]).length === 0) {
-                    delete rates[metal];
+                    // Only delete metal key if it's completely empty
                 }
-                saveToStorage('jewelryRates', rates);
+                saveAllDataToCloud(); // SAVE TO CLOUD
                 const metalValue = document.getElementById('metal-select').value;
                 populateStamps('stamp-select', metalValue);
                 populateStamps('manage-stamp', metalValue);
@@ -731,7 +849,7 @@
             }
             rates[metal][newName] = rates[metal][oldStamp];
             delete rates[metal][oldStamp];
-            saveToStorage('jewelryRates', rates);
+            saveAllDataToCloud(); // SAVE TO CLOUD
             document.getElementById('rename-to').value = '';
             const metalValue = document.getElementById('metal-select').value;
             populateStamps('stamp-select', metalValue);
@@ -768,13 +886,14 @@
                     return;
                 }
                 let count = 0;
+                let newProductData = {}; // Build new data set
                 for (let i = 1; i < json.length; i++) {
                     const row = json[i];
                     const tagNo = (row[cols.tagNo] || '').toString().trim().toUpperCase();
                     if (!tagNo) continue;
                     const grossWt = cols.grossWeight !== -1 ? parseFloat(row[cols.grossWeight]) || 0 : 0;
                     const netWt = cols.netWeight !== -1 ? parseFloat(row[cols.netWeight]) || 0 : grossWt;
-                    productData[tagNo] = {
+                    newProductData[tagNo] = {
                         itemName: cols.itemName !== -1 ? (row[cols.itemName] || '').toString().trim() : '',
                         grossWeight: grossWt,
                         netWeight: netWt,
@@ -788,7 +907,8 @@
                     };
                     count++;
                 }
-                saveToStorage('jewelryProducts', productData);
+                productData = newProductData; // Replace old product data
+                saveAllDataToCloud(); // SAVE TO CLOUD
                 document.getElementById('excel-info').innerHTML = `<p>Loaded ${count} products</p>`;
             };
             reader.readAsArrayBuffer(file);
@@ -830,8 +950,8 @@
                 final = total + currentTaxAmount;
             } else {
                 const mKey = d.metal, stamp = d.stamp;
-                if (!mKey || !stamp || !rates[mKey] || rates[mKey][stamp] === 0) {
-                    document.getElementById('product-code').textContent = `Barcode: ${barcode} - Rates missing`;
+                if (!mKey || !stamp || !rates[mKey] || rates[mKey][stamp] === undefined || rates[mKey][stamp] === 0) {
+                    document.getElementById('product-code').textContent = `Barcode: ${barcode} - Rates missing or zero for ${d.metal} ${d.stamp}`;
                     document.getElementById('clear-screen-btn').style.display = 'inline-block';
                     return;
                 }
@@ -924,7 +1044,8 @@
                     <p><strong>Final Amount:</strong> <span>${currentFinalPrice.toFixed(2)}</span></p>
                 `;
             } else {
-                const mKey = d.metal, stamp = d.stamp, rate = rates[mKey][stamp];
+                const mKey = d.metal, stamp = d.stamp;
+                const rate = rates[mKey] && rates[mKey][stamp] !== undefined ? rates[mKey][stamp] : 0;
                 let makingStr = '0';
                 if (makingOverride) {
                     const ov = makingOverride;
@@ -981,10 +1102,10 @@
             const price = parseFloat(document.getElementById('price-per-gram').value);
             if (rates[metal] && rates[metal][stamp] !== undefined && !isNaN(price)) {
                 rates[metal][stamp] = price;
-                saveToStorage('jewelryRates', rates);
+                saveAllDataToCloud(); // SAVE TO CLOUD
                 alert(`Updated: ${metal} ${stamp} → ₹${price}/g`);
                 document.getElementById('price-per-gram').value = '';
-                renderRatesTable();
+                // Rerendering will happen automatically via Firebase listener
             } else {
                 alert('Invalid input');
             }
@@ -993,32 +1114,25 @@
             const tax = parseFloat(document.getElementById('tax-percent').value);
             if (!isNaN(tax)) {
                 taxRate = tax;
-                localStorage.setItem('jewelryTaxRate', taxRate);
+                saveAllDataToCloud(); // SAVE TO CLOUD
                 alert(`Tax updated to ${tax}%`);
-                document.getElementById('tax-percent').value = '';
-                renderRatesTable();
+                document.getElementById('tax-percent').value = tax;
+                // Rerendering will happen automatically via Firebase listener
             } else {
                 alert('Invalid tax');
             }
         }
-        function clearAllData() {
-            if (confirm('Clear ALL data (rates, tax, products)? This cannot be undone.')) {
-                localStorage.clear();
-                rates = JSON.parse(JSON.stringify(defaultRates));
-                taxRate = 0;
-                productData = {};
-                makingOverride = null;
-                renderRatesTable();
-                alert('All data cleared');
-                location.reload();
-            }
-        }
+        
+        // At the end of the script, start the sync process
+        document.addEventListener('DOMContentLoaded', syncData);
+
     </script>
 
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
+          // Note: Relative path 'sw.js' for GitHub Pages compatibility
+          navigator.serviceWorker.register('sw.js') 
             .then(registration => {
               console.log('ServiceWorker registration successful');
             })
