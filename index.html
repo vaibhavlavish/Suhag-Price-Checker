@@ -530,7 +530,7 @@
         
         <input type="hidden" id="loose-metal-select" value="Gold">
         <input type="hidden" id="loose-stamp-select" value="750">
-        <input type="hidden" id="loose-making-percent" value="37">
+        <input type="hidden" id="loose-making-percent" value="35">
         
         <label for="loose-weight">Weight (Grams):</label>
         <input type="number" id="loose-weight" placeholder="Enter weight in grams" step="0.01" oninput="calculateLoosePrice()">
@@ -589,7 +589,7 @@
                 <select id="modal-loose-stamp-select"></select>
 
                 <label for="modal-loose-making-percent">Making Charge (%):</label>
-                <input type="number" id="modal-loose-making-percent" placeholder="e.g., 37" step="0.01">
+                <input type="number" id="modal-loose-making-percent" placeholder="e.g., 35" step="0.01">
             </div>
             <div id="modal-buttons" style="display: flex; gap: 10px; margin-top: 16px;">
                 <button id="update-loose-inputs-btn" onclick="updateLooseInputs()" style="flex: 1; background-color: #4CAF50; color: white;">Apply Changes</button>
@@ -875,7 +875,7 @@
 
             document.getElementById('loose-metal-select').value = 'Gold';
             document.getElementById('loose-stamp-select').value = defaultStamp;
-            document.getElementById('loose-making-percent').value = 37;
+            document.getElementById('loose-making-percent').value = 35;
         }
 
         // NEW: Clears the Loose Calculator screen
