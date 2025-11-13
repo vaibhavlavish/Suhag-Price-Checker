@@ -154,7 +154,21 @@
             overflow-y: auto;
             min-height: calc(100vh - 60px);
         }
-        #barcode {
+        #loose-calculator {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px 15px;
+            background-color: #f5f5f5;
+            overflow-y: auto;
+            min-height: calc(100vh - 60px);
+            width: 100%;
+            max-width: 420px;
+            margin: 0 auto;
+        }
+        #barcode, #loose-weight { /* Added loose-weight here for styling */
             font-size: 20px;
             padding: 16px;
             width: 100%;
@@ -166,7 +180,7 @@
             background: white;
             box-shadow: 0 2px 6px rgba(0,0,0,0.1);
         }
-        #barcode:focus {
+        #barcode:focus, #loose-weight:focus {
             border-color: #4CAF50;
             outline: none;
             box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
@@ -186,6 +200,14 @@
             margin: 8px 0;
             opacity: 0;
             transition: opacity 0.4s ease;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #loose-price-display { /* Style for loose calculator display */
+            font-size: 48px;
+            font-weight: 700;
+            color: #4CAF50;
+            margin: 20px 0;
+            text-align: center;
             text-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         #price-display.show {
@@ -220,7 +242,8 @@
             transform: translateY(1px);
             box-shadow: 0 1px 4px;
         }
-        #detail-modal, #alter-modal {
+        /* Reused Modal Styles */
+        #detail-modal, #alter-modal, #loose-alter-modal {
             display: none;
             position: fixed;
             top: 0;
@@ -233,7 +256,7 @@
             z-index: 1000;
             padding: 15px;
         }
-        #detail-content, #alter-content {
+        #detail-content, #alter-content, #loose-alter-content {
             background: white;
             padding: 20px;
             border-radius: 16px;
@@ -243,7 +266,7 @@
             max-height: 90vh;
             overflow-y: auto;
         }
-        #detail-content h3, #alter-content h3 {
+        #detail-content h3, #alter-content h3, #loose-alter-content h3 {
             margin: 0 0 16px 0;
             color: #333;
             font-size: 20px;
@@ -333,8 +356,8 @@
             transform: translateY(1px);
             box-shadow: 0 1px 4px;
         }
-        /* Hidden sections */
-        #update-rates, #excel-upload {
+        /* Hidden sections - includes the new loose calculator */
+        #update-rates, #excel-upload { 
             display: none;
             max-width: 100%;
             margin: 0;
@@ -345,7 +368,7 @@
             flex: 1;
             overflow-y: auto;
         }
-        #update-rates h2, #excel-upload h2 {
+        #update-rates h2, #excel-upload h2, #loose-calculator h2 {
             color: #333;
             font-size: 18px;
             margin-top: 0;
@@ -464,14 +487,14 @@
                 font-size: 15px;
                 padding: 12px 18px;
             }
-            #barcode {
+            #barcode, #loose-weight {
                 font-size: 22px;
                 padding: 18px;
             }
-            #price-display {
+            #price-display, #loose-price-display {
                 font-size: 56px;
             }
-            #detail-content, #alter-content {
+            #detail-content, #alter-content, #loose-alter-content {
                 max-width: 420px;
             }
             .manage-row {
@@ -483,6 +506,7 @@
 <body>
     <div id="taskbar">
         <button onclick="showSection('main')" class="active">Main</button>
+        <button onclick="showSection('loose-calculator')">Loose</button>
         <button id="options-btn" onclick="toggleOptions()">More</button>
         <div id="options-menu">
             <button onclick="showSection('update-rates')">Update Rates</button>
@@ -501,6 +525,30 @@
             <button id="alter-btn" onclick="openAlterDialog()">Alter</button>
         </div>
     </div>
+    <div id="loose-calculator">
+        <h2 style="display: none;">Loose Jewellery Price Calculator</h2>
+        
+        <input type="hidden" id="loose-metal-select" value="Gold">
+        <input type="hidden" id="loose-stamp-select" value="750">
+        <input type="hidden" id="loose-making-percent" value="37">
+        
+        <label for="loose-weight">Weight (Grams):</label>
+        <input type="number" id="loose-weight" placeholder="Enter weight in grams" step="0.01" oninput="calculateLoosePrice()">
+        
+        <hr style="display: none;">
+
+        <p style="text-align: center; font-size: 18px; font-weight: 600; color: #333;">Final Price:</p>
+        <h1 id="loose-price-display">0.00</h1>
+
+        <div id="loose-details" style="display: none;"></div>
+        
+        <button id="loose-alter-btn" onclick="openLooseAlterDialog()" 
+            style="margin-top: 20px; background-color: #FF9800; color: white; padding: 10px 20px; border-radius: 25px; font-weight: 600; box-shadow: 0 3px 8px rgba(255, 152, 0, 0.3);">
+            Alter
+        </button>
+
+        <button onclick="showSection('main')" style="margin-top: 10px;">Back to Main</button>
+    </div>
     <div id="detail-modal">
         <div id="detail-content">
             <h3>Product Details</h3>
@@ -518,6 +566,33 @@
                 <button id="update-making-btn" onclick="updateMaking()">Update</button>
                 <button id="cancel-making-btn" onclick="closeAlter()">Cancel</button>
             </div>
+        </div>
+    </div>
+    
+    <div id="loose-alter-modal">
+        <div id="loose-alter-content">
+            <h3>Loose Calculation Settings</h3>
+            <div id="loose-alter-body">
+                <label for="modal-loose-metal-select">Metal Type:</label>
+                <select id="modal-loose-metal-select" onchange="populateModalStamps(this.value)">
+                    <option value="Gold">Gold</option>
+                    <option value="Silver">Silver</option>
+                    <option value="PC">PC</option>
+                </select>
+
+                <label for="modal-loose-stamp-select">Stamp/Purity:</label>
+                <select id="modal-loose-stamp-select"></select>
+
+                <label for="modal-loose-making-percent">Making Charge (%):</label>
+                <input type="number" id="modal-loose-making-percent" placeholder="e.g., 37" step="0.01">
+            </div>
+            <div id="modal-buttons" style="display: flex; gap: 10px; margin-top: 16px;">
+                <button id="update-loose-inputs-btn" onclick="updateLooseInputs()" style="flex: 1; background-color: #4CAF50; color: white;">Apply Changes</button>
+                <button id="cancel-loose-btn" onclick="closeLooseAlter()" style="flex: 1; background-color: #f44336; color: white;">Cancel</button>
+            </div>
+            <p style="font-size:12px; margin-top:10px; text-align:center; color:#999;">
+                Current Rate: <span id="modal-loose-rate">0.00</span> /g
+            </p>
         </div>
     </div>
     <div id="update-rates">
@@ -624,7 +699,6 @@
         function syncData() {
             if (!window.dbOnValue) {
                 console.error("Firebase SDK not loaded correctly. Check console/network tab.");
-                // Fallback or error handling for no Firebase connection could go here
                 return;
             }
 
@@ -656,6 +730,9 @@
                 }
                 populateStamps('stamp-select', document.getElementById('metal-select').value);
                 populateStamps('manage-stamp', document.getElementById('metal-select').value);
+                // Update the loose calculator configuration after rates sync
+                setLooseDefaults(); 
+                calculateLoosePrice(); // Recalculate loose price with potentially new rates
 
             }, (error) => {
                 console.error("Firebase read failed:", error);
@@ -710,12 +787,25 @@
             document.getElementById('main-screen').style.display = 'none';
             document.getElementById('update-rates').style.display = 'none';
             document.getElementById('excel-upload').style.display = 'none';
+            document.getElementById('loose-calculator').style.display = 'none';
+            
             const buttons = document.querySelectorAll('#taskbar button:not(#options-btn)');
             buttons.forEach(btn => btn.classList.remove('active'));
+            
             if (section === 'main') {
                 document.getElementById('main-screen').style.display = 'flex';
                 document.querySelector('#taskbar button[onclick="showSection(\'main\')"]').classList.add('active');
                 setTimeout(() => document.getElementById('barcode').focus(), 100);
+            } else if (section === 'loose-calculator') {
+                document.getElementById('loose-calculator').style.display = 'flex'; // Changed to flex for centering
+                document.querySelector('#taskbar button[onclick="showSection(\'loose-calculator\')"]').classList.add('active');
+                
+                // 1. Ensure stamps and defaults are set
+                setLooseDefaults(); 
+                
+                // 2. Calculate price with defaults and current weight
+                calculateLoosePrice(); 
+                setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
                 document.getElementById(section).style.display = 'block';
             }
@@ -767,6 +857,153 @@
                 }
             }
         }
+        
+        // NEW: Sets the default configuration for the loose calculator
+        function setLooseDefaults() {
+            // Priority: Gold 750 (if available), then Gold's first stamp, otherwise default to a reasonable value
+            let defaultStamp = '750';
+            if (!rates.gold['750'] && Object.keys(rates.gold).length > 0) {
+                defaultStamp = Object.keys(rates.gold)[0];
+            } else if (!rates.gold['750']) {
+                defaultStamp = ''; // No gold stamps defined
+            }
+
+            document.getElementById('loose-metal-select').value = 'Gold';
+            document.getElementById('loose-stamp-select').value = defaultStamp;
+            document.getElementById('loose-making-percent').value = 37;
+        }
+
+        // NEW: Populates the stamp selector in the Loose Alter Modal
+        function populateModalStamps(metal) {
+            const select = document.getElementById('modal-loose-stamp-select');
+            const lower = metal.toLowerCase();
+            select.innerHTML = ''; // Clear previous options
+            if (rates[lower]) {
+                for (let stamp in rates[lower]) {
+                    let opt = document.createElement('option');
+                    opt.value = stamp; opt.textContent = stamp;
+                    opt.dataset.rate = rates[lower][stamp];
+                    select.add(opt);
+                }
+            }
+            
+            // Set selection and update rate display
+            const currentStamp = document.getElementById('loose-stamp-select').value;
+            if (select.options.length > 0) {
+                // Try to pre-select the current hidden stamp if the metal matches
+                select.value = currentStamp;
+                // If the stamp doesn't exist for the new metal, select the first one
+                if(select.value !== currentStamp) {
+                    select.selectedIndex = 0;
+                }
+            }
+            updateModalRateDisplay();
+        }
+
+        // NEW: Updates the rate display in the Loose Alter Modal
+        function updateModalRateDisplay() {
+            const select = document.getElementById('modal-loose-stamp-select');
+            const rateDisplay = document.getElementById('modal-loose-rate');
+            const selectedOption = select.options[select.selectedIndex];
+            
+            if (selectedOption) {
+                const rate = selectedOption.dataset.rate;
+                rateDisplay.textContent = parseFloat(rate).toFixed(2);
+            } else {
+                rateDisplay.textContent = '0.00';
+            }
+        }
+
+        // NEW: Opens the Loose Alter Modal
+        function openLooseAlterDialog() {
+            // Read current values from hidden inputs (source of truth)
+            const metal = document.getElementById('loose-metal-select').value;
+            const stamp = document.getElementById('loose-stamp-select').value;
+            const making = document.getElementById('loose-making-percent').value;
+            
+            // Populate modal inputs
+            document.getElementById('modal-loose-metal-select').value = metal;
+            document.getElementById('modal-loose-making-percent').value = making;
+            
+            // Populate stamps based on metal
+            populateModalStamps(metal);
+            
+            // Set the correct stamp selection in the modal
+            document.getElementById('modal-loose-stamp-select').value = stamp;
+            
+            // Update rate display in the modal
+            updateModalRateDisplay();
+
+            // Add listener to the stamp select in the modal for dynamic rate update
+            document.getElementById('modal-loose-stamp-select').onchange = updateModalRateDisplay;
+
+            document.getElementById('loose-alter-modal').style.display = 'flex';
+        }
+
+        // NEW: Closes the Loose Alter Modal
+        function closeLooseAlter() {
+            document.getElementById('loose-alter-modal').style.display = 'none';
+        }
+
+        // NEW: Applies the settings from the Loose Alter Modal
+        function updateLooseInputs() {
+            const newMetal = document.getElementById('modal-loose-metal-select').value;
+            const newStamp = document.getElementById('modal-loose-stamp-select').value;
+            const newMaking = parseFloat(document.getElementById('modal-loose-making-percent').value);
+
+            if (!newStamp) {
+                alert('Please select a Stamp/Purity.');
+                return;
+            }
+            if (isNaN(newMaking) || newMaking < 0) {
+                alert('Please enter a valid Making Charge (%).');
+                return;
+            }
+
+            // Update the hidden inputs (Source of truth)
+            document.getElementById('loose-metal-select').value = newMetal;
+            document.getElementById('loose-stamp-select').value = newStamp;
+            document.getElementById('loose-making-percent').value = newMaking;
+
+            closeLooseAlter();
+            calculateLoosePrice();
+        }
+
+
+        // Loose Price Calculation
+        function calculateLoosePrice() {
+            // Read weight from the visible input
+            const weight = parseFloat(document.getElementById('loose-weight').value) || 0;
+            
+            // Read current configuration from hidden inputs
+            const metal = document.getElementById('loose-metal-select').value.toLowerCase();
+            const stamp = document.getElementById('loose-stamp-select').value; 
+            const makingPercent = parseFloat(document.getElementById('loose-making-percent').value) || 0;
+
+            const priceDisplay = document.getElementById('loose-price-display');
+
+            if (weight <= 0) {
+                priceDisplay.textContent = '0.00';
+                return;
+            }
+
+            const rate = rates[metal] ? rates[metal][stamp] : undefined;
+            if (rate === undefined || rate <= 0) {
+                priceDisplay.textContent = '0.00';
+                return;
+            }
+
+            // Calculation
+            const metalVal = weight * rate;
+            const makingCharge = metalVal * (makingPercent / 100);
+            const subtotal = metalVal + makingCharge;
+            const taxAmount = subtotal * (taxRate / 100);
+            const finalPrice = subtotal + taxAmount;
+
+            // Display results
+            priceDisplay.textContent = finalPrice.toFixed(2);
+        }
+
         function updateRemoveButton() {
             const stamp = document.getElementById('manage-stamp').value;
             const btn = document.getElementById('remove-stamp-btn');
@@ -782,6 +1019,8 @@
                 populateStamps('manage-stamp', value);
                 updateRemoveButton();
             });
+            
+            // Initial setup for the rates screen (will be overridden by syncData)
             populateStamps('stamp-select', 'Gold');
             populateStamps('manage-stamp', 'Gold');
             updateRemoveButton();
@@ -790,18 +1029,20 @@
 
             const barcodeInput = document.getElementById('barcode');
 
-            // --- NEW: Global keydown listener for seamless scanning ---
+            // --- Global keydown listener for seamless scanning ---
             document.addEventListener('keydown', function(event) {
+                // Only act on the main screen
+                if (document.getElementById('main-screen').style.display !== 'flex') {
+                    return;
+                }
                 // Check if the currently active element is already the barcode input.
                 if (document.activeElement === barcodeInput) {
                     return; 
                 }
 
                 // Check if the keypress is a single character key (typical of scanner input) 
-                // and not a modified key (like Ctrl+C, F5, etc.)
                 if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
                     // Check if the active element is another input field where the user is typing 
-                    // (if so, don't steal focus).
                     const activeTag = document.activeElement.tagName.toLowerCase();
                     if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
                         return;
@@ -814,16 +1055,14 @@
             // ---------------------------------------------------------
 
 
-            // --- EXISTING: Add keydown listener to trigger lookup only on Enter keypress ---
+            // --- Existing keydown listener to trigger lookup only on Enter keypress ---
             barcodeInput.addEventListener('keydown', function(event) {
-                // Check for Enter key press
                 if (event.key === 'Enter') { 
-                    event.preventDefault(); // Prevent form submission/line break
+                    event.preventDefault();
                     const barcode = barcodeInput.value.trim().toUpperCase();
-                    // Clear and refocus immediately
                     barcodeInput.value = '';
                     barcodeInput.focus();
-                    lookupProduct(barcode, true); // Trigger lookup, pass true for initial lookup
+                    lookupProduct(barcode, true);
                 }
             });
             // --------------------------------------------------------------------------
@@ -846,6 +1085,7 @@
             const metalValue = document.getElementById('metal-select').value;
             populateStamps('stamp-select', metalValue);
             populateStamps('manage-stamp', metalValue);
+            // setLooseDefaults(); // Re-evaluate loose defaults after changing rates
             updateRemoveButton();
             renderRatesTable();
             alert(`Added ${newStamp} for ${metal}`);
@@ -867,6 +1107,7 @@
                 const metalValue = document.getElementById('metal-select').value;
                 populateStamps('stamp-select', metalValue);
                 populateStamps('manage-stamp', metalValue);
+                // setLooseDefaults(); // Re-evaluate loose defaults after changing rates
                 updateRemoveButton();
                 renderRatesTable();
                 alert(`Removed ${stamp}`);
@@ -896,6 +1137,7 @@
             const metalValue = document.getElementById('metal-select').value;
             populateStamps('stamp-select', metalValue);
             populateStamps('manage-stamp', metalValue);
+            // setLooseDefaults(); // Re-evaluate loose defaults after changing rates
             updateRemoveButton();
             renderRatesTable();
             alert(`Renamed ${oldStamp} to ${newName}`);
