@@ -591,9 +591,15 @@
                 <label for="modal-loose-making-percent">Making Charge (%):</label>
                 <input type="number" id="modal-loose-making-percent" placeholder="e.g., 35" step="0.01">
             </div>
-            <div id="modal-buttons" style="display: flex; gap: 10px; margin-top: 16px;">
-                <button id="update-loose-inputs-btn" onclick="updateLooseInputs()" style="flex: 1; background-color: #4CAF50; color: white;">Apply Changes</button>
-                <button id="cancel-loose-btn" onclick="closeLooseAlter()" style="flex: 1; background-color: #f44336; color: white;">Cancel</button>
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 16px;">
+                <button id="save-loose-defaults-btn" onclick="saveLooseDefaultsToCloud()" 
+                    style="background-color: #2196F3; color: white; padding: 12px; border-radius: 25px; font-weight: 600; border: none; box-shadow: 0 3px 8px rgba(33, 150, 243, 0.3); width: 100%;">
+                    Save Current As Default
+                </button>
+                <div id="modal-buttons" style="display: flex; gap: 10px;">
+                    <button id="update-loose-inputs-btn" onclick="updateLooseInputs()" style="flex: 1; background-color: #4CAF50; color: white;">Apply Changes</button>
+                    <button id="cancel-loose-btn" onclick="closeLooseAlter()" style="flex: 1; background-color: #f44336; color: white;">Cancel</button>
+                </div>
             </div>
             <p style="font-size:12px; margin-top:10px; text-align:center; color:#999;">
                 Current Rate: <span id="modal-loose-rate">0.00</span> /g
@@ -696,49 +702,55 @@
         let currentMakingType = '';
         let currentMakingInput = 0;
         let makingOverride = null;
-        let currentBarcode = '';
-
+        // NEW: Global variable for cloud-synced loose defaults
+        let looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 }; 
+        let currentBarcode = ''; 
 
         // === FIREBASE SYNC FUNCTIONS ===
-
         function syncData() {
             if (!window.dbOnValue) {
                 console.error("Firebase SDK not loaded correctly. Check console/network tab.");
                 return;
             }
-
             const dataRef = window.dbRef(window.firebaseDB, 'jewelryData');
-
             window.dbOnValue(dataRef, (snapshot) => {
-                const cloudData = snapshot.val() || {};
-
-                // 1. Update Rates
-                rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
+                const cloudData = snapshot.val(); // Use .val() directly
                 
-                // 2. Update Tax Rate
-                taxRate = cloudData.taxRate || 0;
-                
-                // 3. Update Product Data (The Excel sheet data)
-                productData = cloudData.products || {};
+                if (cloudData) {
+                    // Data exists, use it
+                    rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
+                    taxRate = cloudData.taxRate || 0;
+                    productData = cloudData.products || {};
+                    looseDefaultsCloud = cloudData.looseDefaults || { metal: 'Gold', stamp: '750', making: 35 };
+                } else {
+                    // Data does not exist (first run/cleared), initialize and save
+                    rates = JSON.parse(JSON.stringify(defaultRates));
+                    taxRate = 0;
+                    productData = {};
+                    looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 };
+                    // Save to establish the structure in Firebase for the first time
+                    saveAllDataToCloud(); 
+                }
 
-                console.log("Data synced from Firebase:", cloudData);
+                console.log("Data synced from Firebase.");
                 
                 // CRITICAL: Re-render UI elements that rely on initial load
-                renderRatesTable();
+                renderRatesTable(); 
                 
                 // Since data can change at any time, re-lookup the current barcode
                 if (currentBarcode) {
-                    lookupProduct(currentBarcode, false); // Pass current barcode to re-lookup without clearing/refocusing
+                    // FIXED: Call the new core logic function
+                    runPriceCalculation(); 
                 } else {
                     // Update tax input field on rate update
                     document.getElementById('tax-percent').value = taxRate;
                 }
                 populateStamps('stamp-select', document.getElementById('metal-select').value);
                 populateStamps('manage-stamp', document.getElementById('metal-select').value);
-                // Update the loose calculator configuration after rates sync
-                setLooseDefaults(); 
-                calculateLoosePrice(); // Recalculate loose price with potentially new rates
 
+                // Update the loose calculator configuration after rates sync
+                setLooseDefaults(); // This will load the synced defaults
+                calculateLoosePrice(); // Recalculate loose price with potentially new rates
             }, (error) => {
                 console.error("Firebase read failed:", error);
                 alert("Error connecting to cloud database. Please check your connection.");
@@ -747,73 +759,75 @@
 
         function saveAllDataToCloud() {
             if (!window.dbSet) return;
-            const dataToSave = {
-                rates: rates,
-                taxRate: taxRate,
-                products: productData
+            const dataToSave = { 
+                rates: rates, 
+                taxRate: taxRate, 
+                products: productData,
+                // NEW: Include loose defaults in the save
+                looseDefaults: looseDefaultsCloud
             };
             window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToSave)
-                .then(() => {
-                    console.log("Data saved to Firebase successfully.");
-                })
-                .catch((error) => {
-                    console.error("Firebase write failed:", error);
-                    alert("Data save failed. Check your Firebase Rules/Connection.");
-                });
+            .then(() => {
+                console.log("Data saved to Firebase successfully.");
+            })
+            .catch((error) => {
+                console.error("Firebase write failed:", error);
+                alert("Data save failed. Check your Firebase Rules/Connection.");
+            });
         }
 
         function clearAllData() {
             if (!window.dbSet) return;
             // PIN is checked in clearAllDataWrapper()
-            if (confirm('Clear ALL synced data (rates, tax, products)? This cannot be undone.')) {
-                window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), {})
-                    .then(() => {
-                        alert('All data cleared from the cloud.');
-                        location.reload();
-                    })
-                    .catch((error) => {
-                        console.error("Firebase clear failed:", error);
-                        alert("Data clear failed. Check console.");
-                    });
+            if (confirm('Clear ALL synced data (rates, tax, products, loose defaults)? This cannot be undone.')) {
+                // Clear the whole jewelryData node
+                window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), null)
+                .then(() => {
+                    alert('All data cleared from the cloud. Reloading page.');
+                    location.reload();
+                })
+                .catch((error) => {
+                    console.error("Firebase write failed:", error);
+                    alert("Data clear failed. Check your Firebase Rules/Connection.");
+                });
             }
         }
-        
-        // --- END FIREBASE SYNC FUNCTIONS ---
 
-
-        function clearAndFocus() {
-            const input = document.getElementById('barcode');
-            input.value = '';
-            currentBarcode = '';
-            document.getElementById('product-code').textContent = '';
-            input.focus();
+        // --- GENERAL UI FUNCTIONS ---
+        function closeOptions() {
+            document.getElementById('options-menu').classList.remove('show');
         }
+
         function showSection(section) {
+            // Hide all main sections
             document.getElementById('main-screen').style.display = 'none';
             document.getElementById('update-rates').style.display = 'none';
             document.getElementById('excel-upload').style.display = 'none';
             document.getElementById('loose-calculator').style.display = 'none';
-            
-            const buttons = document.querySelectorAll('#taskbar button:not(#options-btn)');
-            buttons.forEach(btn => btn.classList.remove('active'));
-            
+
+            // Remove active class from all taskbar buttons
+            document.querySelectorAll('#taskbar button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+
+            // Show the requested section and set button active class
             if (section === 'main') {
                 document.getElementById('main-screen').style.display = 'flex';
                 document.querySelector('#taskbar button[onclick="showSection(\'main\')"]').classList.add('active');
+                clearAll(); // Clear main screen on return
                 setTimeout(() => document.getElementById('barcode').focus(), 100);
             } else if (section === 'loose-calculator') {
                 document.getElementById('loose-calculator').style.display = 'flex'; // Changed to flex for centering
                 document.querySelector('#taskbar button[onclick="showSection(\'loose-calculator\')"]').classList.add('active');
-                
                 // 1. Ensure stamps and defaults are set
                 setLooseDefaults(); 
-                
                 // 2. Calculate price with defaults and current weight
                 calculateLoosePrice(); 
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
                 document.getElementById(section).style.display = 'block';
             }
+
             if (section === 'update-rates') {
                 renderRatesTable();
                 const metal = document.getElementById('metal-select').value;
@@ -823,13 +837,12 @@
             }
             closeOptions();
         }
+
         function toggleOptions() {
             const menu = document.getElementById('options-menu');
             menu.classList.toggle('show');
         }
-        function closeOptions() {
-            document.getElementById('options-menu').classList.remove('show');
-        }
+        
         // Close menu when clicking outside
         document.addEventListener('click', function(e) {
             const menu = document.getElementById('options-menu');
@@ -838,6 +851,8 @@
                 closeOptions();
             }
         });
+
+
         function renderRatesTable() {
             let html = '<h3 style="font-size:16px;margin:16px 0 8px;">Current Rates</h3><table>';
             html += '<tr><th>Metal</th><th>Stamp</th><th>₹/g</th></tr>';
@@ -850,64 +865,87 @@
             html += '</table><p style="margin-top:12px;"><strong>Tax:</strong> ' + taxRate + '%</p>';
             document.getElementById('rates-table').innerHTML = html;
         }
+
         function populateStamps(selectId, metal) {
             const select = document.getElementById(selectId);
-            const lower = metal.toLowerCase();
-            select.innerHTML = '<option value="">-- Select --</option>';
-            if (rates[lower]) {
-                for (let stamp in rates[lower]) {
-                    let opt = document.createElement('option');
-                    opt.value = stamp; opt.textContent = stamp;
-                    select.add(opt);
-                }
-            }
-        }
-        
-        // NEW: Sets the default configuration for the loose calculator
-        function setLooseDefaults() {
-            // Priority: Gold 750 (if available), then Gold's first stamp, otherwise default to a reasonable value
-            let defaultStamp = '750';
-            if (!rates.gold['750'] && Object.keys(rates.gold).length > 0) {
-                defaultStamp = Object.keys(rates.gold)[0];
-            } else if (!rates.gold['750']) {
-                defaultStamp = ''; // No gold stamps defined
-            }
-
-            document.getElementById('loose-metal-select').value = 'Gold';
-            document.getElementById('loose-stamp-select').value = defaultStamp;
-            document.getElementById('loose-making-percent').value = 35;
-        }
-
-        // NEW: Clears the Loose Calculator screen
-        function clearLooseScreen() {
-            document.getElementById('loose-weight').value = '';
-            document.getElementById('loose-price-display').textContent = '0.00';
-            document.getElementById('loose-weight').focus();
-        }
-
-        // NEW: Populates the stamp selector in the Loose Alter Modal
-        function populateModalStamps(metal) {
-            const select = document.getElementById('modal-loose-stamp-select');
             const lower = metal.toLowerCase();
             select.innerHTML = ''; // Clear previous options
             if (rates[lower]) {
                 for (let stamp in rates[lower]) {
                     let opt = document.createElement('option');
-                    opt.value = stamp; opt.textContent = stamp;
-                    opt.dataset.rate = rates[lower][stamp];
+                    opt.value = stamp;
+                    opt.textContent = stamp;
+                    
+                    // For modal: add data-rate for display
+                    if (selectId.startsWith('modal-loose-stamp')) {
+                        opt.dataset.rate = rates[lower][stamp];
+                    }
                     select.add(opt);
                 }
             }
+            // Add a default selection if needed
+            if (select.options.length === 0) {
+                 select.innerHTML = '<option value="">-- No Stamps Defined --</option>';
+            } else if (selectId === 'stamp-select') {
+                select.prepend(new Option('-- Select --', ''));
+                select.selectedIndex = 0;
+            }
+        }
+        
+        // --- LOOSE CALCULATOR FUNCTIONS ---
+
+        // MODIFIED: Reads from global looseDefaultsCloud synced from Cloud
+        function setLooseDefaults() { 
             
-            // Set selection and update rate display
-            const currentStamp = document.getElementById('loose-stamp-select').value;
-            if (select.options.length > 0) {
-                // Try to pre-select the current hidden stamp if the metal matches
-                select.value = currentStamp;
-                // If the stamp doesn't exist for the new metal, select the first one
-                if(select.value !== currentStamp) {
-                    select.selectedIndex = 0;
+            const defaults = looseDefaultsCloud; 
+            
+            let metal = defaults.metal || 'Gold';
+            let stamp = defaults.stamp || '750';
+            let making = defaults.making || 35; // Your code said 35, I'll use that.
+
+            // Safety check: Ensure the stamp is valid for the selected metal
+            const metalKey = metal.toLowerCase();
+            if (!rates[metalKey] || !rates[metalKey][stamp]) {
+                // If the saved stamp is no longer available, fall back to the first available one
+                if (rates[metalKey]) {
+                    const availableStamps = Object.keys(rates[metalKey]);
+                    if (availableStamps.length > 0) {
+                        stamp = availableStamps[0];
+                    } else {
+                        stamp = ''; // No stamp available for this metal
+                    }
+                } else {
+                     // If the metal itself is invalid, fall back to 'Gold'
+                     metal = 'Gold';
+                     const goldKey = metal.toLowerCase();
+                     if (rates[goldKey]) {
+                         const availableStamps = Object.keys(rates[goldKey]);
+                         stamp = availableStamps.length > 0 ? availableStamps[0] : '';
+                     } else {
+                         stamp = '';
+                     }
                 }
+            }
+            
+            // Update the hidden inputs (which hold the session's active loose config)
+            document.getElementById('loose-metal-select').value = metal; 
+            document.getElementById('loose-stamp-select').value = stamp; 
+            document.getElementById('loose-making-percent').value = making;
+        }
+
+
+        // NEW: Populates the stamp select in the Loose Alter Modal
+        function populateModalStamps(metal) {
+            const select = document.getElementById('modal-loose-stamp-select');
+            const currentStamp = document.getElementById('loose-stamp-select').value;
+            populateStamps('modal-loose-stamp-select', metal); // Use the generic populate function
+            
+            // Try to re-select the current stamp if the metal matches
+            select.value = currentStamp;
+            
+            // If the stamp doesn't exist for the new metal, select the first one
+            if(select.value !== currentStamp) {
+                select.selectedIndex = 0;
             }
             updateModalRateDisplay();
         }
@@ -917,8 +955,7 @@
             const select = document.getElementById('modal-loose-stamp-select');
             const rateDisplay = document.getElementById('modal-loose-rate');
             const selectedOption = select.options[select.selectedIndex];
-            
-            if (selectedOption) {
+            if (selectedOption && selectedOption.dataset.rate) {
                 const rate = selectedOption.dataset.rate;
                 rateDisplay.textContent = parseFloat(rate).toFixed(2);
             } else {
@@ -932,7 +969,7 @@
             const metal = document.getElementById('loose-metal-select').value;
             const stamp = document.getElementById('loose-stamp-select').value;
             const making = document.getElementById('loose-making-percent').value;
-            
+
             // Populate modal inputs
             document.getElementById('modal-loose-metal-select').value = metal;
             document.getElementById('modal-loose-making-percent').value = making;
@@ -944,8 +981,8 @@
             document.getElementById('modal-loose-stamp-select').value = stamp;
             
             // Update rate display in the modal
-            updateModalRateDisplay();
-
+            updateModalRateDisplay(); 
+            
             // Add listener to the stamp select in the modal for dynamic rate update
             document.getElementById('modal-loose-stamp-select').onchange = updateModalRateDisplay;
 
@@ -957,7 +994,7 @@
             document.getElementById('loose-alter-modal').style.display = 'none';
         }
 
-        // NEW: Applies the settings from the Loose Alter Modal
+        // NEW: Applies the settings from the Loose Alter Modal (for current session only)
         function updateLooseInputs() {
             const newMetal = document.getElementById('modal-loose-metal-select').value;
             const newStamp = document.getElementById('modal-loose-stamp-select').value;
@@ -972,7 +1009,7 @@
                 return;
             }
 
-            // Update the hidden inputs (Source of truth)
+            // Update the hidden inputs (Source of truth for the session)
             document.getElementById('loose-metal-select').value = newMetal;
             document.getElementById('loose-stamp-select').value = newStamp;
             document.getElementById('loose-making-percent').value = newMaking;
@@ -981,48 +1018,467 @@
             calculateLoosePrice();
         }
 
+        // NEW: Saves the current settings in the Loose Alter Modal as the new default to the cloud
+        function saveLooseDefaultsToCloud() {
+            if (!checkPin()) return; // Require PIN check to save defaults
 
+            const newMetal = document.getElementById('modal-loose-metal-select').value;
+            const newStamp = document.getElementById('modal-loose-stamp-select').value;
+            const newMakingRaw = document.getElementById('modal-loose-making-percent').value;
+            const newMaking = parseFloat(newMakingRaw);
+
+            if (!newStamp) {
+                alert('Please select a Stamp/Purity.');
+                return;
+            }
+            if (isNaN(newMaking) || newMaking < 0) {
+                alert('Please enter a valid Making Charge (%).');
+                return;
+            }
+            
+            // Check if the stamp is valid for the metal before saving
+            const metalKey = newMetal.toLowerCase();
+            if (!rates[metalKey] || !rates[metalKey][newStamp]) {
+                alert(`Cannot save. The rate for ${newMetal} ${newStamp} is not set in Update Rates.`);
+                return;
+            }
+
+            if (confirm(`Save ${newMetal} ${newStamp} with ${newMaking.toFixed(2)}% making as the permanent default? This will be used every time the app starts.`)) {
+                // 1. Update the cloud defaults variable
+                looseDefaultsCloud = {
+                    metal: newMetal,
+                    stamp: newStamp,
+                    making: newMaking
+                };
+
+                // 2. Save the whole data structure to the cloud
+                saveAllDataToCloud(); // This function now includes looseDefaultsCloud
+                
+                // 3. Update the active calculation inputs for the current session and recalculate
+                document.getElementById('loose-metal-select').value = newMetal;
+                document.getElementById('loose-stamp-select').value = newStamp;
+                document.getElementById('loose-making-percent').value = newMaking;
+
+                alert('Loose defaults saved successfully. They will load automatically next time.');
+                closeLooseAlter();
+                calculateLoosePrice();
+            }
+        }
+        
         // Loose Price Calculation
         function calculateLoosePrice() {
-            // Read weight from the visible input
-            const weight = parseFloat(document.getElementById('loose-weight').value) || 0;
-            
-            // Read current configuration from hidden inputs
-            const metal = document.getElementById('loose-metal-select').value.toLowerCase();
-            const stamp = document.getElementById('loose-stamp-select').value; 
-            const makingPercent = parseFloat(document.getElementById('loose-making-percent').value) || 0;
-
+            const weightInput = document.getElementById('loose-weight');
             const priceDisplay = document.getElementById('loose-price-display');
+            const metal = document.getElementById('loose-metal-select').value.toLowerCase();
+            const stamp = document.getElementById('loose-stamp-select').value;
+            const makingPercent = parseFloat(document.getElementById('loose-making-percent').value);
+            const weight = parseFloat(weightInput.value);
 
-            if (weight <= 0) {
+            if (isNaN(weight) || weight <= 0) {
                 priceDisplay.textContent = '0.00';
                 return;
             }
 
-            const rate = rates[metal] ? rates[metal][stamp] : undefined;
-            if (rate === undefined || rate <= 0) {
-                priceDisplay.textContent = '0.00';
+            const rate = rates[metal] ? rates[metal][stamp] : 0;
+            if (rate === 0) {
+                priceDisplay.textContent = '0.00 (No Rate)';
                 return;
             }
 
-            // Calculation
             const metalVal = weight * rate;
-            const makingCharge = metalVal * (makingPercent / 100);
-            const subtotal = metalVal + makingCharge;
+            const making = metalVal * (makingPercent / 100);
+            const subtotal = metalVal + making;
             const taxAmount = subtotal * (taxRate / 100);
             const finalPrice = subtotal + taxAmount;
 
-            // Display results
             priceDisplay.textContent = finalPrice.toFixed(2);
+        }
+
+        function clearLooseScreen() {
+            document.getElementById('loose-weight').value = '';
+            document.getElementById('loose-price-display').textContent = '0.00';
+            document.getElementById('loose-weight').focus();
+        }
+        
+        // --- END LOOSE CALCULATION FUNCTIONS ---
+
+        // --- PRODUCT PRICE CALCULATION AND ALTER FUNCTIONS ---
+
+        // FIXED: This function is the core logic, called by lookupProduct and updateMaking
+        function runPriceCalculation() {
+            // Clear display elements
+            document.getElementById('product-code').textContent = '';
+            document.getElementById('price-display').textContent = '0.00';
+            document.getElementById('price-display').classList.remove('show');
+            document.getElementById('detail-btn').style.display = 'none';
+            document.getElementById('alter-btn').style.display = 'none';
+            document.getElementById('clear-screen-btn').style.display = 'none';
+            
+            if (!currentBarcode) return; // Exit if no barcode
+            
+            if (!productData[currentBarcode]) {
+                document.getElementById('product-code').textContent = `Barcode: ${currentBarcode} - Not found`;
+                document.getElementById('clear-screen-btn').style.display = 'inline-block';
+                return;
+            }
+
+            currentProduct = productData[currentBarcode];
+            const d = currentProduct;
+            let final = 0, making = 0, otherCharge = d.otherCharge || 0;
+            currentTaxAmount = 0;
+            const weight = d.netWeight;
+            
+            // --- Price Calculation Logic ---
+            if (d.mrp > 0) {
+                let total = d.mrp + otherCharge;
+                currentTaxAmount = total * (taxRate / 100);
+                final = total + currentTaxAmount;
+            } else {
+                const mKey = d.metal, stamp = d.stamp;
+                if (!mKey || !stamp || !rates[mKey] || rates[mKey][stamp] === undefined || rates[mKey][stamp] === 0) {
+                    document.getElementById('product-code').textContent = `Barcode: ${currentBarcode} - Rates missing or zero for ${d.metal} ${d.stamp}`;
+                    document.getElementById('clear-screen-btn').style.display = 'inline-block';
+                    return;
+                }
+                const rate = rates[mKey][stamp];
+                const metalVal = weight * rate;
+                
+                // Determine Making Charge and Type
+                // Check for override first
+                if (makingOverride) {
+                    if (makingOverride.type === '%') {
+                        making = metalVal * (makingOverride.input / 100);
+                    } else if (makingOverride.type === 'per g') {
+                        making = makingOverride.input * weight;
+                    } else { // per pc
+                        making = makingOverride.input;
+                    }
+                    currentMakingType = makingOverride.type;
+                    currentMakingInput = makingOverride.input;
+                } else if (d.makingPerPc > 0) {
+                    making = d.makingPerPc;
+                    currentMakingType = 'per pc';
+                    currentMakingInput = d.makingPerPc;
+                } else if (d.makingPerGram > 0) {
+                    making = d.makingPerGram * weight;
+                    currentMakingType = 'per g';
+                    currentMakingInput = d.makingPerGram;
+                } else if (d.makingPercent > 0) {
+                    making = metalVal * (d.makingPercent / 100);
+                    currentMakingType = '%';
+                    currentMakingInput = d.makingPercent;
+                } else {
+                    currentMakingType = '';
+                }
+                
+                let total = metalVal + making + otherCharge;
+                currentTaxAmount = total * (taxRate / 100);
+                final = total + currentTaxAmount;
+
+                if (currentMakingType !== '') {
+                    document.getElementById('alter-btn').style.display = 'inline-block';
+                }
+            }
+            // --- End Price Calculation Logic ---
+
+            currentFinalPrice = final;
+            document.getElementById('product-code').textContent = `Barcode: ${currentBarcode} | Product: ${d.itemName || 'Unknown'}`;
+            document.getElementById('price-display').textContent = `${final.toFixed(2)}`;
+            document.getElementById('price-display').classList.add('show');
+            document.getElementById('detail-btn').style.display = 'inline-block';
+            document.getElementById('clear-screen-btn').style.display = 'inline-block';
+        }
+
+        // FIXED: This function is for NEW scans/inputs. It resets the override.
+        // It is now only called by the "Enter" key listener.
+        function lookupProduct(barcode) {
+            makingOverride = null; // Reset on any new scan
+            currentBarcode = barcode;
+            // Call the core logic
+            runPriceCalculation();
+        }
+
+        // FIXED: This function applies the override, then calls the core logic WITHOUT resetting.
+        function updateMaking() {
+            const newInput = parseFloat(document.getElementById('new-making').value);
+            if (isNaN(newInput) || newInput < 0) {
+                alert('Enter a valid positive number.');
+                return;
+            }
+            // Set the override
+            makingOverride = { 
+                type: currentMakingType, 
+                input: newInput 
+            };
+            
+            // Recalculate price with the override
+            runPriceCalculation(); 
+            
+            closeAlter();
+        }
+
+        function closeAlter() {
+            document.getElementById('alter-modal').style.display = 'none';
+        }
+
+        function openAlterDialog() {
+            if (!currentProduct || currentMakingType === '') {
+                alert('No making charge to alter.');
+                return;
+            }
+
+            // Determine what to show in the modal based on any existing override
+            let currentInput = currentMakingInput;
+            let currentType = currentMakingType;
+
+            if (makingOverride) {
+                currentInput = makingOverride.input;
+                currentType = makingOverride.type;
+            }
+
+            const html = `<p><strong>Current:</strong> ${currentInput.toFixed(2)} ${currentType}</p>`;
+            document.getElementById('alter-body').innerHTML = html;
+            document.getElementById('new-making').placeholder = `Enter new value (in ${currentType})`;
+            document.getElementById('new-making').value = '';
+            document.getElementById('alter-modal').style.display = 'flex';
+            document.getElementById('new-making').focus();
+        }
+
+        function showDetails() {
+            if (!currentProduct) return;
+            const d = currentProduct;
+            let html = `
+                <p><strong>Item Name:</strong> <span>${d.itemName || ''}</span></p>
+                <p><strong>Barcode:</strong> <span>${currentBarcode}</span></p>
+                <p><strong>Gr. Wt.:</strong> <span>${d.grossWeight.toFixed(2)}g</span></p>
+                <p><strong>N. Wt.:</strong> <span>${d.netWeight.toFixed(2)}g</span></p>
+                <p><strong>Other Charge:</strong> <span>${(d.otherCharge || 0).toFixed(2)}</span></p>
+            `;
+            if (d.mrp > 0) {
+                html += `
+                    <p><strong>Type:</strong> <span>Fixed MRP</span></p>
+                    <p><strong>MRP:</strong> <span>${d.mrp.toFixed(2)}</span></p>
+                    <hr>
+                    <p><strong>Tax (${taxRate}%):</strong> <span>${currentTaxAmount.toFixed(2)}</span></p>
+                    <p><strong>Final Amount:</strong> <span>${currentFinalPrice.toFixed(2)}</span></p>
+                `;
+            } else {
+                const mKey = d.metal, stamp = d.stamp;
+                const rate = rates[mKey] && rates[mKey][stamp] !== undefined ? rates[mKey][stamp] : 0;
+                let makingStr = '0';
+                let makingInput = currentMakingInput;
+                let activeMakingType = currentMakingType; // Use the one determined by lookup
+
+                if (makingOverride) {
+                    makingInput = makingOverride.input;
+                    activeMakingType = makingOverride.type;
+                }
+
+                if (activeMakingType === '%') {
+                    makingStr = `${makingInput}%`;
+                } else if (activeMakingType === 'per g') {
+                    makingStr = `${makingInput.toFixed(2)} (per g)`;
+                } else if (activeMakingType === 'per pc') {
+                    makingStr = `${makingInput.toFixed(2)} (per pc)`;
+                }
+                
+                html += `
+                    <p><strong>Metal:</strong> <span>${mKey.charAt(0).toUpperCase() + mKey.slice(1)}</span></p>
+                    <p><strong>Stamp:</strong> <span>${stamp}</span></p>
+                    <p><strong>Making:</strong> <span>${makingStr}</span></p>
+                    <p><strong>Rate/g:</strong> <span>${rate.toFixed(2)}</span></p>
+                    <hr>
+                    <p><strong>Tax (${taxRate}%):</strong> <span>${currentTaxAmount.toFixed(2)}</span></p>
+                    <p><strong>Final Amount:</strong> <span>${currentFinalPrice.toFixed(2)}</span></p>
+                `;
+            }
+            document.getElementById('detail-body').innerHTML = html;
+            document.getElementById('detail-modal').style.display = 'flex';
+        }
+
+        function closeDetails() {
+            document.getElementById('detail-modal').style.display = 'none';
+        }
+        
+        // --- UTILITY/SETUP FUNCTIONS ---
+        
+        function clearAll() {
+            document.getElementById('barcode').value = '';
+            document.getElementById('product-code').textContent = '';
+            document.getElementById('price-display').textContent = '0.00';
+            document.getElementById('price-display').classList.remove('show');
+            document.getElementById('detail-btn').style.display = 'none';
+            document.getElementById('alter-btn').style.display = 'none';
+            document.getElementById('clear-screen-btn').style.display = 'none';
+            makingOverride = null;
+            currentMakingType = '';
+            currentMakingInput = 0;
+            currentBarcode = '';
+            document.getElementById('barcode').focus();
+            closeOptions();
         }
 
         function updateRemoveButton() {
             const stamp = document.getElementById('manage-stamp').value;
             const btn = document.getElementById('remove-stamp-btn');
             if (btn) {
-                btn.disabled = !stamp;
+                btn.disabled = !stamp || stamp === '-- No Stamps Defined --';
             }
         }
+        function addStamp() {
+            if (!checkPin()) return; // PIN check added
+            const metal = document.getElementById('metal-select').value.toLowerCase();
+            const newStamp = document.getElementById('new-stamp').value.trim().toUpperCase();
+            if (!metal || !newStamp) {
+                alert('Please select metal and enter stamp name');
+                return;
+            }
+            if (!rates[metal]) {
+                rates[metal] = {};
+            }
+            if (rates[metal][newStamp]) {
+                alert('Stamp already exists');
+                return;
+            }
+            rates[metal][newStamp] = 0;
+            saveAllDataToCloud(); // SAVE TO CLOUD
+            document.getElementById('new-stamp').value = '';
+            alert(`Added ${newStamp} for ${metal}`);
+        }
+        function removeStamp() {
+            if (!checkPin()) return; // PIN check added
+            const metal = document.getElementById('metal-select').value.toLowerCase();
+            const stamp = document.getElementById('manage-stamp').value;
+            if (!stamp || stamp === '-- No Stamps Defined --') {
+                alert('Please select a stamp to remove');
+                return;
+            }
+            if (confirm(`Remove ${stamp} for ${metal.toUpperCase()}?`)) {
+                delete rates[metal][stamp];
+                saveAllDataToCloud(); // SAVE TO CLOUD
+                alert(`Removed ${stamp}`);
+            }
+        }
+        function renameStamp() {
+            if (!checkPin()) return; // PIN check added
+            const metal = document.getElementById('metal-select').value.toLowerCase();
+            const oldStamp = document.getElementById('manage-stamp').value;
+            const newName = document.getElementById('rename-to').value.trim().toUpperCase();
+            if (!oldStamp || oldStamp === '-- No Stamps Defined --') {
+                alert('Please select a stamp to rename');
+                return;
+            }
+            if (!newName || newName === oldStamp) {
+                alert('Please enter a different new name');
+                return;
+            }
+            if (rates[metal][newName]) {
+                alert('New name already exists');
+                return;
+            }
+            rates[metal][newName] = rates[metal][oldStamp];
+            delete rates[metal][oldStamp];
+            saveAllDataToCloud(); // SAVE TO CLOUD
+            document.getElementById('rename-to').value = '';
+            alert(`Renamed ${oldStamp} to ${newName}`);
+        }
+        function loadExcel() {
+            if (!checkPin()) { // PIN check added
+                document.getElementById('excel-file').value = ''; 
+                return; 
+            }
+            const file = document.getElementById('excel-file').files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(sheet, {header: 1});
+                const headers = (json[0] || []).map(h => (h || '').toString().trim().toLowerCase());
+                const cols = {
+                    tagNo: findColumn(headers, ['tag no', 'tagno', 'barcode']),
+                    itemName: findColumn(headers, ['item name', 'name', 'product name', 'item']),
+                    grossWeight: findColumn(headers, ['gr. wt.', 'gr wt', 'gross weight', 'gross wt', 'grossweight']),
+                    netWeight: findColumn(headers, ['n. wt.', 'n wt', 'net weight', 'net wt', 'netweight']),
+                    makingPct: findColumn(headers, ['making (%)', 'making%', 'making percent']),
+                    mGram: findColumn(headers, ['making (per g)', 'making per g', 'making/g', 'mc/g']),
+                    mPc: findColumn(headers, ['making (per pc)', 'making per pc', 'making/pc', 'mc/pc']),
+                    mrp: findColumn(headers, ['mrp', 'price', 'selling price', 'final price']),
+                    otherCharge: findColumn(headers, ['other charge', 'other', 'extra charge']),
+                    metal: findColumn(headers, ['metal']),
+                    stamp: findColumn(headers, ['stamp'])
+                };
+                if (cols.tagNo === -1) {
+                    document.getElementById('excel-info').innerHTML = '<p style="color:red;">Error: Tag No column required</p>';
+                    return;
+                }
+                let count = 0;
+                let newProductData = {}; 
+                for (let i = 1; i < json.length; i++) {
+                    const row = json[i];
+                    const tagNo = (row[cols.tagNo] || '').toString().trim().toUpperCase();
+                    if (!tagNo) continue;
+                    const grossWt = cols.grossWeight !== -1 ? parseFloat(row[cols.grossWeight]) || 0 : 0;
+                    const netWt = cols.netWeight !== -1 ? parseFloat(row[cols.netWeight]) || 0 : grossWt;
+                    newProductData[tagNo] = {
+                        itemName: cols.itemName !== -1 ? (row[cols.itemName] || '').toString().trim() : '',
+                        grossWeight: grossWt,
+                        netWeight: netWt,
+                        makingPercent: cols.makingPct !== -1 ? parseFloat(row[cols.makingPct]) || 0 : 0,
+                        makingPerGram: cols.mGram !== -1 ? parseFloat(row[cols.mGram]) || 0 : 0,
+                        makingPerPc: cols.mPc !== -1 ? parseFloat(row[cols.mPc]) || 0 : 0,
+                        mrp: cols.mrp !== -1 ? parseFloat(row[cols.mrp]) || 0 : 0,
+                        otherCharge: cols.otherCharge !== -1 ? parseFloat(row[cols.otherCharge]) || 0 : 0,
+                        metal: cols.metal !== -1 ? (row[cols.metal] || '').toString().trim().toLowerCase() : '',
+                        stamp: cols.stamp !== -1 ? (row[cols.stamp] || '').toString().trim().toUpperCase() : ''
+                    };
+                    count++;
+                }
+                productData = newProductData; 
+                saveAllDataToCloud(); // SAVE TO CLOUD
+                document.getElementById('excel-info').innerHTML = `<p>Loaded ${count} products</p>`;
+            };
+            reader.readAsArrayBuffer(file);
+        }
+        function findColumn(headers, names) {
+            for (let i = 0; i < headers.length; i++) {
+                for (let name of names) {
+                    if (headers[i] === name.toLowerCase()) return i;
+                }
+            }
+            return -1;
+        }
+
+        function updateRate() {
+            if (!checkPin()) return; // PIN check added
+            const metal = document.getElementById('metal-select').value.toLowerCase();
+            const stamp = document.getElementById('stamp-select').value;
+            const price = parseFloat(document.getElementById('price-per-gram').value);
+            if (rates[metal] && rates[metal][stamp] !== undefined && !isNaN(price)) {
+                rates[metal][stamp] = price;
+                saveAllDataToCloud(); // SAVE TO CLOUD
+                alert(`Updated: ${metal} ${stamp} → ₹${price}/g`);
+                document.getElementById('price-per-gram').value = '';
+                // Rerendering will happen automatically via Firebase listener
+            } else {
+                alert('Invalid input');
+            }
+        }
+        function updateTax() {
+            if (!checkPin()) return; // PIN check added
+            const tax = parseFloat(document.getElementById('tax-percent').value);
+            if (!isNaN(tax)) {
+                taxRate = tax;
+                saveAllDataToCloud(); // SAVE TO CLOUD
+                alert(`Tax updated to ${tax}%`);
+                document.getElementById('tax-percent').value = tax;
+                // Rerendering will happen automatically via Firebase listener
+            } else {
+                alert('Invalid tax');
+            }
+        }
+        
         document.addEventListener('DOMContentLoaded', () => {
             const metalSelect = document.getElementById('metal-select');
             metalSelect.addEventListener('change', () => {
@@ -1031,16 +1487,17 @@
                 populateStamps('manage-stamp', value);
                 updateRemoveButton();
             });
-            
+
             // Initial setup for the rates screen (will be overridden by syncData)
             populateStamps('stamp-select', 'Gold');
             populateStamps('manage-stamp', 'Gold');
             updateRemoveButton();
             document.getElementById('manage-stamp').addEventListener('change', updateRemoveButton);
+
             showSection('main');
 
             const barcodeInput = document.getElementById('barcode');
-
+            
             // --- Global keydown listener for seamless scanning ---
             document.addEventListener('keydown', function(event) {
                 // Only act on the main screen
@@ -1072,397 +1529,17 @@
                 if (event.key === 'Enter') { 
                     event.preventDefault();
                     const barcode = barcodeInput.value.trim().toUpperCase();
-                    barcodeInput.value = '';
-                    barcodeInput.focus();
-                    lookupProduct(barcode, true);
+                    barcodeInput.value = ''; // Clear input
+                    barcodeInput.focus(); // Refocus
+                    lookupProduct(barcode); // Trigger lookup
                 }
             });
             // --------------------------------------------------------------------------
+            
+            // At the end of the script, start the sync process
+            syncData();
         });
-        function addStamp() {
-            if (!checkPin()) return; // PIN check added
-            const metal = document.getElementById('metal-select').value.toLowerCase();
-            const newStamp = document.getElementById('new-stamp').value.trim().toUpperCase();
-            if (!metal || !newStamp) {
-                alert('Please select metal and enter stamp name');
-                return;
-            }
-            if (rates[metal][newStamp]) {
-                alert('Stamp already exists');
-                return;
-            }
-            rates[metal][newStamp] = 0;
-            saveAllDataToCloud(); // SAVE TO CLOUD
-            document.getElementById('new-stamp').value = '';
-            const metalValue = document.getElementById('metal-select').value;
-            populateStamps('stamp-select', metalValue);
-            populateStamps('manage-stamp', metalValue);
-            // setLooseDefaults(); // Re-evaluate loose defaults after changing rates
-            updateRemoveButton();
-            renderRatesTable();
-            alert(`Added ${newStamp} for ${metal}`);
-        }
-        function removeStamp() {
-            if (!checkPin()) return; // PIN check added
-            const metal = document.getElementById('metal-select').value.toLowerCase();
-            const stamp = document.getElementById('manage-stamp').value;
-            if (!stamp) {
-                alert('Please select a stamp to remove');
-                return;
-            }
-            if (confirm(`Remove ${stamp} for ${metal.toUpperCase()}?`)) {
-                delete rates[metal][stamp];
-                if (Object.keys(rates[metal]).length === 0) {
-                    // Only delete metal key if it's completely empty
-                }
-                saveAllDataToCloud(); // SAVE TO CLOUD
-                const metalValue = document.getElementById('metal-select').value;
-                populateStamps('stamp-select', metalValue);
-                populateStamps('manage-stamp', metalValue);
-                // setLooseDefaults(); // Re-evaluate loose defaults after changing rates
-                updateRemoveButton();
-                renderRatesTable();
-                alert(`Removed ${stamp}`);
-            }
-        }
-        function renameStamp() {
-            if (!checkPin()) return; // PIN check added
-            const metal = document.getElementById('metal-select').value.toLowerCase();
-            const oldStamp = document.getElementById('manage-stamp').value;
-            const newName = document.getElementById('rename-to').value.trim().toUpperCase();
-            if (!oldStamp) {
-                alert('Please select a stamp to rename');
-                return;
-            }
-            if (!newName || newName === oldStamp) {
-                alert('Please enter a different new name');
-                return;
-            }
-            if (rates[metal][newName]) {
-                alert('New name already exists');
-                return;
-            }
-            rates[metal][newName] = rates[metal][oldStamp];
-            delete rates[metal][oldStamp];
-            saveAllDataToCloud(); // SAVE TO CLOUD
-            document.getElementById('rename-to').value = '';
-            const metalValue = document.getElementById('metal-select').value;
-            populateStamps('stamp-select', metalValue);
-            populateStamps('manage-stamp', metalValue);
-            // setLooseDefaults(); // Re-evaluate loose defaults after changing rates
-            updateRemoveButton();
-            renderRatesTable();
-            alert(`Renamed ${oldStamp} to ${newName}`);
-        }
-        function loadExcel() {
-            if (!checkPin()) { // PIN check added
-                // Clear the file input if PIN fails to prevent accidental upload on re-try
-                document.getElementById('excel-file').value = ''; 
-                return; 
-            }
-            
-            const file = document.getElementById('excel-file').files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, {type: 'array'});
-                const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                const json = XLSX.utils.sheet_to_json(sheet, {header: 1});
-                const headers = (json[0] || []).map(h => (h || '').toString().trim().toLowerCase());
-                const cols = {
-                    tagNo: findColumn(headers, ['tag no', 'tagno', 'barcode']),
-                    itemName: findColumn(headers, ['item name', 'name', 'product name', 'item']),
-                    grossWeight: findColumn(headers, ['gr. wt.', 'gr wt', 'gross weight', 'gross wt', 'grossweight']),
-                    netWeight: findColumn(headers, ['n. wt.', 'n wt', 'net weight', 'net wt', 'netweight']),
-                    makingPct: findColumn(headers, ['making (%)', 'making%', 'making percent']),
-                    mGram: findColumn(headers, ['making (per g)', 'making per g', 'making/g', 'mc/g']),
-                    mPc: findColumn(headers, ['making (per pc)', 'making per pc', 'making/pc', 'mc/pc']),
-                    mrp: findColumn(headers, ['mrp', 'price', 'selling price', 'final price']),
-                    otherCharge: findColumn(headers, ['other charge', 'other', 'extra charge']),
-                    metal: findColumn(headers, ['metal']),
-                    stamp: findColumn(headers, ['stamp'])
-                };
-                if (cols.tagNo === -1) {
-                    document.getElementById('excel-info').innerHTML = '<p style="color:red;">Error: Tag No column required</p>';
-                    return;
-                }
-                let count = 0;
-                let newProductData = {}; // Build new data set
-                for (let i = 1; i < json.length; i++) {
-                    const row = json[i];
-                    const tagNo = (row[cols.tagNo] || '').toString().trim().toUpperCase();
-                    if (!tagNo) continue;
-                    const grossWt = cols.grossWeight !== -1 ? parseFloat(row[cols.grossWeight]) || 0 : 0;
-                    const netWt = cols.netWeight !== -1 ? parseFloat(row[cols.netWeight]) || 0 : grossWt;
-                    newProductData[tagNo] = {
-                        itemName: cols.itemName !== -1 ? (row[cols.itemName] || '').toString().trim() : '',
-                        grossWeight: grossWt,
-                        netWeight: netWt,
-                        makingPercent: cols.makingPct !== -1 ? parseFloat(row[cols.makingPct]) || 0 : 0,
-                        makingPerGram: cols.mGram !== -1 ? parseFloat(row[cols.mGram]) || 0 : 0,
-                        makingPerPc: cols.mPc !== -1 ? parseFloat(row[cols.mPc]) || 0 : 0,
-                        mrp: cols.mrp !== -1 ? parseFloat(row[cols.mrp]) || 0 : 0,
-                        otherCharge: cols.otherCharge !== -1 ? parseFloat(row[cols.otherCharge]) || 0 : 0,
-                        metal: cols.metal !== -1 ? (row[cols.metal] || '').toString().trim().toLowerCase() : '',
-                        stamp: cols.stamp !== -1 ? (row[cols.stamp] || '').toString().trim().toUpperCase() : ''
-                    };
-                    count++;
-                }
-                productData = newProductData; // Replace old product data
-                saveAllDataToCloud(); // SAVE TO CLOUD
-                document.getElementById('excel-info').innerHTML = `<p>Loaded ${count} products</p>`;
-            };
-            reader.readAsArrayBuffer(file);
-        }
-        function findColumn(headers, names) {
-            for (let i = 0; i < headers.length; i++) {
-                for (let name of names) {
-                    if (headers[i] === name.toLowerCase()) return i;
-                }
-            }
-            return -1;
-        }
-        // MODIFIED: Accepts barcode as argument and has 'isInitialLookup' flag
-        function lookupProduct(barcode, isInitialLookup) {
-            // Only update currentBarcode if this is triggered by a new user input/scan
-            if (isInitialLookup) {
-                currentBarcode = barcode;
-                // Clear display elements before showing the result
-                document.getElementById('product-code').textContent = '';
-                document.getElementById('price-display').textContent = '0.00';
-                document.getElementById('price-display').classList.remove('show');
-                document.getElementById('detail-btn').style.display = 'none';
-                document.getElementById('alter-btn').style.display = 'none';
-                document.getElementById('clear-screen-btn').style.display = 'none';
-                makingOverride = null;
-                currentMakingType = '';
-                currentMakingInput = 0;
-            } else {
-                // If not initial lookup (i.e., triggered by sync), use existing currentBarcode
-                barcode = currentBarcode;
-            }
-
-            if (!barcode) return;
-            
-            if (!productData[barcode]) {
-                document.getElementById('product-code').textContent = `Barcode: ${barcode} - Not found`;
-                document.getElementById('clear-screen-btn').style.display = 'inline-block';
-                return;
-            }
-            currentProduct = productData[barcode];
-            const d = currentProduct;
-            let final = 0, making = 0, otherCharge = d.otherCharge || 0;
-            currentTaxAmount = 0;
-            const weight = d.netWeight;
-            
-            // --- Price Calculation Logic ---
-            if (d.mrp > 0) {
-                let total = d.mrp + otherCharge;
-                currentTaxAmount = total * (taxRate / 100);
-                final = total + currentTaxAmount;
-            } else {
-                const mKey = d.metal, stamp = d.stamp;
-                if (!mKey || !stamp || !rates[mKey] || rates[mKey][stamp] === undefined || rates[mKey][stamp] === 0) {
-                    document.getElementById('product-code').textContent = `Barcode: ${barcode} - Rates missing or zero for ${d.metal} ${d.stamp}`;
-                    document.getElementById('clear-screen-btn').style.display = 'inline-block';
-                    return;
-                }
-                const rate = rates[mKey][stamp];
-                const metalVal = weight * rate;
-                
-                // Determine Making Charge and Type
-                if (d.makingPerPc > 0) {
-                    making = d.makingPerPc;
-                    currentMakingType = 'per pc';
-                    currentMakingInput = d.makingPerPc;
-                } else if (d.makingPerGram > 0) {
-                    making = d.makingPerGram * weight;
-                    currentMakingType = 'per g';
-                    currentMakingInput = d.makingPerGram;
-                } else if (d.makingPercent > 0) {
-                    making = metalVal * (d.makingPercent / 100);
-                    currentMakingType = '%';
-                    currentMakingInput = d.makingPercent;
-                } else {
-                    currentMakingType = '';
-                }
-                
-                let total = metalVal + making + otherCharge;
-                currentTaxAmount = total * (taxRate / 100);
-                final = total + currentTaxAmount;
-
-                if (currentMakingType !== '') {
-                    document.getElementById('alter-btn').style.display = 'inline-block';
-                }
-            }
-            // --- End Price Calculation Logic ---
-
-            currentFinalPrice = final;
-            document.getElementById('product-code').textContent = `Barcode: ${barcode} | Product: ${d.itemName || 'Unknown'}`;
-            document.getElementById('price-display').textContent = `${final.toFixed(2)}`;
-            document.getElementById('price-display').classList.add('show');
-            document.getElementById('detail-btn').style.display = 'inline-block';
-            document.getElementById('clear-screen-btn').style.display = 'inline-block';
-        }
-        function openAlterDialog() {
-            if (!currentProduct || currentMakingType === '') {
-                alert('No making charge to alter.');
-                return;
-            }
-            const html = `<p><strong>Current:</strong> ${currentMakingInput.toFixed(2)} ${currentMakingType}</p>`;
-            document.getElementById('alter-body').innerHTML = html;
-            document.getElementById('new-making').placeholder = `Enter new value (in ${currentMakingType})`;
-            document.getElementById('new-making').value = '';
-            document.getElementById('alter-modal').style.display = 'flex';
-            document.getElementById('new-making').focus();
-        }
-        function closeAlter() {
-            document.getElementById('alter-modal').style.display = 'none';
-        }
-        function updateMaking() {
-            const newInput = parseFloat(document.getElementById('new-making').value);
-            if (isNaN(newInput) || newInput < 0) {
-                alert('Enter a valid positive number.');
-                return;
-            }
-            makingOverride = { type: currentMakingType, input: newInput };
-            const weight = currentProduct.netWeight;
-            const rate = rates[currentProduct.metal][currentProduct.stamp];
-            const metalVal = weight * rate;
-            let newMaking = 0, otherCharge = currentProduct.otherCharge || 0;
-            if (currentMakingType === '%') {
-                newMaking = metalVal * (newInput / 100);
-            } else if (currentMakingType === 'per g') {
-                newMaking = newInput * weight;
-            } else { // per pc
-                newMaking = newInput;
-            }
-            let total = metalVal + newMaking + otherCharge;
-            currentTaxAmount = total * (taxRate / 100);
-            currentFinalPrice = total + currentTaxAmount;
-            document.getElementById('price-display').textContent = `${currentFinalPrice.toFixed(2)}`;
-            closeAlter();
-        }
-        function showDetails() {
-            if (!currentProduct) return;
-            const d = currentProduct;
-            let html = `
-                <p><strong>Item Name:</strong> <span>${d.itemName || ''}</span></p>
-                <p><strong>Barcode:</strong> <span>${currentBarcode}</span></p>
-                <p><strong>Gr. Wt.:</strong> <span>${d.grossWeight.toFixed(2)}g</span></p>
-                <p><strong>N. Wt.:</strong> <span>${d.netWeight.toFixed(2)}g</span></p>
-                <p><strong>Other Charge:</strong> <span>${(d.otherCharge || 0).toFixed(2)}</span></p>
-            `;
-            if (d.mrp > 0) {
-                html += `
-                    <p><strong>Type:</strong> <span>Fixed MRP</span></p>
-                    <p><strong>MRP:</strong> <span>${d.mrp.toFixed(2)}</span></p>
-                    <hr>
-                    <p><strong>Tax (${taxRate}%):</strong> <span>${currentTaxAmount.toFixed(2)}</span></p>
-                    <p><strong>Final Amount:</strong> <span>${currentFinalPrice.toFixed(2)}</span></p>
-                `;
-            } else {
-                const mKey = d.metal, stamp = d.stamp;
-                const rate = rates[mKey] && rates[mKey][stamp] !== undefined ? rates[mKey][stamp] : 0;
-                let makingStr = '0';
-                if (makingOverride) {
-                    const ov = makingOverride;
-                    if (ov.type === '%') {
-                        makingStr = `${ov.input}%`;
-                    } else if (ov.type === 'per g') {
-                        makingStr = `${ov.input.toFixed(2)} (per g)`;
-                    } else {
-                        makingStr = `${ov.input.toFixed(2)} (per pc)`;
-                    }
-                } else {
-                    if (d.makingPerPc > 0) {
-                        makingStr = `${d.makingPerPc.toFixed(2)} (per pc)`;
-                    } else if (d.makingPerGram > 0) {
-                        makingStr = `${d.makingPerGram.toFixed(2)} (per g)`;
-                    } else if (d.makingPercent > 0) {
-                        makingStr = `${d.makingPercent}%`;
-                    }
-                }
-                html += `
-                    <p><strong>Metal:</strong> <span>${mKey.charAt(0).toUpperCase() + mKey.slice(1)}</span></p>
-                    <p><strong>Stamp:</strong> <span>${stamp}</span></p>
-                    <p><strong>Making:</strong> <span>${makingStr}</span></p>
-                    <p><strong>Rate/g:</strong> <span>${rate.toFixed(2)}</span></p>
-                    <hr>
-                    <p><strong>Tax (${taxRate}%):</strong> <span>${currentTaxAmount.toFixed(2)}</span></p>
-                    <p><strong>Final Amount:</strong> <span>${currentFinalPrice.toFixed(2)}</span></p>
-                `;
-            }
-            document.getElementById('detail-body').innerHTML = html;
-            document.getElementById('detail-modal').style.display = 'flex';
-        }
-        function closeDetails() {
-            document.getElementById('detail-modal').style.display = 'none';
-        }
-        function clearAll() {
-            document.getElementById('barcode').value = '';
-            document.getElementById('product-code').textContent = '';
-            document.getElementById('price-display').textContent = '0.00';
-            document.getElementById('price-display').classList.remove('show');
-            document.getElementById('detail-btn').style.display = 'none';
-            document.getElementById('alter-btn').style.display = 'none';
-            document.getElementById('clear-screen-btn').style.display = 'none';
-            makingOverride = null;
-            currentMakingType = '';
-            currentMakingInput = 0;
-            currentBarcode = '';
-            document.getElementById('barcode').focus();
-            closeOptions();
-        }
-        function updateRate() {
-            if (!checkPin()) return; // PIN check added
-            const metal = document.getElementById('metal-select').value.toLowerCase();
-            const stamp = document.getElementById('stamp-select').value;
-            const price = parseFloat(document.getElementById('price-per-gram').value);
-            if (rates[metal] && rates[metal][stamp] !== undefined && !isNaN(price)) {
-                rates[metal][stamp] = price;
-                saveAllDataToCloud(); // SAVE TO CLOUD
-                alert(`Updated: ${metal} ${stamp} → ₹${price}/g`);
-                document.getElementById('price-per-gram').value = '';
-                // Rerendering will happen automatically via Firebase listener
-            } else {
-                alert('Invalid input');
-            }
-        }
-        function updateTax() {
-            if (!checkPin()) return; // PIN check added
-            const tax = parseFloat(document.getElementById('tax-percent').value);
-            if (!isNaN(tax)) {
-                taxRate = tax;
-                saveAllDataToCloud(); // SAVE TO CLOUD
-                alert(`Tax updated to ${tax}%`);
-                document.getElementById('tax-percent').value = tax;
-                // Rerendering will happen automatically via Firebase listener
-            } else {
-                alert('Invalid tax');
-            }
-        }
         
-        // At the end of the script, start the sync process
-        document.addEventListener('DOMContentLoaded', syncData);
-
     </script>
-
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          // Note: Relative path 'sw.js' for GitHub Pages compatibility
-          navigator.serviceWorker.register('sw.js') 
-            .then(registration => {
-              console.log('ServiceWorker registration successful');
-            })
-            .catch(err => {
-              console.log('ServiceWorker registration failed: ', err);
-            });
-        });
-      }
-    </script>
-    </body>
+</body>
 </html>
