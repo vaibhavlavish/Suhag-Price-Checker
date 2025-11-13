@@ -20,28 +20,16 @@
         import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
         // Your web app's Firebase configuration
-
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-
-const firebaseConfig = {
-
-  apiKey: "AIzaSyDaRjbdCnfx5-C4OXQaByZMxK2r0Cu19bI",
-
-  authDomain: "suhag-f53e4.firebaseapp.com",
-
-  databaseURL: "https://suhag-f53e4-default-rtdb.asia-southeast1.firebasedatabase.app",
-
-  projectId: "suhag-f53e4",
-
-  storageBucket: "suhag-f53e4.firebasestorage.app",
-
-  messagingSenderId: "231258063675",
-
-  appId: "1:231258063675:web:1c79c2a0d4d5796a6d2d1e",
-
-  measurementId: "G-MJ1BBWZFVW"
-
-};
+        const firebaseConfig = {
+          apiKey: "AIzaSyDaRjbdCnfx5-C4OXQaByZMxK2r0Cu19bI",
+          authDomain: "suhag-f53e4.firebaseapp.com",
+          databaseURL: "https://suhag-f53e4-default-rtdb.asia-southeast1.firebasedatabase.app",
+          projectId: "suhag-f53e4",
+          storageBucket: "suhag-f53e4.firebasestorage.app",
+          messagingSenderId: "231258063675",
+          appId: "1:231258063675:web:1c79c2a0d4d5796a6d2d1e",
+          measurementId: "G-MJ1BBWZFVW"
+        };
 
 
         // Initialize Firebase
@@ -148,9 +136,6 @@ const firebaseConfig = {
         }
         #options-menu button:last-child {
             border-bottom: none;
-        }
-        #options-menu button:hover {
-            background-color: #f0f0f0;
         }
         #options-menu button.danger {
             color: #d32f2f;
@@ -507,7 +492,7 @@ const firebaseConfig = {
         </div>
     </div>
     <div id="main-screen">
-        <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus oninput="lookupProduct()">
+        <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus>
         <div id="product-code"></div>
         <h1 id="price-display">0.00</h1>
         <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
@@ -593,7 +578,7 @@ const firebaseConfig = {
         <button onclick="showSection('main')">Back to Main</button>
     </div>
     <script>
-        // --- NEW PIN LOGIC START ---
+        // --- PIN LOGIC ---
         const ADMIN_PIN = '9898'; // Change this PIN to your desired password!
 
         function checkPin() {
@@ -611,7 +596,7 @@ const firebaseConfig = {
                 clearAllData();
             }
         }
-        // --- NEW PIN LOGIC END ---
+        // -----------------
 
 
         // Default rates structure
@@ -634,18 +619,17 @@ const firebaseConfig = {
         let currentBarcode = '';
 
 
-        // === NEW FIREBASE SYNC FUNCTIONS (REPLACING LOCALSTORAGE) ===
+        // === FIREBASE SYNC FUNCTIONS ===
 
         function syncData() {
-            // Check for Firebase variables created in the module script
             if (!window.dbOnValue) {
                 console.error("Firebase SDK not loaded correctly. Check console/network tab.");
+                // Fallback or error handling for no Firebase connection could go here
                 return;
             }
 
             const dataRef = window.dbRef(window.firebaseDB, 'jewelryData');
 
-            // 'onValue' triggers once immediately and then every time data changes
             window.dbOnValue(dataRef, (snapshot) => {
                 const cloudData = snapshot.val() || {};
 
@@ -665,7 +649,7 @@ const firebaseConfig = {
                 
                 // Since data can change at any time, re-lookup the current barcode
                 if (currentBarcode) {
-                    lookupProduct();
+                    lookupProduct(currentBarcode, false); // Pass current barcode to re-lookup without clearing/refocusing
                 } else {
                     // Update tax input field on rate update
                     document.getElementById('tax-percent').value = taxRate;
@@ -675,12 +659,10 @@ const firebaseConfig = {
 
             }, (error) => {
                 console.error("Firebase read failed:", error);
-                // Fallback (Removed local storage fallback to force cloud reliance/error awareness)
                 alert("Error connecting to cloud database. Please check your connection.");
             });
         }
 
-        // Save ALL data to Firebase at once
         function saveAllDataToCloud() {
             if (!window.dbSet) return;
             const dataToSave = {
@@ -688,7 +670,6 @@ const firebaseConfig = {
                 taxRate: taxRate,
                 products: productData
             };
-            // Set the entire object to the root of our application data path
             window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToSave)
                 .then(() => {
                     console.log("Data saved to Firebase successfully.");
@@ -703,7 +684,6 @@ const firebaseConfig = {
             if (!window.dbSet) return;
             // PIN is checked in clearAllDataWrapper()
             if (confirm('Clear ALL synced data (rates, tax, products)? This cannot be undone.')) {
-                // Clear data in Firebase by setting it to an empty object
                 window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), {})
                     .then(() => {
                         alert('All data cleared from the cloud.');
@@ -716,7 +696,7 @@ const firebaseConfig = {
             }
         }
         
-        // --- END NEW FIREBASE SYNC FUNCTIONS ---
+        // --- END FIREBASE SYNC FUNCTIONS ---
 
 
         function clearAndFocus() {
@@ -807,6 +787,46 @@ const firebaseConfig = {
             updateRemoveButton();
             document.getElementById('manage-stamp').addEventListener('change', updateRemoveButton);
             showSection('main');
+
+            const barcodeInput = document.getElementById('barcode');
+
+            // --- NEW: Global keydown listener for seamless scanning ---
+            document.addEventListener('keydown', function(event) {
+                // Check if the currently active element is already the barcode input.
+                if (document.activeElement === barcodeInput) {
+                    return; 
+                }
+
+                // Check if the keypress is a single character key (typical of scanner input) 
+                // and not a modified key (like Ctrl+C, F5, etc.)
+                if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                    // Check if the active element is another input field where the user is typing 
+                    // (if so, don't steal focus).
+                    const activeTag = document.activeElement.tagName.toLowerCase();
+                    if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
+                        return;
+                    }
+                    
+                    // Steal focus to the barcode input so the scanner output is captured
+                    barcodeInput.focus();
+                }
+            });
+            // ---------------------------------------------------------
+
+
+            // --- EXISTING: Add keydown listener to trigger lookup only on Enter keypress ---
+            barcodeInput.addEventListener('keydown', function(event) {
+                // Check for Enter key press
+                if (event.key === 'Enter') { 
+                    event.preventDefault(); // Prevent form submission/line break
+                    const barcode = barcodeInput.value.trim().toUpperCase();
+                    // Clear and refocus immediately
+                    barcodeInput.value = '';
+                    barcodeInput.focus();
+                    lookupProduct(barcode, true); // Trigger lookup, pass true for initial lookup
+                }
+            });
+            // --------------------------------------------------------------------------
         });
         function addStamp() {
             if (!checkPin()) return; // PIN check added
@@ -950,19 +970,28 @@ const firebaseConfig = {
             }
             return -1;
         }
-        function lookupProduct() {
-            const barcode = document.getElementById('barcode').value.trim().toUpperCase();
-            document.getElementById('product-code').textContent = '';
-            document.getElementById('price-display').textContent = '0.00';
-            document.getElementById('price-display').classList.remove('show');
-            document.getElementById('detail-btn').style.display = 'none';
-            document.getElementById('alter-btn').style.display = 'none';
-            document.getElementById('clear-screen-btn').style.display = 'none';
-            makingOverride = null;
-            currentMakingType = '';
-            currentMakingInput = 0;
-            currentBarcode = barcode;
+        // MODIFIED: Accepts barcode as argument and has 'isInitialLookup' flag
+        function lookupProduct(barcode, isInitialLookup) {
+            // Only update currentBarcode if this is triggered by a new user input/scan
+            if (isInitialLookup) {
+                currentBarcode = barcode;
+                // Clear display elements before showing the result
+                document.getElementById('product-code').textContent = '';
+                document.getElementById('price-display').textContent = '0.00';
+                document.getElementById('price-display').classList.remove('show');
+                document.getElementById('detail-btn').style.display = 'none';
+                document.getElementById('alter-btn').style.display = 'none';
+                document.getElementById('clear-screen-btn').style.display = 'none';
+                makingOverride = null;
+                currentMakingType = '';
+                currentMakingInput = 0;
+            } else {
+                // If not initial lookup (i.e., triggered by sync), use existing currentBarcode
+                barcode = currentBarcode;
+            }
+
             if (!barcode) return;
+            
             if (!productData[barcode]) {
                 document.getElementById('product-code').textContent = `Barcode: ${barcode} - Not found`;
                 document.getElementById('clear-screen-btn').style.display = 'inline-block';
@@ -973,6 +1002,8 @@ const firebaseConfig = {
             let final = 0, making = 0, otherCharge = d.otherCharge || 0;
             currentTaxAmount = 0;
             const weight = d.netWeight;
+            
+            // --- Price Calculation Logic ---
             if (d.mrp > 0) {
                 let total = d.mrp + otherCharge;
                 currentTaxAmount = total * (taxRate / 100);
@@ -986,6 +1017,8 @@ const firebaseConfig = {
                 }
                 const rate = rates[mKey][stamp];
                 const metalVal = weight * rate;
+                
+                // Determine Making Charge and Type
                 if (d.makingPerPc > 0) {
                     making = d.makingPerPc;
                     currentMakingType = 'per pc';
@@ -1001,13 +1034,17 @@ const firebaseConfig = {
                 } else {
                     currentMakingType = '';
                 }
+                
                 let total = metalVal + making + otherCharge;
                 currentTaxAmount = total * (taxRate / 100);
                 final = total + currentTaxAmount;
+
                 if (currentMakingType !== '') {
                     document.getElementById('alter-btn').style.display = 'inline-block';
                 }
             }
+            // --- End Price Calculation Logic ---
+
             currentFinalPrice = final;
             document.getElementById('product-code').textContent = `Barcode: ${barcode} | Product: ${d.itemName || 'Unknown'}`;
             document.getElementById('price-display').textContent = `${final.toFixed(2)}`;
