@@ -279,6 +279,7 @@
             font-size: 15px;
             display: flex;
             justify-content: space-between;
+            align-items: center; /* Ensures button aligns nicely */
             padding: 6px 0;
             border-bottom: 1px dashed #eee;
         }
@@ -699,6 +700,7 @@
         let currentProduct = null;
         let currentFinalPrice = 0;
         let currentTaxAmount = 0;
+        let currentMakingAmount = 0; // <-- NEW: Global var for making charge
         let currentMakingType = '';
         let currentMakingInput = 0;
         let makingOverride = null;
@@ -1175,6 +1177,9 @@
                 currentTaxAmount = total * (taxRate / 100);
                 final = total + currentTaxAmount;
 
+                // NEW: Store calculated making amount
+                currentMakingAmount = making;
+
                 if (currentMakingType !== '') {
                     document.getElementById('alter-btn').style.display = 'inline-block';
                 }
@@ -1282,10 +1287,19 @@
                     makingStr = `${makingInput.toFixed(2)} (per pc)`;
                 }
                 
+                // NEW: Added Show Amount Button with (i) styling
                 html += `
                     <p><strong>Metal:</strong> <span>${mKey.charAt(0).toUpperCase() + mKey.slice(1)}</span></p>
                     <p><strong>Stamp:</strong> <span>${stamp}</span></p>
-                    <p><strong>Making:</strong> <span>${makingStr}</span></p>
+                    <p><strong>Making:</strong> 
+                        <span>
+                            <button onclick="alert('Making Charge Amount: ₹' + currentMakingAmount.toFixed(2))" 
+                                    style="width: 20px; height: 20px; border-radius: 50%; border: 1px solid #999; background: #eee; color: #333; font-size: 14px; font-weight: bold; font-style: normal; padding: 0; line-height: 19px; text-align: center; cursor: pointer; margin-right: 8px; vertical-align: middle;">
+                                i
+                            </button>
+                            ${makingStr}
+                        </span>
+                    </p>
                     <p><strong>Rate/g:</strong> <span>${rate.toFixed(2)}</span></p>
                     <hr>
                     <p><strong>Tax (${taxRate}%):</strong> <span>${currentTaxAmount.toFixed(2)}</span></p>
