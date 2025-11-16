@@ -1287,16 +1287,23 @@
                     makingStr = `${makingInput.toFixed(2)} (per pc)`;
                 }
                 
-                // NEW: Added Show Amount Button with (i) styling
+                // MODIFIED: Conditionally show the 'i' button only if making charge is below 1500
+                let infoButtonHtml = '';
+                if (currentMakingAmount > 0 && currentMakingAmount < 1500) {
+                    infoButtonHtml = `
+                        <button onclick="alert('Making Charge Amount: ₹' + currentMakingAmount.toFixed(2))" 
+                                style="width: 20px; height: 20px; border-radius: 50%; border: 1px solid #999; background: #eee; color: #333; font-size: 14px; font-weight: bold; font-style: normal; padding: 0; line-height: 19px; text-align: center; cursor: pointer; margin-right: 8px; vertical-align: middle;">
+                            i
+                        </button>
+                    `;
+                }
+
                 html += `
                     <p><strong>Metal:</strong> <span>${mKey.charAt(0).toUpperCase() + mKey.slice(1)}</span></p>
                     <p><strong>Stamp:</strong> <span>${stamp}</span></p>
                     <p><strong>Making:</strong> 
                         <span>
-                            <button onclick="alert('Making Charge Amount: ₹' + currentMakingAmount.toFixed(2))" 
-                                    style="width: 20px; height: 20px; border-radius: 50%; border: 1px solid #999; background: #eee; color: #333; font-size: 14px; font-weight: bold; font-style: normal; padding: 0; line-height: 19px; text-align: center; cursor: pointer; margin-right: 8px; vertical-align: middle;">
-                                i
-                            </button>
+                            ${infoButtonHtml}
                             ${makingStr}
                         </span>
                     </p>
