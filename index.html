@@ -717,7 +717,7 @@
         <input type="hidden" id="loose-making-percent" value="35">
         
         <label for="loose-weight">Weight (Grams):</label>
-        <input type="number" id="loose-weight" placeholder="Enter weight in grams" step="0.01" oninput="calculateLoosePrice()">
+        <input type="number" id="loose-weight" placeholder="Enter weight in grams" step="0.25" oninput="calculateLoosePrice()">
         
         <hr style="display: none;">
 
@@ -750,7 +750,7 @@
             <h3>Alter Making Charge</h3>
             <div id="alter-body"></div>
             <label for="new-making">New Making Charge (same unit):</label>
-            <input type="number" id="new-making" step="0.01">
+            <input type="number" id="new-making" step="0.25">
             <div id="alter-buttons">
                 <button id="update-making-btn" onclick="updateMaking()">Update</button>
                 <button id="cancel-making-btn" onclick="closeModal('alter-modal')">Cancel</button>
@@ -773,7 +773,7 @@
                 <select id="modal-loose-stamp-select"></select>
 
                 <label for="modal-loose-making-percent">Making Charge (%):</label>
-                <input type="number" id="modal-loose-making-percent" placeholder="e.g., 35" step="0.01">
+                <input type="number" id="modal-loose-making-percent" placeholder="e.g., 35" step="0.25">
             </div>
             <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 16px;">
                 <button id="save-loose-defaults-btn" onclick="saveLooseDefaultsToCloud()" 
@@ -829,7 +829,7 @@
         <select id="stamp-select"></select>
       
         <label for="price-per-gram">Price per Gram (₹):</label>
-        <input type="number" id="price-per-gram" placeholder="e.g., 11185" step="0.01">
+        <input type="number" id="price-per-gram" placeholder="e.g., 11185" step="0.25">
       
         <button onclick="updateRate()">Update Rate</button>
       
