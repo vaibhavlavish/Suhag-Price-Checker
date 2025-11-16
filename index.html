@@ -153,6 +153,10 @@
             background-color: #f5f5f5;
             overflow-y: auto;
             min-height: calc(100vh - 60px);
+            /* Center the content block */
+            width: 100%;
+            max-width: 480px; /* Max width for content */
+            margin: 0 auto;
         }
         #loose-calculator {
             flex: 1;
@@ -213,60 +217,103 @@
         #price-display.show {
             opacity: 1;
         }
-        #detail-btn, #alter-btn, .clear-btn {
-            margin: 8px 4px 0;
-            padding: 12px 28px;
+
+        /* --- NEW BUTTON LAYOUT STYLES --- */
+        #main-buttons-container {
+            width: 100%;
+            max-width: 420px; /* Match the modal width */
+            display: flex;
+            flex-direction: column;
+            gap: 8px; /* Space between button rows */
+            margin-top: 16px;
+        }
+        .button-row {
+            display: flex;
+            gap: 8px;
+        }
+        .full-width-btn {
+            flex: 1 1 100%;
+        }
+        .half-width-btn {
+            flex: 1 1 45%; /* Grow and shrink, start at 45% */
+        }
+        #detail-btn, #add-to-cart-btn, #alter-btn, .clear-btn, #cart-btn {
+            margin: 0; /* Reset margins */
+            padding: 12px 20px;
             font-size: 16px;
             font-weight: 600;
             color: white;
             border: none;
             border-radius: 25px;
             cursor: pointer;
-            display: none;
-            box-shadow: 0 3px 8px;
+            display: none; /* Hide all by default */
+            box-shadow: 0 3px 8px rgba(0,0,0,0.2);
             transition: all 0.2s;
+            text-align: center; /* Ensure text is centered */
+        }
+        #detail-btn:active, #add-to-cart-btn:active, #alter-btn:active, .clear-btn:active, #cart-btn:active {
+            transform: translateY(1px);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
         }
         #detail-btn {
             background-color: #2196F3;
-            box-shadow: 0 3px 8px rgba(33, 150, 243, 0.3);
+        }
+        #add-to-cart-btn {
+            background-color: #4CAF50; /* Green for add to cart */
         }
         #alter-btn {
             background-color: #FF9800;
-            box-shadow: 0 3px 8px rgba(255, 152, 0, 0.3);
         }
         .clear-btn {
             background-color: #f44336;
-            box-shadow: 0 3px 8px rgba(244, 67, 54, 0.3);
         }
-        #detail-btn:active, #alter-btn:active, .clear-btn:active {
-            transform: translateY(1px);
-            box-shadow: 0 1px 4px;
+        #cart-btn {
+            background-color: #555;
+            position: relative; /* For the counter */
         }
+        #cart-counter {
+            position: absolute;
+            top: -5px;
+            right: 10px;
+            background: #f44336;
+            color: white;
+            border-radius: 50%;
+            width: 22px;
+            height: 22px;
+            font-size: 14px;
+            line-height: 22px;
+            text-align: center;
+            font-weight: bold;
+        }
+        /* --- END NEW BUTTON LAYOUT STYLES --- */
+        
         /* Reused Modal Styles */
-        #detail-modal, #alter-modal, #loose-alter-modal {
+        #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal { /* Added cart and custom modal */
             display: none;
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0,0,0,0.75);
+            background-color: rgba(0,0,0,0.6);
             justify-content: center;
             align-items: center;
             z-index: 1000;
             padding: 15px;
+            animation: fadeIn 0.2s ease;
         }
-        #detail-content, #alter-content, #loose-alter-content {
+        #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content { /* Added cart and custom modal */
             background: white;
             padding: 20px;
             border-radius: 16px;
-            max-width: 380px;
+            max-width: 420px; /* Consistent width */
             width: 100%;
             box-shadow: 0 10px 30px rgba(0,0,0,0.3);
             max-height: 90vh;
-            overflow-y: auto;
+            display: flex; /* Use flex for easier content management */
+            flex-direction: column;
         }
-        #detail-content h3, #alter-content h3, #loose-alter-content h3 {
+        #detail-content h3, #alter-content h3, #loose-alter-content h3, #cart-content h3, #custom-modal-content h3 { /* Added cart and custom modal */
             margin: 0 0 16px 0;
             color: #333;
             font-size: 20px;
@@ -361,13 +408,14 @@
         #update-rates, #excel-upload { 
             display: none;
             max-width: 100%;
-            margin: 0;
+            margin: 0 auto; /* Center the sections */
             background: white;
             padding: 20px 15px;
-            border-radius: 0;
-            box-shadow: none;
+            border-radius: 12px; /* Add rounding */
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); /* Add shadow */
             flex: 1;
             overflow-y: auto;
+            max-width: 480px; /* Match main screen width */
         }
         #update-rates h2, #excel-upload h2, #loose-calculator h2 {
             color: #333;
@@ -388,7 +436,8 @@
             outline: none;
             box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
         }
-        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn) {
+        /* Updated button selector to exclude new cart buttons */
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn) {
             background-color: #4CAF50;
             color: white;
             cursor: pointer;
@@ -398,7 +447,7 @@
             width: auto;
             padding: 10px 16px;
         }
-        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):active {
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):active {
             transform: translateY(1px);
         }
         button:disabled {
@@ -479,6 +528,124 @@
             border-top: 1px solid #eee;
             margin: 20px 0;
         }
+        
+        /* --- Badge for Taskbar Cart Button --- */
+        #cart-btn-nav {
+            position: relative;
+        }
+        .badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background-color: #ef4444; /* Red */
+            color: white;
+            border-radius: 50%;
+            padding: 2px 5px;
+            font-size: 10px;
+            font-weight: 700;
+            min-width: 18px;
+            text-align: center;
+            line-height: 1.2;
+        }
+
+        /* --- NEW CART MODAL STYLES --- */
+        #cart-items-container {
+            flex-grow: 1; /* Allows list to scroll */
+            overflow-y: auto;
+            min-height: 100px; /* Ensures it has a size */
+            max-height: 40vh; /* Prevents it from taking full modal height */
+            padding-right: 5px;
+            margin-bottom: 15px;
+        }
+        .cart-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px dashed #eee;
+        }
+        .cart-item-details {
+            flex-grow: 1;
+            margin-right: 10px;
+            cursor: pointer; /* Clickable to view item */
+        }
+        .cart-item-details:hover {
+            text-decoration: underline;
+        }
+        .cart-item-title {
+            font-weight: 600;
+            color: #333;
+            font-size: 1.1em;
+        }
+        .cart-item-barcode {
+            font-size: 0.9em;
+            color: #777;
+        }
+        .cart-item-price {
+            font-weight: 700;
+            color: #4CAF50;
+            font-size: 1.1em;
+            flex-shrink: 0;
+            text-align: right;
+            min-width: 90px;
+        }
+        .remove-item-btn {
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            font-size: 20px; /* Larger 'x' */
+            font-weight: bold;
+            cursor: pointer;
+            margin-left: 10px;
+            flex-shrink: 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: all 0.1s;
+            /* FIXED: Flexbox centering */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1; /* Reset line-height */
+        }
+        .remove-item-btn:hover {
+            background: #d32f2f;
+        }
+        #cart-total-summary {
+            padding-top: 15px;
+            border-top: 2px solid #333;
+            font-size: 1.3em;
+            font-weight: 700;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+        .empty-cart-message {
+            text-align: center;
+            color: #999;
+            padding: 20px;
+        }
+        
+        /* Custom Modal for Alerts/Confirms */
+        #custom-modal-content {
+            text-align: center;
+        }
+        #custom-modal-message {
+            font-size: 1.1rem;
+            color: #333;
+            margin: 10px 0 20px 0;
+        }
+        #custom-modal-actions {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+        #custom-modal-actions button {
+            flex: 1;
+        }
+        
         /* Responsive adjustments */
         @media (min-width: 480px) {
             #taskbar {
@@ -495,7 +662,7 @@
             #price-display, #loose-price-display {
                 font-size: 56px;
             }
-            #detail-content, #alter-content, #loose-alter-content {
+            #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content {
                 max-width: 420px;
             }
             .manage-row {
@@ -508,6 +675,11 @@
     <div id="taskbar">
         <button onclick="showSection('main')" class="active">Main</button>
         <button onclick="showSection('loose-calculator')">Loose</button>
+        
+        <button id="cart-btn-nav" class="taskbar-btn" onclick="openCart()" style="max-width: 60px; background-color: #4CAF50;">
+            🛒
+            <span id="cart-counter-nav" class="badge" style="display: none;">0</span>
+        </button>
         <button id="options-btn" onclick="toggleOptions()">More</button>
         <div id="options-menu">
             <button onclick="showSection('update-rates')">Update Rates</button>
@@ -520,12 +692,23 @@
         <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus>
         <div id="product-code"></div>
         <h1 id="price-display">0.00</h1>
-        <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
-            <button onclick="clearAll()" class="clear-btn" id="clear-screen-btn">Clear Screen</button>
-            <button id="detail-btn" onclick="showDetails()">View Details</button>
-            <button id="alter-btn" onclick="openAlterDialog()">Alter</button>
+        
+        <div id="main-buttons-container">
+            <button onclick="clearAll()" class="clear-btn full-width-btn" id="clear-screen-btn">Clear Screen</button>
+            
+            <div class="button-row">
+                <button id="detail-btn" class="half-width-btn" onclick="showDetails()">View Details</button>
+                <button id="add-to-cart-btn" class="half-width-btn" onclick="addToCart()">Add to Cart</button>
+            </div>
+            
+            <button id="alter-btn" class="full-width-btn" onclick="openAlterDialog()">Alter</button>
+            
+            <button id="cart-btn" class="full-width-btn" onclick="openCart()">
+                🛒 View Cart
+                <span id="cart-counter" class="badge" style="display: none;">0</span>
+            </button>
         </div>
-    </div>
+        </div>
     <div id="loose-calculator">
         <h2 style="display: none;">Loose Jewellery Price Calculator</h2>
         
@@ -559,7 +742,7 @@
         <div id="detail-content">
             <h3>Product Details</h3>
             <div id="detail-body"></div>
-            <button id="close-modal" onclick="closeDetails()">Close</button>
+            <button id="close-modal" onclick="closeModal('detail-modal')">Close</button>
         </div>
     </div>
     <div id="alter-modal">
@@ -570,7 +753,7 @@
             <input type="number" id="new-making" step="0.01">
             <div id="alter-buttons">
                 <button id="update-making-btn" onclick="updateMaking()">Update</button>
-                <button id="cancel-making-btn" onclick="closeAlter()">Cancel</button>
+                <button id="cancel-making-btn" onclick="closeModal('alter-modal')">Cancel</button>
             </div>
         </div>
     </div>
@@ -599,7 +782,7 @@
                 </button>
                 <div id="modal-buttons" style="display: flex; gap: 10px;">
                     <button id="update-loose-inputs-btn" onclick="updateLooseInputs()" style="flex: 1; background-color: #4CAF50; color: white;">Apply Changes</button>
-                    <button id="cancel-loose-btn" onclick="closeLooseAlter()" style="flex: 1; background-color: #f44336; color: white;">Cancel</button>
+                    <button id="cancel-loose-btn" onclick="closeModal('loose-alter-modal')" style="flex: 1; background-color: #f44336; color: white;">Cancel</button>
                 </div>
             </div>
             <p style="font-size:12px; margin-top:10px; text-align:center; color:#999;">
@@ -607,6 +790,30 @@
             </p>
         </div>
     </div>
+
+    <div id="cart-modal" class="modal">
+        <div id="cart-content">
+            <h3>Shopping Cart</h3>
+            <div id="cart-items-container">
+                </div>
+            <div id="cart-total-summary">
+                <span>Total:</span>
+                <span id="cart-total-amount">₹0.00</span>
+            </div>
+            <button id="close-cart-modal" style="background-color: #555; margin-top: 15px;" onclick="closeModal('cart-modal')">Close</button>
+        </div>
+    </div>
+
+    <div id="custom-modal" class="modal">
+        <div id="custom-modal-content" style="max-width: 320px; text-align: center;">
+            <h3 id="custom-modal-title" style="font-size: 1.25rem; margin-bottom: 10px;">Alert</h3>
+            <p id="custom-modal-message" style="margin-bottom: 20px;">This is a message.</p>
+            <div id="custom-modal-actions" style="display: flex; gap: 10px;">
+                </div>
+        </div>
+    </div>
+
+
     <div id="update-rates">
         <h2>Update Stamp-Wise Rates</h2>
         <p style="font-size:14px; text-align:center; color:#666;"><em>Enter market rate per gram for purity</em></p>
@@ -666,14 +873,54 @@
     </div>
     <script>
         // --- PIN LOGIC ---
-        const ADMIN_PIN = '9898'; // Change this PIN to your desired password!
+        const ADMIN_PIN = '9898'; 
+
+        // --- NEW: Custom Alert/Confirm Functions ---
+        // (These replace all browser alert() and confirm() calls)
+        const customModal = document.getElementById('custom-modal');
+        const modalTitle = document.getElementById('custom-modal-title');
+        const modalMessage = document.getElementById('custom-modal-message');
+        const modalActions = document.getElementById('custom-modal-actions');
+        let confirmCallback = null;
+
+        function showCustomAlert(message, title = 'Alert') {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            modalActions.innerHTML = `<button class="action-btn primary-btn full-width-btn" onclick="closeCustomModal()">OK</button>`;
+            customModal.style.display = 'flex';
+        }
+
+        function showCustomConfirm(message, title = 'Confirm', onConfirm) {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            confirmCallback = onConfirm;
+            modalActions.innerHTML = `
+                <button class="action-btn secondary-btn half-width-btn" onclick="closeCustomModal()">Cancel</button>
+                <button class="action-btn primary-btn half-width-btn" onclick="executeConfirm()">OK</button>
+            `;
+            customModal.style.display = 'flex';
+        }
+
+        function executeConfirm() {
+            if (typeof confirmCallback === 'function') {
+                confirmCallback();
+            }
+            confirmCallback = null;
+            closeCustomModal();
+        }
+
+        function closeCustomModal() {
+            customModal.style.display = 'none';
+        }
 
         function checkPin() {
-            const input = prompt("Enter Admin PIN to proceed:");
+            const input = prompt("Enter Admin PIN to proceed:"); // 'prompt' is still used for PIN entry
             if (input === ADMIN_PIN) {
                 return true;
             }
-            alert("Incorrect PIN. Access denied.");
+            if (input !== null) { // Show alert only if user didn't cancel
+                showCustomAlert("Incorrect PIN. Access denied.");
+            }
             return false;
         }
 
@@ -700,13 +947,15 @@
         let currentProduct = null;
         let currentFinalPrice = 0;
         let currentTaxAmount = 0;
-        let currentMakingAmount = 0; // <-- NEW: Global var for making charge
+        let currentMakingAmount = 0; 
         let currentMakingType = '';
         let currentMakingInput = 0;
         let makingOverride = null;
-        // NEW: Global variable for cloud-synced loose defaults
         let looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 }; 
         let currentBarcode = ''; 
+        
+        // NEW: Global cart array
+        let cart = [];
 
         // === FIREBASE SYNC FUNCTIONS ===
         function syncData() {
@@ -716,46 +965,38 @@
             }
             const dataRef = window.dbRef(window.firebaseDB, 'jewelryData');
             window.dbOnValue(dataRef, (snapshot) => {
-                const cloudData = snapshot.val(); // Use .val() directly
+                const cloudData = snapshot.val(); 
                 
                 if (cloudData) {
-                    // Data exists, use it
                     rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
                     taxRate = cloudData.taxRate || 0;
                     productData = cloudData.products || {};
                     looseDefaultsCloud = cloudData.looseDefaults || { metal: 'Gold', stamp: '750', making: 35 };
                 } else {
-                    // Data does not exist (first run/cleared), initialize and save
                     rates = JSON.parse(JSON.stringify(defaultRates));
                     taxRate = 0;
                     productData = {};
                     looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 };
-                    // Save to establish the structure in Firebase for the first time
                     saveAllDataToCloud(); 
                 }
 
                 console.log("Data synced from Firebase.");
                 
-                // CRITICAL: Re-render UI elements that rely on initial load
                 renderRatesTable(); 
                 
-                // Since data can change at any time, re-lookup the current barcode
                 if (currentBarcode) {
-                    // FIXED: Call the new core logic function
                     runPriceCalculation(); 
                 } else {
-                    // Update tax input field on rate update
                     document.getElementById('tax-percent').value = taxRate;
                 }
                 populateStamps('stamp-select', document.getElementById('metal-select').value);
                 populateStamps('manage-stamp', document.getElementById('metal-select').value);
 
-                // Update the loose calculator configuration after rates sync
-                setLooseDefaults(); // This will load the synced defaults
-                calculateLoosePrice(); // Recalculate loose price with potentially new rates
+                setLooseDefaults(); 
+                calculateLoosePrice(); 
             }, (error) => {
                 console.error("Firebase read failed:", error);
-                alert("Error connecting to cloud database. Please check your connection.");
+                showCustomAlert("Error connecting to cloud database. Please check your connection.");
             });
         }
 
@@ -765,7 +1006,6 @@
                 rates: rates, 
                 taxRate: taxRate, 
                 products: productData,
-                // NEW: Include loose defaults in the save
                 looseDefaults: looseDefaultsCloud
             };
             window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToSave)
@@ -774,56 +1014,50 @@
             })
             .catch((error) => {
                 console.error("Firebase write failed:", error);
-                alert("Data save failed. Check your Firebase Rules/Connection.");
+                showCustomAlert("Data save failed. Check your Firebase Rules/Connection.", true);
             });
         }
 
         function clearAllData() {
             if (!window.dbSet) return;
-            // PIN is checked in clearAllDataWrapper()
-            if (confirm('Clear ALL synced data (rates, tax, products, loose defaults)? This cannot be undone.')) {
-                // Clear the whole jewelryData node
+            
+            showCustomConfirm('Clear ALL synced data (rates, tax, products, loose defaults)? This cannot be undone.', 'Confirm Clear', () => {
                 window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), null)
                 .then(() => {
-                    alert('All data cleared from the cloud. Reloading page.');
-                    location.reload();
+                    showCustomAlert('All cloud data cleared. Reloading page.');
+                    setTimeout(() => location.reload(), 1500);
                 })
                 .catch((error) => {
                     console.error("Firebase write failed:", error);
-                    alert("Data clear failed. Check your Firebase Rules/Connection.");
+                    showCustomAlert("Data clear failed. Check console.", true);
                 });
-            }
+            });
         }
 
         // --- GENERAL UI FUNCTIONS ---
-        function closeOptions() {
-            document.getElementById('options-menu').classList.remove('show');
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
         }
 
         function showSection(section) {
-            // Hide all main sections
             document.getElementById('main-screen').style.display = 'none';
             document.getElementById('update-rates').style.display = 'none';
             document.getElementById('excel-upload').style.display = 'none';
             document.getElementById('loose-calculator').style.display = 'none';
 
-            // Remove active class from all taskbar buttons
             document.querySelectorAll('#taskbar button').forEach(btn => {
                 btn.classList.remove('active');
             });
 
-            // Show the requested section and set button active class
             if (section === 'main') {
                 document.getElementById('main-screen').style.display = 'flex';
                 document.querySelector('#taskbar button[onclick="showSection(\'main\')"]').classList.add('active');
-                clearAll(); // Clear main screen on return
+                clearAll(); 
                 setTimeout(() => document.getElementById('barcode').focus(), 100);
             } else if (section === 'loose-calculator') {
-                document.getElementById('loose-calculator').style.display = 'flex'; // Changed to flex for centering
+                document.getElementById('loose-calculator').style.display = 'flex'; 
                 document.querySelector('#taskbar button[onclick="showSection(\'loose-calculator\')"]').classList.add('active');
-                // 1. Ensure stamps and defaults are set
                 setLooseDefaults(); 
-                // 2. Calculate price with defaults and current weight
                 calculateLoosePrice(); 
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
@@ -845,11 +1079,14 @@
             menu.classList.toggle('show');
         }
         
-        // Close menu when clicking outside
+        function closeOptions() {
+            document.getElementById('options-menu').classList.remove('show');
+        }
+        
         document.addEventListener('click', function(e) {
             const menu = document.getElementById('options-menu');
             const btn = document.getElementById('options-btn');
-            if (!btn.contains(e.target) && !menu.contains(e.target)) {
+            if (btn && !btn.contains(e.target) && !menu.contains(e.target)) {
                 closeOptions();
             }
         });
@@ -871,21 +1108,20 @@
         function populateStamps(selectId, metal) {
             const select = document.getElementById(selectId);
             const lower = metal.toLowerCase();
-            select.innerHTML = ''; // Clear previous options
+            select.innerHTML = ''; 
             if (rates[lower]) {
                 for (let stamp in rates[lower]) {
                     let opt = document.createElement('option');
                     opt.value = stamp;
                     opt.textContent = stamp;
                     
-                    // For modal: add data-rate for display
                     if (selectId.startsWith('modal-loose-stamp')) {
                         opt.dataset.rate = rates[lower][stamp];
                     }
                     select.add(opt);
                 }
             }
-            // Add a default selection if needed
+            
             if (select.options.length === 0) {
                  select.innerHTML = '<option value="">-- No Stamps Defined --</option>';
             } else if (selectId === 'stamp-select') {
@@ -896,28 +1132,24 @@
         
         // --- LOOSE CALCULATOR FUNCTIONS ---
 
-        // MODIFIED: Reads from global looseDefaultsCloud synced from Cloud
         function setLooseDefaults() { 
             
             const defaults = looseDefaultsCloud; 
             
             let metal = defaults.metal || 'Gold';
             let stamp = defaults.stamp || '750';
-            let making = defaults.making || 35; // Your code said 35, I'll use that.
+            let making = defaults.making || 35; 
 
-            // Safety check: Ensure the stamp is valid for the selected metal
             const metalKey = metal.toLowerCase();
             if (!rates[metalKey] || !rates[metalKey][stamp]) {
-                // If the saved stamp is no longer available, fall back to the first available one
                 if (rates[metalKey]) {
                     const availableStamps = Object.keys(rates[metalKey]);
                     if (availableStamps.length > 0) {
                         stamp = availableStamps[0];
                     } else {
-                        stamp = ''; // No stamp available for this metal
+                        stamp = '';
                     }
                 } else {
-                     // If the metal itself is invalid, fall back to 'Gold'
                      metal = 'Gold';
                      const goldKey = metal.toLowerCase();
                      if (rates[goldKey]) {
@@ -929,30 +1161,25 @@
                 }
             }
             
-            // Update the hidden inputs (which hold the session's active loose config)
             document.getElementById('loose-metal-select').value = metal; 
             document.getElementById('loose-stamp-select').value = stamp; 
             document.getElementById('loose-making-percent').value = making;
         }
 
 
-        // NEW: Populates the stamp select in the Loose Alter Modal
         function populateModalStamps(metal) {
             const select = document.getElementById('modal-loose-stamp-select');
             const currentStamp = document.getElementById('loose-stamp-select').value;
-            populateStamps('modal-loose-stamp-select', metal); // Use the generic populate function
+            populateStamps('modal-loose-stamp-select', metal); 
             
-            // Try to re-select the current stamp if the metal matches
             select.value = currentStamp;
             
-            // If the stamp doesn't exist for the new metal, select the first one
             if(select.value !== currentStamp) {
                 select.selectedIndex = 0;
             }
             updateModalRateDisplay();
         }
 
-        // NEW: Updates the rate display in the Loose Alter Modal
         function updateModalRateDisplay() {
             const select = document.getElementById('modal-loose-stamp-select');
             const rateDisplay = document.getElementById('modal-loose-rate');
@@ -965,53 +1192,43 @@
             }
         }
 
-        // NEW: Opens the Loose Alter Modal
         function openLooseAlterDialog() {
-            // Read current values from hidden inputs (source of truth)
             const metal = document.getElementById('loose-metal-select').value;
             const stamp = document.getElementById('loose-stamp-select').value;
             const making = document.getElementById('loose-making-percent').value;
 
-            // Populate modal inputs
             document.getElementById('modal-loose-metal-select').value = metal;
             document.getElementById('modal-loose-making-percent').value = making;
             
-            // Populate stamps based on metal
             populateModalStamps(metal);
             
-            // Set the correct stamp selection in the modal
             document.getElementById('modal-loose-stamp-select').value = stamp;
             
-            // Update rate display in the modal
             updateModalRateDisplay(); 
             
-            // Add listener to the stamp select in the modal for dynamic rate update
             document.getElementById('modal-loose-stamp-select').onchange = updateModalRateDisplay;
 
             document.getElementById('loose-alter-modal').style.display = 'flex';
         }
 
-        // NEW: Closes the Loose Alter Modal
         function closeLooseAlter() {
-            document.getElementById('loose-alter-modal').style.display = 'none';
+            closeModal('loose-alter-modal');
         }
 
-        // NEW: Applies the settings from the Loose Alter Modal (for current session only)
         function updateLooseInputs() {
             const newMetal = document.getElementById('modal-loose-metal-select').value;
             const newStamp = document.getElementById('modal-loose-stamp-select').value;
             const newMaking = parseFloat(document.getElementById('modal-loose-making-percent').value);
 
             if (!newStamp) {
-                alert('Please select a Stamp/Purity.');
+                showCustomAlert('Please select a Stamp/Purity.');
                 return;
             }
             if (isNaN(newMaking) || newMaking < 0) {
-                alert('Please enter a valid Making Charge (%).');
+                showCustomAlert('Please enter a valid Making Charge (%).');
                 return;
             }
 
-            // Update the hidden inputs (Source of truth for the session)
             document.getElementById('loose-metal-select').value = newMetal;
             document.getElementById('loose-stamp-select').value = newStamp;
             document.getElementById('loose-making-percent').value = newMaking;
@@ -1020,9 +1237,8 @@
             calculateLoosePrice();
         }
 
-        // NEW: Saves the current settings in the Loose Alter Modal as the new default to the cloud
         function saveLooseDefaultsToCloud() {
-            if (!checkPin()) return; // Require PIN check to save defaults
+            if (!checkPin()) return; 
 
             const newMetal = document.getElementById('modal-loose-metal-select').value;
             const newStamp = document.getElementById('modal-loose-stamp-select').value;
@@ -1030,44 +1246,38 @@
             const newMaking = parseFloat(newMakingRaw);
 
             if (!newStamp) {
-                alert('Please select a Stamp/Purity.');
+                showCustomAlert('Please select a Stamp/Purity.');
                 return;
             }
             if (isNaN(newMaking) || newMaking < 0) {
-                alert('Please enter a valid Making Charge (%).');
+                showCustomAlert('Please enter a valid Making Charge (%).');
                 return;
             }
             
-            // Check if the stamp is valid for the metal before saving
             const metalKey = newMetal.toLowerCase();
             if (!rates[metalKey] || !rates[metalKey][newStamp]) {
-                alert(`Cannot save. The rate for ${newMetal} ${newStamp} is not set in Update Rates.`);
+                showCustomAlert(`Cannot save. The rate for ${newMetal} ${newStamp} is not set in Update Rates.`);
                 return;
             }
 
-            if (confirm(`Save ${newMetal} ${newStamp} with ${newMaking.toFixed(2)}% making as the permanent default? This will be used every time the app starts.`)) {
-                // 1. Update the cloud defaults variable
+            showCustomConfirm(`Save ${newMetal} ${newStamp} with ${newMaking.toFixed(2)}% making as the permanent default?`, 'Confirm Save', () => {
                 looseDefaultsCloud = {
                     metal: newMetal,
                     stamp: newStamp,
                     making: newMaking
                 };
-
-                // 2. Save the whole data structure to the cloud
-                saveAllDataToCloud(); // This function now includes looseDefaultsCloud
+                saveAllDataToCloud(); 
                 
-                // 3. Update the active calculation inputs for the current session and recalculate
                 document.getElementById('loose-metal-select').value = newMetal;
                 document.getElementById('loose-stamp-select').value = newStamp;
                 document.getElementById('loose-making-percent').value = newMaking;
 
-                alert('Loose defaults saved successfully. They will load automatically next time.');
+                showCustomAlert('Loose defaults saved successfully. They will load automatically next time.');
                 closeLooseAlter();
                 calculateLoosePrice();
-            }
+            });
         }
         
-        // Loose Price Calculation
         function calculateLoosePrice() {
             const weightInput = document.getElementById('loose-weight');
             const priceDisplay = document.getElementById('loose-price-display');
@@ -1106,21 +1316,20 @@
 
         // --- PRODUCT PRICE CALCULATION AND ALTER FUNCTIONS ---
 
-        // FIXED: This function is the core logic, called by lookupProduct and updateMaking
         function runPriceCalculation() {
-            // Clear display elements
             document.getElementById('product-code').textContent = '';
             document.getElementById('price-display').textContent = '0.00';
             document.getElementById('price-display').classList.remove('show');
             document.getElementById('detail-btn').style.display = 'none';
+            document.getElementById('add-to-cart-btn').style.display = 'none';
             document.getElementById('alter-btn').style.display = 'none';
             document.getElementById('clear-screen-btn').style.display = 'none';
             
-            if (!currentBarcode) return; // Exit if no barcode
+            if (!currentBarcode) return; 
             
             if (!productData[currentBarcode]) {
                 document.getElementById('product-code').textContent = `Barcode: ${currentBarcode} - Not found`;
-                document.getElementById('clear-screen-btn').style.display = 'inline-block';
+                document.getElementById('clear-screen-btn').style.display = 'block';
                 return;
             }
 
@@ -1130,7 +1339,6 @@
             currentTaxAmount = 0;
             const weight = d.netWeight;
             
-            // --- Price Calculation Logic ---
             if (d.mrp > 0) {
                 let total = d.mrp + otherCharge;
                 currentTaxAmount = total * (taxRate / 100);
@@ -1139,14 +1347,12 @@
                 const mKey = d.metal, stamp = d.stamp;
                 if (!mKey || !stamp || !rates[mKey] || rates[mKey][stamp] === undefined || rates[mKey][stamp] === 0) {
                     document.getElementById('product-code').textContent = `Barcode: ${currentBarcode} - Rates missing or zero for ${d.metal} ${d.stamp}`;
-                    document.getElementById('clear-screen-btn').style.display = 'inline-block';
+                    document.getElementById('clear-screen-btn').style.display = 'block';
                     return;
                 }
                 const rate = rates[mKey][stamp];
                 const metalVal = weight * rate;
                 
-                // Determine Making Charge and Type
-                // Check for override first
                 if (makingOverride) {
                     if (makingOverride.type === '%') {
                         making = metalVal * (makingOverride.input / 100);
@@ -1176,63 +1382,50 @@
                 let total = metalVal + making + otherCharge;
                 currentTaxAmount = total * (taxRate / 100);
                 final = total + currentTaxAmount;
-
-                // NEW: Store calculated making amount
                 currentMakingAmount = making;
 
                 if (currentMakingType !== '') {
-                    document.getElementById('alter-btn').style.display = 'inline-block';
+                    document.getElementById('alter-btn').style.display = 'block'; 
                 }
             }
-            // --- End Price Calculation Logic ---
 
             currentFinalPrice = final;
             document.getElementById('product-code').textContent = `Barcode: ${currentBarcode} | Product: ${d.itemName || 'Unknown'}`;
             document.getElementById('price-display').textContent = `${final.toFixed(2)}`;
             document.getElementById('price-display').classList.add('show');
-            document.getElementById('detail-btn').style.display = 'inline-block';
-            document.getElementById('clear-screen-btn').style.display = 'inline-block';
+            document.getElementById('detail-btn').style.display = 'block'; 
+            document.getElementById('add-to-cart-btn').style.display = 'block'; 
+            document.getElementById('clear-screen-btn').style.display = 'block'; 
         }
 
-        // FIXED: This function is for NEW scans/inputs. It resets the override.
-        // It is now only called by the "Enter" key listener.
         function lookupProduct(barcode) {
             makingOverride = null; // Reset on any new scan
             currentBarcode = barcode;
-            // Call the core logic
             runPriceCalculation();
         }
 
-        // FIXED: This function applies the override, then calls the core logic WITHOUT resetting.
         function updateMaking() {
             const newInput = parseFloat(document.getElementById('new-making').value);
             if (isNaN(newInput) || newInput < 0) {
-                alert('Enter a valid positive number.');
+                showCustomAlert('Enter a valid positive number.');
                 return;
             }
-            // Set the override
             makingOverride = { 
                 type: currentMakingType, 
                 input: newInput 
             };
             
-            // Recalculate price with the override
             runPriceCalculation(); 
             
-            closeAlter();
-        }
-
-        function closeAlter() {
-            document.getElementById('alter-modal').style.display = 'none';
+            closeModal('alter-modal');
         }
 
         function openAlterDialog() {
             if (!currentProduct || currentMakingType === '') {
-                alert('No making charge to alter.');
+                showCustomAlert('No making charge to alter.');
                 return;
             }
 
-            // Determine what to show in the modal based on any existing override
             let currentInput = currentMakingInput;
             let currentType = currentMakingType;
 
@@ -1272,7 +1465,7 @@
                 const rate = rates[mKey] && rates[mKey][stamp] !== undefined ? rates[mKey][stamp] : 0;
                 let makingStr = '0';
                 let makingInput = currentMakingInput;
-                let activeMakingType = currentMakingType; // Use the one determined by lookup
+                let activeMakingType = currentMakingType; 
 
                 if (makingOverride) {
                     makingInput = makingOverride.input;
@@ -1287,11 +1480,10 @@
                     makingStr = `${makingInput.toFixed(2)} (per pc)`;
                 }
                 
-                // MODIFIED: Conditionally show the 'i' button only if making charge is below 1500
                 let infoButtonHtml = '';
                 if (currentMakingAmount > 0 && currentMakingAmount < 1500) {
                     infoButtonHtml = `
-                        <button onclick="alert('Making Charge Amount: ₹' + currentMakingAmount.toFixed(2))" 
+                        <button onclick="showCustomAlert('Making Charge Amount: ₹' + currentMakingAmount.toFixed(2))" 
                                 style="width: 20px; height: 20px; border-radius: 50%; border: 1px solid #999; background: #eee; color: #333; font-size: 14px; font-weight: bold; font-style: normal; padding: 0; line-height: 19px; text-align: center; cursor: pointer; margin-right: 8px; vertical-align: middle;">
                             i
                         </button>
@@ -1316,11 +1508,104 @@
             document.getElementById('detail-body').innerHTML = html;
             document.getElementById('detail-modal').style.display = 'flex';
         }
-
-        function closeDetails() {
-            document.getElementById('detail-modal').style.display = 'none';
-        }
         
+        // --- CART FUNCTIONS ---
+        
+        function updateCartIcon() {
+            const count = cart.length;
+            const counterNav = document.getElementById('cart-counter-nav');
+            const counterMain = document.getElementById('cart-counter');
+
+            counterNav.textContent = count;
+            counterMain.textContent = count;
+
+            if (count > 0) {
+                counterNav.style.display = 'block';
+                counterMain.style.display = 'block';
+                document.getElementById('cart-btn').style.display = 'block'; // Show main cart button if items exist
+            } else {
+                counterNav.style.display = 'none';
+                counterMain.style.display = 'none';
+                document.getElementById('cart-btn').style.display = 'none'; // Hide main cart button if empty
+            }
+        }
+
+        function addToCart() {
+            if (!currentProduct || currentFinalPrice <= 0) {
+                showCustomAlert('Cannot add to cart. No valid product found or price is zero.');
+                return;
+            }
+
+            const item = {
+                id: Date.now() + Math.random(), // Unique ID
+                barcode: currentBarcode,
+                itemName: currentProduct.itemName || 'Unknown Item',
+                finalPrice: currentFinalPrice,
+                makingOverride: makingOverride // NEW: Save the override state
+            };
+
+            cart.push(item);
+            localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart)); // Save cart
+            updateCartIcon();
+            showCustomAlert(`${item.itemName} added to cart!`);
+            
+            clearAll(); 
+        }
+
+        function openCart() {
+            const modal = document.getElementById('cart-modal');
+            const cartItemsDiv = document.getElementById('cart-items-container');
+            const cartTotalAmountSpan = document.getElementById('cart-total-amount');
+
+            if (cart.length === 0) {
+                cartItemsDiv.innerHTML = '<p class="empty-cart-message">Cart is empty.</p>';
+                cartTotalAmountSpan.textContent = '₹0.00';
+            } else {
+                let total = 0;
+                let html = '';
+                
+                cart.forEach(item => {
+                    total += item.finalPrice;
+                    // NEW: Stringify the makingOverride so it can be passed in the onclick
+                    const overrideData = JSON.stringify(item.makingOverride);
+                    html += `
+                        <div class="cart-item">
+                            <div class="cart-item-details" onclick='viewItemFromCart("${item.barcode}", ${overrideData})'>
+                                <div class="cart-item-title">${item.itemName}</div>
+                                <div class="cart-item-barcode">Barcode: ${item.barcode}</div>
+                            </div>
+                            <span class="cart-item-price">₹${item.finalPrice.toFixed(2)}</span>
+                            <button class="remove-item-btn" onclick="removeFromCart(${item.id})">&times;</button>
+                        </div>
+                    `;
+                });
+                
+                cartItemsDiv.innerHTML = html;
+                cartTotalAmountSpan.textContent = `₹${total.toFixed(2)}`;
+            }
+
+            modal.style.display = 'flex';
+        }
+
+        function removeFromCart(itemId) {
+            showCustomConfirm('Are you sure you want to remove this item from the cart?', 'Confirm Removal', () => {
+                cart = cart.filter(item => item.id !== itemId);
+                localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
+                updateCartIcon();
+                openCart(); // Re-render the cart modal
+            });
+        }
+
+        // NEW: Function to view item and restore its specific making charge
+        function viewItemFromCart(barcode, overrideData) {
+            closeModal('cart-modal');
+            // Set the making override *before* looking up the product
+            makingOverride = overrideData; 
+            document.getElementById('barcode').value = barcode;
+            lookupProduct(barcode); // This will use the makingOverride
+        }
+        // --- END CART FUNCTIONS ---
+
         // --- UTILITY/SETUP FUNCTIONS ---
         
         function clearAll() {
@@ -1329,6 +1614,7 @@
             document.getElementById('price-display').textContent = '0.00';
             document.getElementById('price-display').classList.remove('show');
             document.getElementById('detail-btn').style.display = 'none';
+            document.getElementById('add-to-cart-btn').style.display = 'none'; // NEW
             document.getElementById('alter-btn').style.display = 'none';
             document.getElementById('clear-screen-btn').style.display = 'none';
             makingOverride = null;
@@ -1337,6 +1623,7 @@
             currentBarcode = '';
             document.getElementById('barcode').focus();
             closeOptions();
+            updateCartIcon(); // Show cart button if items are in cart
         }
 
         function updateRemoveButton() {
@@ -1347,64 +1634,64 @@
             }
         }
         function addStamp() {
-            if (!checkPin()) return; // PIN check added
+            if (!checkPin()) return; 
             const metal = document.getElementById('metal-select').value.toLowerCase();
             const newStamp = document.getElementById('new-stamp').value.trim().toUpperCase();
             if (!metal || !newStamp) {
-                alert('Please select metal and enter stamp name');
+                showCustomAlert('Please select metal and enter stamp name.');
                 return;
             }
             if (!rates[metal]) {
                 rates[metal] = {};
             }
             if (rates[metal][newStamp]) {
-                alert('Stamp already exists');
+                showCustomAlert('Stamp already exists.');
                 return;
             }
             rates[metal][newStamp] = 0;
-            saveAllDataToCloud(); // SAVE TO CLOUD
+            saveAllDataToCloud(); 
             document.getElementById('new-stamp').value = '';
-            alert(`Added ${newStamp} for ${metal}`);
+            showCustomAlert(`Added ${newStamp} for ${metal}`);
         }
         function removeStamp() {
-            if (!checkPin()) return; // PIN check added
+            if (!checkPin()) return; 
             const metal = document.getElementById('metal-select').value.toLowerCase();
             const stamp = document.getElementById('manage-stamp').value;
             if (!stamp || stamp === '-- No Stamps Defined --') {
-                alert('Please select a stamp to remove');
+                showCustomAlert('Please select a stamp to remove.');
                 return;
             }
-            if (confirm(`Remove ${stamp} for ${metal.toUpperCase()}?`)) {
+            showCustomConfirm(`Remove ${stamp} for ${metal.toUpperCase()}?`, 'Confirm Removal', () => {
                 delete rates[metal][stamp];
-                saveAllDataToCloud(); // SAVE TO CLOUD
-                alert(`Removed ${stamp}`);
-            }
+                saveAllDataToCloud(); 
+                showCustomAlert(`Removed ${stamp}`);
+            });
         }
         function renameStamp() {
-            if (!checkPin()) return; // PIN check added
+            if (!checkPin()) return; 
             const metal = document.getElementById('metal-select').value.toLowerCase();
             const oldStamp = document.getElementById('manage-stamp').value;
             const newName = document.getElementById('rename-to').value.trim().toUpperCase();
             if (!oldStamp || oldStamp === '-- No Stamps Defined --') {
-                alert('Please select a stamp to rename');
+                showCustomAlert('Please select a stamp to rename.');
                 return;
             }
             if (!newName || newName === oldStamp) {
-                alert('Please enter a different new name');
+                showCustomAlert('Please enter a different new name.');
                 return;
             }
             if (rates[metal][newName]) {
-                alert('New name already exists');
+                showCustomAlert('New name already exists.');
                 return;
             }
             rates[metal][newName] = rates[metal][oldStamp];
             delete rates[metal][oldStamp];
-            saveAllDataToCloud(); // SAVE TO CLOUD
+            saveAllDataToCloud(); 
             document.getElementById('rename-to').value = '';
-            alert(`Renamed ${oldStamp} to ${newName}`);
+            showCustomAlert(`Renamed ${oldStamp} to ${newName}`);
         }
         function loadExcel() {
-            if (!checkPin()) { // PIN check added
+            if (!checkPin()) { 
                 document.getElementById('excel-file').value = ''; 
                 return; 
             }
@@ -1457,7 +1744,7 @@
                     count++;
                 }
                 productData = newProductData; 
-                saveAllDataToCloud(); // SAVE TO CLOUD
+                saveAllDataToCloud(); 
                 document.getElementById('excel-info').innerHTML = `<p>Loaded ${count} products</p>`;
             };
             reader.readAsArrayBuffer(file);
@@ -1472,31 +1759,29 @@
         }
 
         function updateRate() {
-            if (!checkPin()) return; // PIN check added
+            if (!checkPin()) return; 
             const metal = document.getElementById('metal-select').value.toLowerCase();
             const stamp = document.getElementById('stamp-select').value;
             const price = parseFloat(document.getElementById('price-per-gram').value);
             if (rates[metal] && rates[metal][stamp] !== undefined && !isNaN(price)) {
                 rates[metal][stamp] = price;
-                saveAllDataToCloud(); // SAVE TO CLOUD
-                alert(`Updated: ${metal} ${stamp} → ₹${price}/g`);
+                saveAllDataToCloud(); 
+                showCustomAlert(`Updated: ${metal} ${stamp} → ₹${price}/g`);
                 document.getElementById('price-per-gram').value = '';
-                // Rerendering will happen automatically via Firebase listener
             } else {
-                alert('Invalid input');
+                showCustomAlert('Invalid input');
             }
         }
         function updateTax() {
-            if (!checkPin()) return; // PIN check added
+            if (!checkPin()) return; 
             const tax = parseFloat(document.getElementById('tax-percent').value);
             if (!isNaN(tax)) {
                 taxRate = tax;
-                saveAllDataToCloud(); // SAVE TO CLOUD
-                alert(`Tax updated to ${tax}%`);
+                saveAllDataToCloud(); 
+                showCustomAlert(`Tax updated to ${tax}%`);
                 document.getElementById('tax-percent').value = tax;
-                // Rerendering will happen automatically via Firebase listener
             } else {
-                alert('Invalid tax');
+                showCustomAlert('Invalid tax');
             }
         }
         
@@ -1509,7 +1794,6 @@
                 updateRemoveButton();
             });
 
-            // Initial setup for the rates screen (will be overridden by syncData)
             populateStamps('stamp-select', 'Gold');
             populateStamps('manage-stamp', 'Gold');
             updateRemoveButton();
@@ -1521,46 +1805,80 @@
             
             // --- Global keydown listener for seamless scanning ---
             document.addEventListener('keydown', function(event) {
-                // Only act on the main screen
                 if (document.getElementById('main-screen').style.display !== 'flex') {
                     return;
                 }
-                // Check if the currently active element is already the barcode input.
                 if (document.activeElement === barcodeInput) {
                     return; 
                 }
-
-                // Check if the keypress is a single character key (typical of scanner input) 
                 if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-                    // Check if the active element is another input field where the user is typing 
                     const activeTag = document.activeElement.tagName.toLowerCase();
                     if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
                         return;
                     }
-                    
-                    // Steal focus to the barcode input so the scanner output is captured
                     barcodeInput.focus();
                 }
             });
-            // ---------------------------------------------------------
 
-
-            // --- Existing keydown listener to trigger lookup only on Enter keypress ---
+            // --- "Enter" key listener ---
             barcodeInput.addEventListener('keydown', function(event) {
                 if (event.key === 'Enter') { 
                     event.preventDefault();
                     const barcode = barcodeInput.value.trim().toUpperCase();
-                    barcodeInput.value = ''; // Clear input
-                    barcodeInput.focus(); // Refocus
-                    lookupProduct(barcode); // Trigger lookup
+                    barcodeInput.value = ''; 
+                    barcodeInput.focus(); 
+                    lookupProduct(barcode); 
                 }
             });
-            // --------------------------------------------------------------------------
             
-            // At the end of the script, start the sync process
+            // --- Load Cart from Local Storage ---
+            try {
+                const savedCart = localStorage.getItem('suhagPriceCheckerCart');
+                if (savedCart) {
+                    cart = JSON.parse(savedCart);
+                }
+            } catch (e) {
+                console.error("Failed to load cart from localStorage", e);
+                cart = [];
+            }
+            updateCartIcon(); // Update counter on load
+
+            // --- Start Firebase Sync ---
             syncData();
         });
         
+        // --- Expose functions to global scope for HTML onclick ---
+        window.showSection = showSection;
+        window.toggleOptions = toggleOptions;
+        window.closeOptions = closeOptions;
+        window.lookupProduct = lookupProduct;
+        window.clearAll = clearAll;
+        window.showDetails = showDetails;
+        window.closeModal = closeModal;
+        window.openAlterDialog = openAlterDialog;
+        window.updateMaking = updateMaking;
+        window.clearLooseScreen = clearLooseScreen;
+        window.openLooseAlterDialog = openLooseAlterDialog;
+        window.calculateLoosePrice = calculateLoosePrice;
+        window.closeLooseAlter = closeLooseAlter;
+        window.updateLooseInputs = updateLooseInputs;
+        window.saveLooseDefaultsToCloud = saveLooseDefaultsToCloud;
+        window.populateModalStamps = populateModalStamps;
+        window.updateRate = updateRate;
+        window.updateTax = updateTax;
+        window.addStamp = addStamp;
+        window.removeStamp = removeStamp;
+        window.renameStamp = renameStamp;
+        window.loadExcel = loadExcel;
+        window.clearAllDataWrapper = clearAllDataWrapper;
+        window.openCart = openCart;
+        window.closeCart = closeCart;
+        window.addToCart = addToCart;
+        window.removeFromCart = removeFromCart;
+        window.viewItemFromCart = viewItemFromCart;
+        window.executeConfirm = executeConfirm;
+        window.closeCustomModal = closeCustomModal;
+
     </script>
 </body>
 </html>
