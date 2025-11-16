@@ -669,6 +669,37 @@
                 flex-wrap: nowrap;
             }
         }
+
+        /* --- Cart Modal Button Row Styles --- */
+        #cart-modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        #cart-modal-buttons button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            color: white;
+            box-shadow: 0 3px 8px;
+            transition: all 0.2s;
+        }
+        #close-cart-modal {
+            background-color: #555;
+            box-shadow: 0 3px 8px rgba(85, 85, 85, 0.3);
+        }
+        #clear-cart-btn {
+            background-color: #f44336;
+            box-shadow: 0 3px 8px rgba(244, 67, 54, 0.3);
+        }
+        #cart-modal-buttons button:active {
+            transform: translateY(1px);
+            box-shadow: 0 1px 4px;
+        }
     </style>
 </head>
 <body>
@@ -800,7 +831,10 @@
                 <span>Total:</span>
                 <span id="cart-total-amount">₹0.00</span>
             </div>
-            <button id="close-cart-modal" style="background-color: #555; margin-top: 15px;" onclick="closeModal('cart-modal')">Close</button>
+            <div id="cart-modal-buttons">
+                <button id="clear-cart-btn" onclick="clearCart()">Clear Cart</button>
+                <button id="close-cart-modal" onclick="closeModal('cart-modal')">Close</button>
+            </div>
         </div>
     </div>
 
@@ -1604,6 +1638,21 @@
             document.getElementById('barcode').value = barcode;
             lookupProduct(barcode); // This will use the makingOverride
         }
+
+        // NEW: Clear Cart Function
+        function clearCart() {
+            if (cart.length === 0) {
+                showCustomAlert('Cart is already empty.');
+                return;
+            }
+            showCustomConfirm('Are you sure you want to clear the entire cart? This cannot be undone.', 'Confirm Clear Cart', () => {
+                cart = [];
+                localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
+                updateCartIcon();
+                openCart(); // Re-render the empty cart modal
+                showCustomAlert('Cart cleared successfully.');
+            });
+        }
         // --- END CART FUNCTIONS ---
 
         // --- UTILITY/SETUP FUNCTIONS ---
@@ -1876,6 +1925,7 @@
         window.addToCart = addToCart;
         window.removeFromCart = removeFromCart;
         window.viewItemFromCart = viewItemFromCart;
+        window.clearCart = clearCart;
         window.executeConfirm = executeConfirm;
         window.closeCustomModal = closeCustomModal;
 
