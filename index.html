@@ -190,12 +190,18 @@
             box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
         }
         #product-code {
-            font-size: 22px;
-            color: #000000;
+            font-size: 16px;
+            color: #555;
             margin: 8px 0;
             text-align: center;
             width: 100%;
             word-wrap: break-word;
+            cursor: pointer; /* Changed to pointer to indicate clickability */
+            user-select: none; /* Prevent text selection on double tap */
+        }
+        #product-code:active {
+            color: #333;
+            transform: scale(0.99);
         }
         #price-display {
             font-size: 48px;
@@ -362,19 +368,60 @@
             text-align: center;
             color: #666;
         }
-        #new-making {
+
+        /* Style for the input group with up/down buttons */
+        .input-with-stepper {
+            display: flex;
+            align-items: center;
+            gap: 5px; /* Space between input and buttons */
             margin: 16px 0;
+        }
+
+        .input-with-stepper input[type="number"] {
+            flex-grow: 1; /* Allow input to take available space */
+            margin: 0; /* Reset margin */
             padding: 12px;
             border: 1px solid #ddd;
             border-radius: 8px;
-            width: 100%;
             font-size: 16px;
+            text-align: center;
         }
-        #new-making:focus {
+        .input-with-stepper input[type="number"]:focus {
             border-color: #4CAF50;
             outline: none;
             box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
         }
+
+        .stepper-btn {
+            background-color: #eee;
+            color: #333;
+            border: 1px solid #ccc;
+            width: 38px; /* Fixed width for button */
+            height: 38px; /* Fixed height for button */
+            border-radius: 8px;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            transition: background-color 0.1s;
+            flex-shrink: 0; /* Prevent buttons from shrinking */
+        }
+        .stepper-btn:hover {
+            background-color: #e0e0e0;
+        }
+        .stepper-btn:active {
+            background-color: #d0d0d0;
+            transform: translateY(1px);
+        }
+        /* Specific styling for the Making Charge input in alter modal */
+        #new-making, #modal-loose-making-percent {
+            margin: 0; /* Removed margin here as it's handled by parent div */
+        }
+
+
         #alter-buttons {
             display: flex;
             gap: 10px;
@@ -437,7 +484,7 @@
             box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
         }
         /* Updated button selector to exclude new cart buttons */
-        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(#clear-screen-btn) {
+        button:(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#close-cart-modal):not(#clear-cart-btn):not(#clear-screen-btn) {
             background-color: #4CAF50;
             color: white;
             cursor: pointer;
@@ -447,7 +494,7 @@
             width: auto;
             padding: 10px 16px;
         }
-        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):active {
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):active {
             transform: translateY(1px);
         }
         button:disabled {
@@ -721,8 +768,7 @@
     </div>
     <div id="main-screen">
         <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus>
-        <div id="product-code"></div>
-        <h1 id="price-display">0.00</h1>
+        <div id="product-code" onclick="toggleProductInfo()"></div> <h1 id="price-display">0.00</h1>
         
         <div id="main-buttons-container">
             <button onclick="clearAll()" class="clear-btn full-width-btn" id="clear-screen-btn">Clear Screen</button>
@@ -748,7 +794,7 @@
         <input type="hidden" id="loose-making-percent" value="35">
         
         <label for="loose-weight">Weight (Grams):</label>
-        <input type="number" id="loose-weight" placeholder="Enter weight in grams" step="0.25" oninput="calculateLoosePrice()">
+        <input type="number" id="loose-weight" placeholder="Enter weight in grams" step="0.01" oninput="calculateLoosePrice()">
         
         <hr style="display: none;">
 
@@ -781,7 +827,11 @@
             <h3>Alter Making Charge</h3>
             <div id="alter-body"></div>
             <label for="new-making">New Making Charge (same unit):</label>
-            <input type="number" id="new-making" step="0.25">
+            <div class="input-with-stepper">
+                <button class="stepper-btn" onclick="adjustMaking('new-making', -0.25)">-</button>
+                <input type="number" id="new-making" step="0.25">
+                <button class="stepper-btn" onclick="adjustMaking('new-making', 0.25)">+</button>
+            </div>
             <div id="alter-buttons">
                 <button id="update-making-btn" onclick="updateMaking()">Update</button>
                 <button id="cancel-making-btn" onclick="closeModal('alter-modal')">Cancel</button>
@@ -804,7 +854,11 @@
                 <select id="modal-loose-stamp-select"></select>
 
                 <label for="modal-loose-making-percent">Making Charge (%):</label>
-                <input type="number" id="modal-loose-making-percent" placeholder="e.g., 35" step="0.25">
+                <div class="input-with-stepper">
+                    <button class="stepper-btn" onclick="adjustMaking('modal-loose-making-percent', -0.25)">-</button>
+                    <input type="number" id="modal-loose-making-percent" placeholder="e.g., 35" step="0.25">
+                    <button class="stepper-btn" onclick="adjustMaking('modal-loose-making-percent', 0.25)">+</button>
+                </div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 16px;">
                 <button id="save-loose-defaults-btn" onclick="saveLooseDefaultsToCloud()" 
@@ -832,8 +886,8 @@
                 <span id="cart-total-amount">₹0.00</span>
             </div>
             <div id="cart-modal-buttons">
-                <button id="clear-cart-btn" onclick="clearCart()">Clear Cart</button>
-                <button id="close-cart-modal" onclick="closeModal('cart-modal')">Close</button>
+                 <button id="close-cart-modal" onclick="closeModal('cart-modal')">Close</button>
+                 <button id="clear-cart-btn" onclick="clearCart()">Clear Cart</button>
             </div>
         </div>
     </div>
@@ -910,7 +964,6 @@
         const ADMIN_PIN = '9898'; 
 
         // --- NEW: Custom Alert/Confirm Functions ---
-        // (These replace all browser alert() and confirm() calls)
         const customModal = document.getElementById('custom-modal');
         const modalTitle = document.getElementById('custom-modal-title');
         const modalMessage = document.getElementById('custom-modal-message');
@@ -987,6 +1040,7 @@
         let makingOverride = null;
         let looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 }; 
         let currentBarcode = ''; 
+        let showWeightOnMain = false; // State for toggling weight display
         
         // NEW: Global cart array
         let cart = [];
@@ -994,7 +1048,7 @@
         // === FIREBASE SYNC FUNCTIONS ===
         function syncData() {
             if (!window.dbOnValue) {
-                console.error("Firebase SDK not loaded correctly. Check console/network tab.");
+                console.error("Firebase SDK  loaded correctly. Check console/network tab.");
                 return;
             }
             const dataRef = window.dbRef(window.firebaseDB, 'jewelryData');
@@ -1055,7 +1109,7 @@
         function clearAllData() {
             if (!window.dbSet) return;
             
-            showCustomConfirm('Clear ALL synced data (rates, tax, products, loose defaults)? This cannot be undone.', 'Confirm Clear', () => {
+            showCustomConfirm('Clear ALL synced data (rates, tax, products, loose defaults)? This can be undone.', 'Confirm Clear', () => {
                 window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), null)
                 .then(() => {
                     showCustomAlert('All cloud data cleared. Reloading page.');
@@ -1200,6 +1254,14 @@
             document.getElementById('loose-making-percent').value = making;
         }
 
+        // NEW: Adjust making charge by a step
+        function adjustMaking(inputId, amount) {
+            const input = document.getElementById(inputId);
+            let currentValue = parseFloat(input.value) || 0;
+            currentValue += amount;
+            input.value = currentValue.toFixed(2); 
+        }
+
 
         function populateModalStamps(metal) {
             const select = document.getElementById('modal-loose-stamp-select');
@@ -1290,7 +1352,7 @@
             
             const metalKey = newMetal.toLowerCase();
             if (!rates[metalKey] || !rates[metalKey][newStamp]) {
-                showCustomAlert(`Cannot save. The rate for ${newMetal} ${newStamp} is not set in Update Rates.`);
+                showCustomAlert(`Can save. The rate for ${newMetal} ${newStamp} is  set in Update Rates.`);
                 return;
             }
 
@@ -1351,7 +1413,7 @@
         // --- PRODUCT PRICE CALCULATION AND ALTER FUNCTIONS ---
 
         function runPriceCalculation() {
-            document.getElementById('product-code').textContent = '';
+            // Reset display state (but  the product code info text yet)
             document.getElementById('price-display').textContent = '0.00';
             document.getElementById('price-display').classList.remove('show');
             document.getElementById('detail-btn').style.display = 'none';
@@ -1359,10 +1421,16 @@
             document.getElementById('alter-btn').style.display = 'none';
             document.getElementById('clear-screen-btn').style.display = 'none';
             
-            if (!currentBarcode) return; 
+            // New logic to reset weight toggle on new scan
+            showWeightOnMain = false; 
+            
+            if (!currentBarcode) {
+                 document.getElementById('product-code').textContent = ''; // Clear if no barcode
+                 return; 
+            }
             
             if (!productData[currentBarcode]) {
-                document.getElementById('product-code').textContent = `Barcode: ${currentBarcode} - Not found`;
+                document.getElementById('product-code').textContent = `Barcode: ${currentBarcode} -  found`;
                 document.getElementById('clear-screen-btn').style.display = 'block';
                 return;
             }
@@ -1373,6 +1441,9 @@
             currentTaxAmount = 0;
             const weight = d.netWeight;
             
+            // Initial update of product info display (Name/Barcode)
+            updateMainDisplayInfo();
+
             if (d.mrp > 0) {
                 let total = d.mrp + otherCharge;
                 currentTaxAmount = total * (taxRate / 100);
@@ -1424,7 +1495,6 @@
             }
 
             currentFinalPrice = final;
-            document.getElementById('product-code').textContent = `Barcode: ${currentBarcode} | Product: ${d.itemName || 'Unknown'}`;
             document.getElementById('price-display').textContent = `${final.toFixed(2)}`;
             document.getElementById('price-display').classList.add('show');
             document.getElementById('detail-btn').style.display = 'block'; 
@@ -1432,8 +1502,32 @@
             document.getElementById('clear-screen-btn').style.display = 'block'; 
         }
 
+        // NEW: Function to toggle product info display
+        function toggleProductInfo() {
+            if (!currentProduct) return;
+            showWeightOnMain = !showWeightOnMain;
+            updateMainDisplayInfo();
+        }
+
+        // NEW: Function to update the product info text based on state
+        function updateMainDisplayInfo() {
+            const el = document.getElementById('product-code');
+            if (!currentProduct) {
+                 // If called when no product is active, ensure it's empty or shows error
+                 return;
+            }
+
+            if (showWeightOnMain) {
+                 el.textContent = `Gross Wt: ${currentProduct.grossWeight}g | Net Wt: ${currentProduct.netWeight}g`;
+                 el.style.fontWeight = 'bold'; // Optional: make weight stand out
+            } else {
+                 el.textContent = `Barcode: ${currentBarcode} | Product: ${currentProduct.itemName || 'Unknown'}`;
+                 el.style.fontWeight = 'normal';
+            }
+        }
+
         function lookupProduct(barcode) {
-            makingOverride = null; // Reset on any new scan
+            makingOverride = null; 
             currentBarcode = barcode;
             runPriceCalculation();
         }
@@ -1542,6 +1636,10 @@
             document.getElementById('detail-body').innerHTML = html;
             document.getElementById('detail-modal').style.display = 'flex';
         }
+
+        function closeDetails() {
+            document.getElementById('detail-modal').style.display = 'none';
+        }
         
         // --- CART FUNCTIONS ---
         
@@ -1566,7 +1664,7 @@
 
         function addToCart() {
             if (!currentProduct || currentFinalPrice <= 0) {
-                showCustomAlert('Cannot add to cart. No valid product found or price is zero.');
+                showCustomAlert('Can add to cart. No valid product found or price is zero.');
                 return;
             }
 
@@ -1645,7 +1743,7 @@
                 showCustomAlert('Cart is already empty.');
                 return;
             }
-            showCustomConfirm('Are you sure you want to clear the entire cart? This cannot be undone.', 'Confirm Clear Cart', () => {
+            showCustomConfirm('Are you sure you want to clear the entire cart? This can be undone.', 'Confirm Clear Cart', () => {
                 cart = [];
                 localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
                 updateCartIcon();
@@ -1663,7 +1761,7 @@
             document.getElementById('price-display').textContent = '0.00';
             document.getElementById('price-display').classList.remove('show');
             document.getElementById('detail-btn').style.display = 'none';
-            document.getElementById('add-to-cart-btn').style.display = 'none'; // NEW
+            document.getElementById('add-to-cart-btn').style.display = 'none'; 
             document.getElementById('alter-btn').style.display = 'none';
             document.getElementById('clear-screen-btn').style.display = 'none';
             makingOverride = null;
@@ -1925,9 +2023,11 @@
         window.addToCart = addToCart;
         window.removeFromCart = removeFromCart;
         window.viewItemFromCart = viewItemFromCart;
-        window.clearCart = clearCart;
         window.executeConfirm = executeConfirm;
         window.closeCustomModal = closeCustomModal;
+        window.adjustMaking = adjustMaking; 
+        window.toggleProductInfo = toggleProductInfo;
+        window.clearCart = clearCart; // New function
 
     </script>
 </body>
