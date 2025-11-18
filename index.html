@@ -1565,7 +1565,7 @@
             const html = `<p><strong>Current:</strong> ${currentInput.toFixed(2)} ${currentType}</p>`;
             document.getElementById('alter-body').innerHTML = html;
             document.getElementById('new-making').placeholder = `Enter new value (in ${currentType})`;
-            document.getElementById('new-making').value = '';
+            document.getElementById('new-making').value = currentInput;
             document.getElementById('alter-modal').style.display = 'flex';
             document.getElementById('new-making').focus();
         }
