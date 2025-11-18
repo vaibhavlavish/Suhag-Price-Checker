@@ -140,6 +140,10 @@
         #options-menu button.danger {
             color: #d32f2f;
         }
+        #options-menu button.backup {
+            color: #2196F3;
+            font-weight: 600;
+        }
         #options-menu button.danger:hover {
             background-color: #ffebee;
         }
@@ -762,6 +766,7 @@
         <div id="options-menu">
             <button onclick="showSection('update-rates')">Update Rates</button>
             <button onclick="showSection('excel-upload')">Upload Excel</button>
+            <button onclick="downloadBackup()" class="backup">Download Backup</button>
             <button onclick="clearAll()">Clear Screen</button>
             <button onclick="clearAllDataWrapper()" class="danger">Clear All Data (Cloud)</button>
         </div>
@@ -955,6 +960,9 @@
         <p style="font-size:14px; text-align:center; color:#666;">
             Columns: Tag No, Item Name, Gr. Wt., N. Wt., Making (%), Making (per g), Making (per pc), MRP, Other Charge, Metal, Stamp
         </p>
+        <div style="background-color: #e3f2fd; border: 1px solid #2196F3; color: #0d47a1; padding: 12px; margin: 10px 0; border-radius: 8px; font-size: 13px;">
+            <strong>Warning:</strong> Uploading an Excel file will <u>REPLACE</u> all existing product data. Please download a backup first.
+        </div>
         <input type="file" id="excel-file" accept=".xlsx, .xls" onchange="loadExcel()">
         <div id="excel-info"></div>
         <button onclick="showSection('main')">Back to Main</button>
@@ -1017,6 +1025,27 @@
                 clearAllData();
             }
         }
+        
+        // NEW: Backup Function
+        function downloadBackup() {
+            closeOptions();
+            const data = {
+                rates: rates,
+                taxRate: taxRate,
+                products: productData,
+                looseDefaults: looseDefaultsCloud,
+                backupTimestamp: new Date().toISOString()
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "suhag_backup_" + new Date().toISOString().slice(0,10) + ".json";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
         // -----------------
 
 
@@ -1060,15 +1089,21 @@
                     taxRate = cloudData.taxRate || 0;
                     productData = cloudData.products || {};
                     looseDefaultsCloud = cloudData.looseDefaults || { metal: 'Gold', stamp: '750', making: 35 };
+                    console.log("Data synced from Firebase.");
                 } else {
+                    // --- CRITICAL FIX: PREVENT DATA WIPE ON LOAD ---
+                    // If cloud returns null (empty or error), DO NOT SAVE defaults back to cloud.
+                    // Just use defaults locally for display.
+                    console.warn("No data found in cloud (or network error). Using local defaults for display. NOT overwriting cloud.");
+                    
                     rates = JSON.parse(JSON.stringify(defaultRates));
                     taxRate = 0;
                     productData = {};
                     looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 };
-                    saveAllDataToCloud(); 
+                    
+                    // REMOVED: saveAllDataToCloud();  <-- THIS LINE WAS CAUSING THE WIPE
                 }
 
-                console.log("Data synced from Firebase.");
                 
                 renderRatesTable(); 
                 
@@ -1852,8 +1887,10 @@
                 document.getElementById('excel-file').value = ''; 
                 return; 
             }
-            const file = document.getElementById('excel-file').files[0];
+            const fileInput = document.getElementById('excel-file');
+            const file = fileInput.files[0];
             if (!file) return;
+
             const reader = new FileReader();
             reader.onload = function(e) {
                 const data = new Uint8Array(e.target.result);
@@ -1900,9 +1937,20 @@
                     };
                     count++;
                 }
-                productData = newProductData; 
-                saveAllDataToCloud(); 
-                document.getElementById('excel-info').innerHTML = `<p>Loaded ${count} products</p>`;
+                
+                // --- SAFETY CONFIRMATION BEFORE OVERWRITE ---
+                const currentCount = Object.keys(productData).length;
+                showCustomConfirm(
+                    `This will REPLACE your entire product list (${currentCount} items) with ${count} new items from Excel. Proceed?`, 
+                    'Confirm Replacement', 
+                    () => {
+                        productData = newProductData; // Replaces everything as requested
+                        saveAllDataToCloud(); 
+                        document.getElementById('excel-info').innerHTML = `<p>Successfully loaded ${count} products.</p>`;
+                    }
+                );
+                // Clear input if canceled or done so onchange fires again if same file selected
+                if (!confirmCallback) fileInput.value = ''; 
             };
             reader.readAsArrayBuffer(file);
         }
@@ -2037,7 +2085,8 @@
         window.closeCustomModal = closeCustomModal;
         window.adjustMaking = adjustMaking; 
         window.toggleProductInfo = toggleProductInfo;
-        window.clearCart = clearCart; // New function
+        window.clearCart = clearCart;
+        window.downloadBackup = downloadBackup; // New backup function
 
     </script>
 </body>
