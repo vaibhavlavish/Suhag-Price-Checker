@@ -754,7 +754,7 @@
         <button onclick="showSection('main')" class="active">Main</button>
         <button onclick="showSection('loose-calculator')">Loose</button>
         
-        <button id="cart-btn-nav" class="taskbar-btn" onclick="openCart()" style="max-width: 60px; background-color: #4CAF50;">
+        <button id="cart-btn-nav" class="taskbar-btn" onclick="openCart()" style="max-width: 60px;">
             🛒
             <span id="cart-counter-nav" class="badge" style="display: none;">0</span>
         </button>
@@ -1123,8 +1123,14 @@
         }
 
         // --- GENERAL UI FUNCTIONS ---
-        function closeModal(modalId) {
+      function closeModal(modalId) {
             document.getElementById(modalId).style.display = 'none';
+            
+            // If closing the cart, remove the green active styling from the button
+            if (modalId === 'cart-modal') {
+                const btn = document.getElementById('cart-btn-nav');
+                if(btn) btn.classList.remove('active');
+            }
         }
 
         function showSection(section) {
@@ -1685,6 +1691,10 @@
         }
 
         function openCart() {
+            // Add active class to make button green
+            const btn = document.getElementById('cart-btn-nav');
+            if(btn) btn.classList.add('active');
+            
             const modal = document.getElementById('cart-modal');
             const cartItemsDiv = document.getElementById('cart-items-container');
             const cartTotalAmountSpan = document.getElementById('cart-total-amount');
