@@ -144,6 +144,10 @@
             color: #2196F3;
             font-weight: 600;
         }
+        #options-menu button.restore {
+            color: #FF9800;
+            font-weight: 600;
+        }
         #options-menu button.danger:hover {
             background-color: #ffebee;
         }
@@ -767,10 +771,14 @@
             <button onclick="showSection('update-rates')">Update Rates</button>
             <button onclick="showSection('excel-upload')">Upload Excel</button>
             <button onclick="downloadBackup()" class="backup">Download Backup</button>
+            <button onclick="triggerRestore()" class="restore">Restore Backup (JSON)</button>
             <button onclick="clearAll()">Clear Screen</button>
             <button onclick="clearAllDataWrapper()" class="danger">Clear All Data (Cloud)</button>
         </div>
     </div>
+
+    <input type="file" id="restore-file-input" accept=".json" style="display: none;" onchange="processRestoreFile()">
+
     <div id="main-screen">
         <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus>
         <div id="product-code" onclick="toggleProductInfo()"></div> <h1 id="price-display">0.00</h1>
@@ -1046,15 +1054,72 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
+
+        // --- RESTORE FUNCTIONS (NEW) ---
+        function triggerRestore() {
+            closeOptions();
+            if (!checkPin()) return;
+            // Trigger the hidden file input
+            document.getElementById('restore-file-input').click();
+        }
+
+        function processRestoreFile() {
+            const fileInput = document.getElementById('restore-file-input');
+            const file = fileInput.files[0];
+            
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const jsonContent = JSON.parse(e.target.result);
+
+                    if (!jsonContent.rates || !jsonContent.products) {
+                        showCustomAlert("Invalid Backup File. Missing rates or products.");
+                        return;
+                    }
+
+                    showCustomConfirm(
+                        "WARNING: This will overwrite ALL current cloud data with the data from this backup file. Are you sure?", 
+                        "Confirm Restore", 
+                        () => {
+                            // Use provided values or fall back to defaults if missing in JSON
+                            const dataToRestore = {
+                                rates: jsonContent.rates,
+                                taxRate: jsonContent.taxRate || 0,
+                                products: jsonContent.products || {},
+                                looseDefaults: jsonContent.looseDefaults || { metal: 'Gold', stamp: '750', making: 35 }
+                            };
+
+                            if (window.dbSet) {
+                                window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToRestore)
+                                .then(() => {
+                                    showCustomAlert("Restore Successful! Reloading app...");
+                                    setTimeout(() => location.reload(), 2000);
+                                })
+                                .catch((err) => {
+                                    showCustomAlert("Restore Failed: " + err.message);
+                                });
+                            }
+                        }
+                    );
+                } catch (err) {
+                    showCustomAlert("Error reading file: " + err.message);
+                }
+                fileInput.value = ''; // Reset input
+            };
+            reader.readAsText(file);
+        }
         // -----------------
 
 
-        // Default rates structure
+        // Default rates structure - UPDATED PER REQUEST
         const defaultRates = {
-            gold: { '999': 0, '916': 0, '750': 0 },
-            silver: { '999': 0, 'S925': 0, 'S8': 0 },
-            pc: { '950': 0, '900': 0 }
+            gold: { '916': 0, '750': 0 },        // Removed '999'
+            silver: { 'S925': 0, 'S8': 0 },      // Removed '999'
+            pc: { '900': 0 }                     // Removed '950' (and 999)
         };
+        
         // Data variables now initialized to empty/default, filled by Firebase
         let rates = JSON.parse(JSON.stringify(defaultRates));
         let taxRate = 0;
@@ -2086,7 +2151,9 @@
         window.adjustMaking = adjustMaking; 
         window.toggleProductInfo = toggleProductInfo;
         window.clearCart = clearCart;
-        window.downloadBackup = downloadBackup; // New backup function
+        window.downloadBackup = downloadBackup; // Backup
+        window.triggerRestore = triggerRestore; // Restore (New)
+        window.processRestoreFile = processRestoreFile; // Restore Logic (New)
 
     </script>
 </body>
