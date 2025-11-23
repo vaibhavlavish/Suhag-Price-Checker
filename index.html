@@ -966,7 +966,7 @@
     <div id="excel-upload">
         <h2>Upload Excel Sheet</h2>
         <p style="font-size:14px; text-align:center; color:#666;">
-            Columns: Tag No, Item Name, Gr. Wt., N. Wt., Making (%), Making (per g), Making (per pc), MRP, Other Charge, Metal, Stamp
+            Columns: Tag No, Item Name, Size, Gr. Wt., N. Wt., Making (%), Making (per g), Making (per pc), MRP, Other Charge, Metal, Stamp
         </p>
         <div style="background-color: #e3f2fd; border: 1px solid #2196F3; color: #0d47a1; padding: 12px; margin: 10px 0; border-radius: 8px; font-size: 13px;">
             <strong>Warning:</strong> Uploading an Excel file will <u>REPLACE</u> all existing product data. Please download a backup first.
@@ -1624,7 +1624,9 @@
             }
 
             if (showWeightOnMain) {
-                 el.textContent = `Gross Wt: ${currentProduct.grossWeight}g | Net Wt: ${currentProduct.netWeight}g`;
+                 // MODIFIED: Added Size display logic here
+                 let sizeStr = currentProduct.size ? `Size: ${currentProduct.size} | ` : '';
+                 el.textContent = `${sizeStr}Gr: ${currentProduct.grossWeight}g | Nt: ${currentProduct.netWeight}g`;
                  el.style.fontWeight = 'bold'; // Optional: make weight stand out
             } else {
                  el.textContent = `Barcode: ${currentBarcode} | Product: ${currentProduct.itemName || 'Unknown'}`;
@@ -1679,9 +1681,11 @@
         function showDetails() {
             if (!currentProduct) return;
             const d = currentProduct;
+            // MODIFIED: Added Size to details view
             let html = `
                 <p><strong>Item Name:</strong> <span>${d.itemName || ''}</span></p>
                 <p><strong>Barcode:</strong> <span>${currentBarcode}</span></p>
+                <p><strong>Size:</strong> <span>${d.size || '-'}</span></p>
                 <p><strong>Gr. Wt.:</strong> <span>${d.grossWeight.toFixed(2)}g</span></p>
                 <p><strong>N. Wt.:</strong> <span>${d.netWeight.toFixed(2)}g</span></p>
                 <p><strong>Other Charge:</strong> <span>${(d.otherCharge || 0).toFixed(2)}</span></p>
@@ -1966,6 +1970,8 @@
                 const cols = {
                     tagNo: findColumn(headers, ['tag no', 'tagno', 'barcode']),
                     itemName: findColumn(headers, ['item name', 'name', 'product name', 'item']),
+                    // MODIFIED: Added Size column search
+                    size: findColumn(headers, ['size', 'ring size', 'bangle size', 'measure']),
                     grossWeight: findColumn(headers, ['gr. wt.', 'gr wt', 'gross weight', 'gross wt', 'grossweight']),
                     netWeight: findColumn(headers, ['n. wt.', 'n wt', 'net weight', 'net wt', 'netweight']),
                     makingPct: findColumn(headers, ['making (%)', 'making%', 'making percent']),
@@ -1990,6 +1996,8 @@
                     const netWt = cols.netWeight !== -1 ? parseFloat(row[cols.netWeight]) || 0 : grossWt;
                     newProductData[tagNo] = {
                         itemName: cols.itemName !== -1 ? (row[cols.itemName] || '').toString().trim() : '',
+                        // MODIFIED: Added Size storage logic
+                        size: cols.size !== -1 ? (row[cols.size] || '').toString().trim() : '',
                         grossWeight: grossWt,
                         netWeight: netWt,
                         makingPercent: cols.makingPct !== -1 ? parseFloat(row[cols.makingPct]) || 0 : 0,
