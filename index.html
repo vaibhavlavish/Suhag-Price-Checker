@@ -246,12 +246,13 @@
             gap: 8px;
         }
         .full-width-btn {
-            flex: 1 1 100%;
+            width: 100%;
+            display: block;
         }
         .half-width-btn {
             flex: 1 1 45%; /* Grow and shrink, start at 45% */
         }
-        #detail-btn, #add-to-cart-btn, #alter-btn, .clear-btn, #cart-btn {
+        #detail-btn, #add-to-cart-btn, #alter-btn, .clear-btn, #cart-btn, #loose-add-to-cart-btn, #loose-alter-btn {
             margin: 0; /* Reset margins */
             padding: 12px 20px;
             font-size: 16px;
@@ -260,22 +261,29 @@
             border: none;
             border-radius: 25px;
             cursor: pointer;
-            display: none; /* Hide all by default */
+            /* display: none; Hide all by default */
             box-shadow: 0 3px 8px rgba(0,0,0,0.2);
             transition: all 0.2s;
             text-align: center; /* Ensure text is centered */
         }
-        #detail-btn:active, #add-to-cart-btn:active, #alter-btn:active, .clear-btn:active, #cart-btn:active {
+        
+        /* Specific display logic fixes */
+        #detail-btn, #add-to-cart-btn, #alter-btn, .clear-btn, #cart-btn {
+            display: none;
+        }
+        /* Loose buttons are always visible in their section, layout handled by flex */
+
+        #detail-btn:active, #add-to-cart-btn:active, #alter-btn:active, .clear-btn:active, #cart-btn:active, #loose-add-to-cart-btn:active, #loose-alter-btn:active {
             transform: translateY(1px);
             box-shadow: 0 1px 4px rgba(0,0,0,0.2);
         }
         #detail-btn {
             background-color: #2196F3;
         }
-        #add-to-cart-btn {
+        #add-to-cart-btn, #loose-add-to-cart-btn {
             background-color: #4CAF50; /* Green for add to cart */
         }
-        #alter-btn {
+        #alter-btn, #loose-alter-btn {
             background-color: #FF9800;
         }
         .clear-btn {
@@ -302,7 +310,7 @@
         /* --- END NEW BUTTON LAYOUT STYLES --- */
         
         /* Reused Modal Styles */
-        #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal { /* Added cart and custom modal */
+        #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal, #old-gold-modal { /* Added old-gold-modal */
             display: none;
             position: fixed;
             top: 0;
@@ -316,7 +324,7 @@
             padding: 15px;
             animation: fadeIn 0.2s ease;
         }
-        #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content { /* Added cart and custom modal */
+        #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content, #old-gold-content { /* Added old-gold-content */
             background: white;
             padding: 20px;
             border-radius: 16px;
@@ -327,7 +335,7 @@
             display: flex; /* Use flex for easier content management */
             flex-direction: column;
         }
-        #detail-content h3, #alter-content h3, #loose-alter-content h3, #cart-content h3, #custom-modal-content h3 { /* Added cart and custom modal */
+        #detail-content h3, #alter-content h3, #loose-alter-content h3, #cart-content h3, #custom-modal-content h3, #old-gold-content h3 {
             margin: 0 0 16px 0;
             color: #333;
             font-size: 20px;
@@ -385,7 +393,7 @@
             margin: 16px 0;
         }
 
-        .input-with-stepper input[type="number"] {
+        .input-with-stepper input[type="number"], .input-with-stepper input[type="text"] {
             flex-grow: 1; /* Allow input to take available space */
             margin: 0; /* Reset margin */
             padding: 12px;
@@ -394,7 +402,7 @@
             font-size: 16px;
             text-align: center;
         }
-        .input-with-stepper input[type="number"]:focus {
+        .input-with-stepper input:focus {
             border-color: #4CAF50;
             outline: none;
             box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
@@ -491,8 +499,8 @@
             outline: none;
             box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
         }
-        /* Updated button selector to exclude new cart buttons */
-        button:(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#close-cart-modal):not(#clear-cart-btn):not(#clear-screen-btn) {
+        /* Updated button selector to exclude new cart buttons and old gold */
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#close-cart-modal):not(#clear-cart-btn):not(#clear-screen-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn) {
             background-color: #4CAF50;
             color: white;
             cursor: pointer;
@@ -502,7 +510,7 @@
             width: auto;
             padding: 10px 16px;
         }
-        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):active {
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):active {
             transform: translateY(1px);
         }
         button:disabled {
@@ -674,7 +682,8 @@
             font-size: 1.3em;
             font-weight: 700;
             display: flex;
-            justify-content: space-between;
+            flex-direction: column; /* Changed to column for detailed breakdown */
+            gap: 5px;
             margin-bottom: 15px;
         }
         .empty-cart-message {
@@ -700,6 +709,63 @@
         #custom-modal-actions button {
             flex: 1;
         }
+
+        /* --- OLD GOLD BUTTON & MODAL --- */
+        #add-old-gold-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background-color: #4CAF50;
+            color: white;
+            font-size: 30px;
+            border: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-weight: bold;
+            line-height: 1;
+            padding: 0;
+        }
+        #add-old-gold-btn:active {
+            transform: scale(0.95);
+        }
+        #old-gold-list {
+            max-height: 200px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            border: 1px solid #eee;
+            border-radius: 8px;
+            padding: 5px;
+        }
+        .old-gold-item-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+        }
+        .old-gold-item-row:last-child {
+            border-bottom: none;
+        }
+        .remove-old-gold-btn {
+            background: none;
+            border: none;
+            color: #f44336;
+            font-size: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 0 5px;
+            width: auto;
+            margin: 0;
+            box-shadow: none;
+        }
         
         /* Responsive adjustments */
         @media (min-width: 480px) {
@@ -717,7 +783,7 @@
             #price-display, #loose-price-display {
                 font-size: 56px;
             }
-            #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content {
+            #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content, #old-gold-content {
                 max-width: 420px;
             }
             .manage-row {
@@ -798,7 +864,10 @@
                 <span id="cart-counter" class="badge" style="display: none;">0</span>
             </button>
         </div>
-        </div>
+    </div>
+    
+    <button id="add-old-gold-btn" onclick="openOldGoldModal()">+</button>
+
     <div id="loose-calculator">
         <h2 style="display: none;">Loose Jewellery Price Calculator</h2>
         
@@ -821,11 +890,8 @@
             Clear Screen
         </button>
 
-        <button id="loose-alter-btn" onclick="openLooseAlterDialog()" 
-            style="margin-top: 10px; background-color: #FF9800; color: white; padding: 10px 20px; border-radius: 25px; font-weight: 600; box-shadow: 0 3px 8px rgba(255, 152, 0, 0.3);">
-            Alter
-        </button>
-
+        <button id="loose-add-to-cart-btn" class="full-width-btn" onclick="addToCartLoose()" style="margin-top: 10px; background-color: #4CAF50;">Add to Cart</button>
+        <button id="loose-alter-btn" class="full-width-btn" onclick="openLooseAlterDialog()" style="margin-top: 10px; background-color: #FF9800;">Alter</button>
         <button onclick="showSection('main')" style="margin-top: 10px;">Back to Main</button>
     </div>
     <div id="detail-modal">
@@ -889,15 +955,31 @@
         </div>
     </div>
 
+    <div id="old-gold-modal" class="modal">
+        <div id="old-gold-content">
+            <h3>Old Jewellery Exchange</h3>
+            <div id="old-gold-list"></div> <label style="margin-top:0;">Add New Item:</label>
+            <div class="input-with-stepper" style="margin-top:5px;">
+                 <input type="text" id="old-gold-desc" placeholder="Desc (e.g. Ring)" style="flex: 1.5; text-align: left;">
+                 <input type="number" id="old-gold-value" placeholder="Value (₹)" style="flex: 1;">
+            </div>
+            <button onclick="addOldGoldItem()" style="background-color: #4CAF50; margin-top: 10px;">Add Item</button>
+            
+            <div style="margin-top: 20px; font-weight: bold; text-align: right; border-top: 1px solid #ccc; padding-top: 10px;">
+                Total Old Gold: <span id="old-gold-total-display" style="color: #f44336;">₹0.00</span>
+            </div>
+            
+            <button onclick="closeModal('old-gold-modal')" style="background-color: #555; margin-top: 10px;">Close</button>
+        </div>
+    </div>
+
     <div id="cart-modal" class="modal">
         <div id="cart-content">
             <h3>Shopping Cart</h3>
             <div id="cart-items-container">
                 </div>
             <div id="cart-total-summary">
-                <span>Total:</span>
-                <span id="cart-total-amount">₹0.00</span>
-            </div>
+                </div>
             <div id="cart-modal-buttons">
                  <button id="close-cart-modal" onclick="closeModal('cart-modal')">Close</button>
                  <button id="clear-cart-btn" onclick="clearCart()">Clear Cart</button>
@@ -1138,6 +1220,11 @@
         
         // NEW: Global cart array
         let cart = [];
+        // NEW: Global for current loose calculation
+        let currentLooseItem = null;
+        
+        // NEW: Global for Old Gold Items
+        let oldGoldItems = [];
 
         // === FIREBASE SYNC FUNCTIONS ===
         function syncData() {
@@ -1242,10 +1329,15 @@
             document.querySelectorAll('#taskbar button').forEach(btn => {
                 btn.classList.remove('active');
             });
+            
+            // Hide the Add Old Gold button unless on main screen
+            const oldGoldBtn = document.getElementById('add-old-gold-btn');
+            if(oldGoldBtn) oldGoldBtn.style.display = 'none';
 
             if (section === 'main') {
                 document.getElementById('main-screen').style.display = 'flex';
                 document.querySelector('#taskbar button[onclick="showSection(\'main\')"]').classList.add('active');
+                if(oldGoldBtn) oldGoldBtn.style.display = 'flex'; // Show button on main
                 clearAll(); 
                 setTimeout(() => document.getElementById('barcode').focus(), 100);
             } else if (section === 'loose-calculator') {
@@ -1490,12 +1582,14 @@
 
             if (isNaN(weight) || weight <= 0) {
                 priceDisplay.textContent = '0.00';
+                currentLooseItem = null; // Clear item if invalid
                 return;
             }
 
             const rate = rates[metal] ? rates[metal][stamp] : 0;
             if (rate === 0) {
                 priceDisplay.textContent = '0.00 (No Rate)';
+                currentLooseItem = null;
                 return;
             }
 
@@ -1506,12 +1600,37 @@
             const finalPrice = subtotal + taxAmount;
 
             priceDisplay.textContent = finalPrice.toFixed(2);
+            
+            // NEW: Populate the current loose item for cart addition
+            currentLooseItem = {
+                type: 'loose', // Important flag
+                id: Date.now() + Math.random(),
+                itemName: `Loose ${metal.charAt(0).toUpperCase() + metal.slice(1)} ${stamp}`,
+                weight: weight,
+                finalPrice: finalPrice
+            };
         }
 
         function clearLooseScreen() {
             document.getElementById('loose-weight').value = '';
             document.getElementById('loose-price-display').textContent = '0.00';
             document.getElementById('loose-weight').focus();
+            currentLooseItem = null; // Clear stored item
+        }
+
+        // NEW: Add to Cart for Loose Items
+        function addToCartLoose() {
+            if (!currentLooseItem || currentLooseItem.finalPrice <= 0) {
+                showCustomAlert('Please enter a valid weight to calculate price first.');
+                return;
+            }
+
+            cart.push(currentLooseItem);
+            localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
+            updateCartIcon();
+            showCustomAlert(`${currentLooseItem.itemName} added to cart!`);
+            
+            clearLooseScreen();
         }
         
         // --- END LOOSE CALCULATION FUNCTIONS ---
@@ -1801,34 +1920,79 @@
             
             const modal = document.getElementById('cart-modal');
             const cartItemsDiv = document.getElementById('cart-items-container');
-            const cartTotalAmountSpan = document.getElementById('cart-total-amount');
+            const cartTotalSummaryDiv = document.getElementById('cart-total-summary');
 
+            // --- REFACTORED CART LOGIC START ---
+            let cartTotal = 0;
+            let cartHtml = '';
+            
             if (cart.length === 0) {
                 cartItemsDiv.innerHTML = '<p class="empty-cart-message">Cart is empty.</p>';
-                cartTotalAmountSpan.textContent = '₹0.00';
             } else {
-                let total = 0;
-                let html = '';
-                
                 cart.forEach(item => {
-                    total += item.finalPrice;
-                    // NEW: Stringify the makingOverride so it can be passed in the onclick
-                    const overrideData = JSON.stringify(item.makingOverride);
-                    html += `
+                    cartTotal += item.finalPrice;
+                    
+                    let details = '';
+                    let clickAction = '';
+                    
+                    // Loose Jewellery Logic
+                    if (item.type === 'loose') {
+                        details = `Weight: ${item.weight.toFixed(2)}g`;
+                        clickAction = ''; 
+                    } else {
+                        // Standard Logic
+                        const overrideData = JSON.stringify(item.makingOverride);
+                        details = `Barcode: ${item.barcode}`;
+                        clickAction = `onclick='viewItemFromCart("${item.barcode}", ${overrideData})'`;
+                    }
+
+                    cartHtml += `
                         <div class="cart-item">
-                            <div class="cart-item-details" onclick='viewItemFromCart("${item.barcode}", ${overrideData})'>
+                            <div class="cart-item-details" ${clickAction} ${item.type === 'loose' ? 'style="cursor: default;"' : ''}>
                                 <div class="cart-item-title">${item.itemName}</div>
-                                <div class="cart-item-barcode">Barcode: ${item.barcode}</div>
+                                <div class="cart-item-barcode">${details}</div>
                             </div>
                             <span class="cart-item-price">₹${item.finalPrice.toFixed(2)}</span>
                             <button class="remove-item-btn" onclick="removeFromCart(${item.id})">&times;</button>
                         </div>
                     `;
                 });
-                
-                cartItemsDiv.innerHTML = html;
-                cartTotalAmountSpan.textContent = `₹${total.toFixed(2)}`;
+                cartItemsDiv.innerHTML = cartHtml;
             }
+
+            // Calculate Old Gold
+            let oldGoldTotal = 0;
+            oldGoldItems.forEach(item => oldGoldTotal += item.value);
+
+            let netPayable = cartTotal - oldGoldTotal;
+            
+            // Generate Summary HTML
+            let summaryHtml = `
+                <div style="display:flex; justify-content:space-between;">
+                    <span>Cart Total:</span><span>₹${cartTotal.toFixed(2)}</span>
+                </div>
+            `;
+            
+            if (oldGoldTotal > 0) {
+                summaryHtml += `
+                    <div style="display:flex; justify-content:space-between; color: #f44336;">
+                        <span>Less Old Gold:</span><span>- ₹${oldGoldTotal.toFixed(2)}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size: 1.1em; font-weight: bold; border-top: 1px dashed #ccc; padding-top: 5px; margin-top: 5px;">
+                        <span>Net Payable:</span><span>₹${netPayable.toFixed(2)}</span>
+                    </div>
+                `;
+            } else {
+                 // Standard display if no old gold
+                 summaryHtml = `
+                    <div style="display:flex; justify-content:space-between; font-size: 1.3em;">
+                        <span>Total:</span><span>₹${cartTotal.toFixed(2)}</span>
+                    </div>
+                 `;
+            }
+            
+            cartTotalSummaryDiv.innerHTML = summaryHtml;
+            // --- REFACTORED CART LOGIC END ---
 
             modal.style.display = 'flex';
         }
@@ -1866,6 +2030,61 @@
             });
         }
         // --- END CART FUNCTIONS ---
+        
+        // --- OLD GOLD FUNCTIONS ---
+        function openOldGoldModal() {
+            renderOldGoldList();
+            document.getElementById('old-gold-modal').style.display = 'flex';
+        }
+        
+        function addOldGoldItem() {
+            const desc = document.getElementById('old-gold-desc').value.trim() || 'Old Jewellery';
+            const val = parseFloat(document.getElementById('old-gold-value').value);
+            
+            if(!val || val <= 0) {
+                showCustomAlert("Please enter a valid value.");
+                return;
+            }
+            
+            oldGoldItems.push({ desc: desc, value: val, id: Date.now() });
+            localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
+            
+            // Clear inputs
+            document.getElementById('old-gold-desc').value = '';
+            document.getElementById('old-gold-value').value = '';
+            
+            renderOldGoldList();
+            showCustomAlert("Item added successfully!");
+        }
+
+        function removeOldGoldItem(id) {
+             oldGoldItems = oldGoldItems.filter(i => i.id !== id);
+             localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
+             renderOldGoldList();
+        }
+
+        function renderOldGoldList() {
+            const list = document.getElementById('old-gold-list');
+            list.innerHTML = '';
+            let total = 0;
+            
+            if (oldGoldItems.length === 0) {
+                list.innerHTML = '<p style="text-align:center; color:#999;">No old jewellery added.</p>';
+            } else {
+                oldGoldItems.forEach(item => {
+                    total += item.value;
+                    list.innerHTML += `
+                        <div class="old-gold-item-row">
+                            <span>${item.desc}</span>
+                            <span style="font-weight:bold; color: #f44336;">- ₹${item.value.toFixed(2)}</span>
+                            <button onclick="removeOldGoldItem(${item.id})" class="remove-old-gold-btn">&times;</button>
+                        </div>
+                    `;
+                });
+            }
+            document.getElementById('old-gold-total-display').textContent = '₹' + total.toFixed(2);
+        }
+        // --------------------------
 
         // --- UTILITY/SETUP FUNCTIONS ---
         
@@ -2119,6 +2338,18 @@
                 console.error("Failed to load cart from localStorage", e);
                 cart = [];
             }
+            
+            // --- Load Old Gold from Local Storage ---
+            try {
+                const savedOldGold = localStorage.getItem('suhagPriceCheckerOldGold');
+                if (savedOldGold) {
+                    oldGoldItems = JSON.parse(savedOldGold);
+                }
+            } catch (e) {
+                console.error("Failed to load old gold from localStorage", e);
+                oldGoldItems = [];
+            }
+            
             updateCartIcon(); // Update counter on load
 
             // --- Start Firebase Sync ---
@@ -2162,6 +2393,12 @@
         window.downloadBackup = downloadBackup; // Backup
         window.triggerRestore = triggerRestore; // Restore (New)
         window.processRestoreFile = processRestoreFile; // Restore Logic (New)
+        window.addToCartLoose = addToCartLoose; // Loose Add Cart (New)
+        
+        // Old Gold Functions
+        window.openOldGoldModal = openOldGoldModal;
+        window.addOldGoldItem = addOldGoldItem;
+        window.removeOldGoldItem = removeOldGoldItem;
 
     </script>
 </body>
