@@ -893,6 +893,10 @@
         <button id="loose-add-to-cart-btn" class="full-width-btn" onclick="addToCartLoose()" style="margin-top: 10px; background-color: #4CAF50;">Add to Cart</button>
         <button id="loose-alter-btn" class="full-width-btn" onclick="openLooseAlterDialog()" style="margin-top: 10px; background-color: #FF9800;">Alter</button>
         <button onclick="showSection('main')" style="margin-top: 10px;">Back to Main</button>
+
+        <label for="repair-amount">Repair Amount (₹):</label>
+        <input type="number" id="repair-amount" placeholder="Enter repair amount" step="0.01">
+        <button onclick="addRepairToCart()" style="margin-top: 10px; background-color: #4CAF50; color: white; padding: 12px; border-radius: 25px; font-weight: 600; border: none; box-shadow: 0 3px 8px rgba(76, 175, 80, 0.3); width: 100%;">Add Repair to Cart</button>
     </div>
     <div id="detail-modal">
         <div id="detail-content">
@@ -1632,6 +1636,25 @@
             
             clearLooseScreen();
         }
+
+        function addRepairToCart() {
+            const amount = parseFloat(document.getElementById('repair-amount').value);
+            if (isNaN(amount) || amount <= 0) {
+                showCustomAlert('Please enter a valid repair amount.');
+                return;
+            }
+            const item = {
+                type: 'repair',
+                id: Date.now() + Math.random(),
+                itemName: 'Repair Charge',
+                finalPrice: amount
+            };
+            cart.push(item);
+            localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
+            updateCartIcon();
+            showCustomAlert('Repair charge added to cart!');
+            document.getElementById('repair-amount').value = '';
+        }
         
         // --- END LOOSE CALCULATION FUNCTIONS ---
 
@@ -1939,6 +1962,9 @@
                     if (item.type === 'loose') {
                         details = `Weight: ${item.weight.toFixed(2)}g`;
                         clickAction = ''; 
+                    } else if (item.type === 'repair') {
+                        details = '';
+                        clickAction = '';
                     } else {
                         // Standard Logic
                         const overrideData = JSON.stringify(item.makingOverride);
@@ -1948,7 +1974,7 @@
 
                     cartHtml += `
                         <div class="cart-item">
-                            <div class="cart-item-details" ${clickAction} ${item.type === 'loose' ? 'style="cursor: default;"' : ''}>
+                            <div class="cart-item-details" ${clickAction} ${item.type === 'loose' || item.type === 'repair' ? 'style="cursor: default;"' : ''}>
                                 <div class="cart-item-title">${item.itemName}</div>
                                 <div class="cart-item-barcode">${details}</div>
                             </div>
@@ -2394,6 +2420,7 @@
         window.triggerRestore = triggerRestore; // Restore (New)
         window.processRestoreFile = processRestoreFile; // Restore Logic (New)
         window.addToCartLoose = addToCartLoose; // Loose Add Cart (New)
+        window.addRepairToCart = addRepairToCart;
         
         // Old Gold Functions
         window.openOldGoldModal = openOldGoldModal;
