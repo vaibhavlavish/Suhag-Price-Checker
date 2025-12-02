@@ -894,9 +894,9 @@
         <button id="loose-alter-btn" class="full-width-btn" onclick="openLooseAlterDialog()" style="margin-top: 10px; background-color: #FF9800;">Alter</button>
         <button onclick="showSection('main')" style="margin-top: 10px;">Back to Main</button>
 
-        <label for="repair-amount">Repair Amount (₹):</label>
-        <input type="number" id="repair-amount" placeholder="Enter repair amount" step="0.01">
-        <button onclick="addRepairToCart()" style="margin-top: 10px; background-color: #4CAF50; color: white; padding: 12px; border-radius: 25px; font-weight: 600; border: none; box-shadow: 0 3px 8px rgba(76, 175, 80, 0.3); width: 100%;">Add Repair to Cart</button>
+        <label for="repair-amount">Other Amount (₹):</label>
+        <input type="number" id="repair-amount" placeholder="Enter amount" step="0.01">
+        <button onclick="addRepairToCart()" style="margin-top: 10px; background-color: #4CAF50; color: white; padding: 12px; border-radius: 25px; font-weight: 600; border: none; box-shadow: 0 3px 8px rgba(76, 175, 80, 0.3); width: 100%;">Add to Cart</button>
     </div>
     <div id="detail-modal">
         <div id="detail-content">
@@ -1640,19 +1640,19 @@
         function addRepairToCart() {
             const amount = parseFloat(document.getElementById('repair-amount').value);
             if (isNaN(amount) || amount <= 0) {
-                showCustomAlert('Please enter a valid repair amount.');
+                showCustomAlert('Please enter a valid amount.');
                 return;
             }
             const item = {
                 type: 'repair',
                 id: Date.now() + Math.random(),
-                itemName: 'Repair Charge',
+                itemName: 'Other ',
                 finalPrice: amount
             };
             cart.push(item);
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
             updateCartIcon();
-            showCustomAlert('Repair charge added to cart!');
+            showCustomAlert('Other added to cart!');
             document.getElementById('repair-amount').value = '';
         }
         
