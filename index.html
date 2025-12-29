@@ -767,6 +767,28 @@
             box-shadow: none;
         }
         
+        /* Auto Calc Styles */
+        .base-calc-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            padding: 8px;
+            background: #f9f9f9;
+            border-radius: 6px;
+        }
+        .base-calc-row label {
+            margin: 0;
+            flex: 1;
+            font-size: 14px;
+        }
+        .base-calc-row input {
+            width: 80px;
+            padding: 8px;
+            margin: 0;
+            text-align: center;
+        }
+        
         /* Responsive adjustments */
         @media (min-width: 480px) {
             #taskbar {
@@ -1046,6 +1068,26 @@
         <label for="tax-percent">Global Tax (%):</label>
         <input type="number" id="tax-percent" placeholder="e.g., 3" step="0.01">
         <button onclick="updateTax()">Update Tax</button>
+        
+        <hr>
+        
+        <h3 style="text-align: center; color: #333; font-size: 16px;">Auto-Calculate from Base Rate</h3>
+        <p style="font-size:12px; text-align:center; color:#666; margin-top: -10px;"><em>Set Pure Rate (e.g. 24K) and % for stamps</em></p>
+        
+        <label for="base-calc-metal">Metal:</label>
+        <select id="base-calc-metal" onchange="renderBaseRateCalc()">
+            <option value="Gold">Gold</option>
+            <option value="Silver">Silver</option>
+        </select>
+        
+        <label for="base-pure-rate">Pure Metal Rate (e.g., 24K price):</label>
+        <input type="number" id="base-pure-rate" placeholder="e.g., 14300" step="0.01">
+        
+        <div id="base-calc-container" style="margin-top: 15px;"></div>
+        
+        <button onclick="applyBaseRates()" style="background-color: #2196F3; margin-top: 15px;">Apply & Update All Rates</button>
+        
+        <hr>
       
         <button onclick="showSection('main')">Back to Main</button>
     </div>
@@ -1128,6 +1170,7 @@
                 taxRate: taxRate,
                 products: productData,
                 looseDefaults: looseDefaultsCloud,
+                baseCalcDefaults: baseCalcDefaults, // NEW: Include calc defaults in backup
                 backupTimestamp: new Date().toISOString()
             };
             const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
@@ -1174,7 +1217,8 @@
                                 rates: jsonContent.rates,
                                 taxRate: jsonContent.taxRate || 0,
                                 products: jsonContent.products || {},
-                                looseDefaults: jsonContent.looseDefaults || { metal: 'Gold', stamp: '750', making: 35 }
+                                looseDefaults: jsonContent.looseDefaults || { metal: 'Gold', stamp: '750', making: 35 },
+                                baseCalcDefaults: jsonContent.baseCalcDefaults || {} // Restore new defaults
                             };
 
                             if (window.dbSet) {
@@ -1219,6 +1263,7 @@
         let currentMakingInput = 0;
         let makingOverride = null;
         let looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 }; 
+        let baseCalcDefaults = {}; // NEW: Store calc defaults
         let currentBarcode = ''; 
         let showWeightOnMain = false; // State for toggling weight display
         
@@ -1245,6 +1290,7 @@
                     taxRate = cloudData.taxRate || 0;
                     productData = cloudData.products || {};
                     looseDefaultsCloud = cloudData.looseDefaults || { metal: 'Gold', stamp: '750', making: 35 };
+                    baseCalcDefaults = cloudData.baseCalcDefaults || {}; // Sync defaults
                     console.log("Data synced from Firebase.");
                 } else {
                     // --- CRITICAL FIX: PREVENT DATA WIPE ON LOAD ---
@@ -1256,6 +1302,7 @@
                     taxRate = 0;
                     productData = {};
                     looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 };
+                    baseCalcDefaults = {};
                     
                     // REMOVED: saveAllDataToCloud();  <-- THIS LINE WAS CAUSING THE WIPE
                 }
@@ -1270,6 +1317,9 @@
                 }
                 populateStamps('stamp-select', document.getElementById('metal-select').value);
                 populateStamps('manage-stamp', document.getElementById('metal-select').value);
+                
+                // NEW: Initialize the new calc renderer
+                renderBaseRateCalc();
 
                 setLooseDefaults(); 
                 calculateLoosePrice(); 
@@ -1285,7 +1335,8 @@
                 rates: rates, 
                 taxRate: taxRate, 
                 products: productData,
-                looseDefaults: looseDefaultsCloud
+                looseDefaults: looseDefaultsCloud,
+                baseCalcDefaults: baseCalcDefaults // Save calc defaults
             };
             window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToSave)
             .then(() => {
@@ -1360,6 +1411,7 @@
                 populateStamps('stamp-select', metal);
                 populateStamps('manage-stamp', metal);
                 updateRemoveButton();
+                renderBaseRateCalc(); // Refresh the calc view
             }
             closeOptions();
         }
@@ -1419,6 +1471,90 @@
                 select.selectedIndex = 0;
             }
         }
+        
+        // --- NEW: AUTO-CALCULATE BASE RATES FUNCTIONS (WITH DEFAULTS) ---
+        function renderBaseRateCalc() {
+            const metal = document.getElementById('base-calc-metal').value.toLowerCase();
+            const container = document.getElementById('base-calc-container');
+            const pureRateInput = document.getElementById('base-pure-rate');
+            
+            container.innerHTML = '';
+
+            if (!rates[metal]) {
+                container.innerHTML = '<p style="text-align:center; color:#999;">No stamps found for this metal.</p>';
+                return;
+            }
+
+            // Get defaults for this metal if they exist
+            const defaults = baseCalcDefaults[metal] || {};
+            const savedBaseRate = defaults.baseRate || '';
+            const savedPercentages = defaults.percentages || {};
+
+            // Pre-fill Base Rate Input
+            pureRateInput.value = savedBaseRate;
+
+            for (let stamp in rates[metal]) {
+                const savedPct = savedPercentages[stamp] || '';
+                
+                const div = document.createElement('div');
+                div.className = 'base-calc-row';
+                div.innerHTML = `
+                    <label>${stamp} (%):</label>
+                    <input type="number" data-stamp="${stamp}" value="${savedPct}" placeholder="%" step="0.1">
+                `;
+                container.appendChild(div);
+            }
+        }
+
+        function applyBaseRates() {
+            if (!checkPin()) return;
+
+            const metal = document.getElementById('base-calc-metal').value.toLowerCase();
+            const pureRate = parseFloat(document.getElementById('base-pure-rate').value);
+            const inputs = document.querySelectorAll('#base-calc-container input');
+
+            if (isNaN(pureRate) || pureRate <= 0) {
+                showCustomAlert('Please enter a valid Pure Metal Rate.');
+                return;
+            }
+            
+            // Initialize defaults object for this metal if missing
+            if (!baseCalcDefaults[metal]) {
+                baseCalcDefaults[metal] = { baseRate: 0, percentages: {} };
+            }
+            
+            // Save the base rate
+            baseCalcDefaults[metal].baseRate = pureRate;
+
+            let updatedCount = 0;
+            inputs.forEach(input => {
+                const percentage = parseFloat(input.value);
+                const stamp = input.dataset.stamp;
+
+                if (!isNaN(percentage) && percentage > 0) {
+                    // Update Rate
+                    const newRate = pureRate * (percentage / 100);
+                    if (rates[metal] && rates[metal][stamp] !== undefined) {
+                        rates[metal][stamp] = parseFloat(newRate.toFixed(2)); // Round to 2 decimals
+                        updatedCount++;
+                    }
+                    
+                    // Save Percentage Default
+                    if (!baseCalcDefaults[metal].percentages) baseCalcDefaults[metal].percentages = {};
+                    baseCalcDefaults[metal].percentages[stamp] = percentage;
+                }
+            });
+
+            if (updatedCount > 0) {
+                saveAllDataToCloud();
+                showCustomAlert(`Successfully updated ${updatedCount} rates for ${metal.charAt(0).toUpperCase() + metal.slice(1)}.\nPercentages and Base Rate saved as default.`);
+                
+                // Do NOT clear inputs anymore, they stay as defaults
+            } else {
+                showCustomAlert('No percentages were entered. No rates updated.');
+            }
+        }
+        // ------------------------------------------------
         
         // --- LOOSE CALCULATOR FUNCTIONS ---
 
@@ -2426,6 +2562,10 @@
         window.openOldGoldModal = openOldGoldModal;
         window.addOldGoldItem = addOldGoldItem;
         window.removeOldGoldItem = removeOldGoldItem;
+        
+        // Auto Calc Functions
+        window.renderBaseRateCalc = renderBaseRateCalc;
+        window.applyBaseRates = applyBaseRates;
 
     </script>
 </body>
