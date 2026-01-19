@@ -170,7 +170,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            justify-content: flex-start; /* Changed from center to accommodate top button */
             align-items: center;
             padding: 20px 15px;
             background-color: #f5f5f5;
@@ -252,7 +252,7 @@
         .half-width-btn {
             flex: 1 1 45%; /* Grow and shrink, start at 45% */
         }
-        #detail-btn, #add-to-cart-btn, #alter-btn, .clear-btn, #cart-btn, #loose-add-to-cart-btn, #loose-alter-btn {
+        #detail-btn, #add-to-cart-btn, #alter-btn, .clear-btn, #cart-btn, #loose-add-to-cart-btn, #loose-alter-btn, #preset-btn {
             margin: 0; /* Reset margins */
             padding: 12px 20px;
             font-size: 16px;
@@ -273,7 +273,7 @@
         }
         /* Loose buttons are always visible in their section, layout handled by flex */
 
-        #detail-btn:active, #add-to-cart-btn:active, #alter-btn:active, .clear-btn:active, #cart-btn:active, #loose-add-to-cart-btn:active, #loose-alter-btn:active {
+        #detail-btn:active, #add-to-cart-btn:active, #alter-btn:active, .clear-btn:active, #cart-btn:active, #loose-add-to-cart-btn:active, #loose-alter-btn:active, #preset-btn:active {
             transform: translateY(1px);
             box-shadow: 0 1px 4px rgba(0,0,0,0.2);
         }
@@ -310,7 +310,7 @@
         /* --- END NEW BUTTON LAYOUT STYLES --- */
         
         /* Reused Modal Styles */
-        #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal, #old-gold-modal { /* Added old-gold-modal */
+        #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal, #old-gold-modal, #preset-modal { /* Added preset-modal */
             display: none;
             position: fixed;
             top: 0;
@@ -324,7 +324,7 @@
             padding: 15px;
             animation: fadeIn 0.2s ease;
         }
-        #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content, #old-gold-content { /* Added old-gold-content */
+        #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content, #old-gold-content, #preset-content { /* Added preset-content */
             background: white;
             padding: 20px;
             border-radius: 16px;
@@ -335,7 +335,7 @@
             display: flex; /* Use flex for easier content management */
             flex-direction: column;
         }
-        #detail-content h3, #alter-content h3, #loose-alter-content h3, #cart-content h3, #custom-modal-content h3, #old-gold-content h3 {
+        #detail-content h3, #alter-content h3, #loose-alter-content h3, #cart-content h3, #custom-modal-content h3, #old-gold-content h3, #preset-content h3 {
             margin: 0 0 16px 0;
             color: #333;
             font-size: 20px;
@@ -500,7 +500,7 @@
             box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
         }
         /* Updated button selector to exclude new cart buttons and old gold */
-        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#close-cart-modal):not(#clear-cart-btn):not(#clear-screen-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(.remove-item-btn) {
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#close-cart-modal):not(#clear-cart-btn):not(#clear-screen-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(.remove-item-btn):not(#preset-btn):not(.preset-item-btn):not(.preset-del-btn) {
             background-color: #4CAF50;
             color: white;
             cursor: pointer;
@@ -510,7 +510,7 @@
             width: auto;
             padding: 10px 16px;
         }
-        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):active {
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(#preset-btn):active {
             transform: translateY(1px);
         }
         button:disabled {
@@ -788,6 +788,49 @@
             margin: 0;
             text-align: center;
         }
+
+        /* --- PRESET BUTTON STYLES --- */
+        #preset-btn {
+            background-color: #9c27b0; /* Purple */
+            margin-bottom: 10px;
+            display: inline-block;
+            width: auto;
+            padding: 8px 16px;
+            font-size: 14px;
+        }
+        #preset-list {
+            margin-top: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .preset-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .preset-item-btn {
+            flex: 1;
+            background-color: #eee;
+            color: #333;
+            border: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .preset-del-btn {
+            background-color: #f44336;
+            color: white;
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
         
         /* Responsive adjustments */
         @media (min-width: 480px) {
@@ -805,7 +848,7 @@
             #price-display, #loose-price-display {
                 font-size: 56px;
             }
-            #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content, #old-gold-content {
+            #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content, #old-gold-content, #preset-content {
                 max-width: 420px;
             }
             .manage-row {
@@ -891,15 +934,26 @@
     <button id="add-old-gold-btn" onclick="openOldGoldModal()">+</button>
 
     <div id="loose-calculator">
+        <div style="width: 100%; display: flex; justify-content: flex-end; padding: 0 5px;">
+            <button id="preset-btn" onclick="openPresetModal()">★ Presets</button>
+        </div>
+
         <h2 style="display: none;">Loose Jewellery Price Calculator</h2>
         
         <input type="hidden" id="loose-metal-select" value="Gold">
         <input type="hidden" id="loose-stamp-select" value="750">
+        <input type="hidden" id="loose-making-type" value="%">
         <input type="hidden" id="loose-making-percent" value="35">
+        
+       <div id="loose-current-selection" style="display: none;">Selected: Gold 750</div>
         
         <label for="loose-weight">Weight (Grams):</label>
         <input type="number" id="loose-weight" placeholder="Enter weight in grams" step="0.01" oninput="calculateLoosePrice()">
         
+        <div id="loose-making-display" style="display: none;">
+            Making: 35%
+        </div>
+
         <hr style="display: none;">
 
         <p style="text-align: center; font-size: 18px; font-weight: 600; color: #333;">Final Price:</p>
@@ -958,10 +1012,17 @@
                 <label for="modal-loose-stamp-select">Stamp/Purity:</label>
                 <select id="modal-loose-stamp-select"></select>
 
-                <label for="modal-loose-making-percent">Making Charge (%):</label>
+                <label for="modal-loose-making-percent">Making Charge:</label>
+                <div style="display:flex; gap:5px; margin-bottom:5px;">
+                    <select id="modal-loose-making-type" style="flex:1; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                        <option value="%">% (Percent)</option>
+                        <option value="per_g">₹ Per Gram</option>
+                        <option value="per_pc">₹ Fixed (Pc)</option>
+                    </select>
+                </div>
                 <div class="input-with-stepper">
                     <button class="stepper-btn" onclick="adjustMaking('modal-loose-making-percent', -0.25)">-</button>
-                    <input type="number" id="modal-loose-making-percent" placeholder="e.g., 35" step="0.25">
+                    <input type="number" id="modal-loose-making-percent" placeholder="Value" step="0.25">
                     <button class="stepper-btn" onclick="adjustMaking('modal-loose-making-percent', 0.25)">+</button>
                 </div>
             </div>
@@ -978,6 +1039,23 @@
             <p style="font-size:12px; margin-top:10px; text-align:center; color:#999;">
                 Current Rate: <span id="modal-loose-rate">0.00</span> /g
             </p>
+        </div>
+    </div>
+
+    <div id="preset-modal">
+        <div id="preset-content">
+            <h3>Manage Presets</h3>
+            
+            <div style="background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #eee;">
+                <h4 style="margin: 0 0 8px 0; font-size: 14px;">Add New Preset:</h4>
+                <input type="text" id="new-preset-name" placeholder="Preset Name (e.g. Bangles)" style="margin-top:0;">
+                <button onclick="addNewPreset()" style="background-color: #4CAF50; width: 100%; margin-top: 5px;">Save Current Settings</button>
+            </div>
+            
+            <h4 style="margin: 15px 0 5px 0; font-size: 14px;">Load Preset:</h4>
+            <div id="preset-list"></div>
+            
+            <button onclick="closeModal('preset-modal')" style="background-color: #555; margin-top: 15px;">Close</button>
         </div>
     </div>
 
@@ -1274,6 +1352,9 @@
         
         // NEW: Global for Old Gold Items
         let oldGoldItems = [];
+        
+        // NEW: Global for Presets
+        let loosePresets = [];
 
         // === FIREBASE SYNC FUNCTIONS ===
         function syncData() {
@@ -1559,12 +1640,13 @@
         // --- LOOSE CALCULATOR FUNCTIONS ---
 
         function setLooseDefaults() { 
-            
             const defaults = looseDefaultsCloud; 
             
             let metal = defaults.metal || 'Gold';
             let stamp = defaults.stamp || '750';
             let making = defaults.making || 35; 
+            // Note: defaults from cloud only support %, keeping type as % for compatibility with existing data
+            let makingType = '%';
 
             const metalKey = metal.toLowerCase();
             if (!rates[metalKey] || !rates[metalKey][stamp]) {
@@ -1587,9 +1669,13 @@
                 }
             }
             
-            document.getElementById('loose-metal-select').value = metal; 
+            document.getElementById('loose-metal-select').value = metal;
             document.getElementById('loose-stamp-select').value = stamp; 
             document.getElementById('loose-making-percent').value = making;
+            document.getElementById('loose-making-type').value = makingType;
+            
+            // Update the display text
+            document.getElementById('loose-current-selection').textContent = `Selected: ${metal} ${stamp}`;
         }
 
         // NEW: Adjust making charge by a step
@@ -1630,9 +1716,12 @@
             const metal = document.getElementById('loose-metal-select').value;
             const stamp = document.getElementById('loose-stamp-select').value;
             const making = document.getElementById('loose-making-percent').value;
+            const makingType = document.getElementById('loose-making-type').value;
 
             document.getElementById('modal-loose-metal-select').value = metal;
             document.getElementById('modal-loose-making-percent').value = making;
+            // Load making type into modal
+            document.getElementById('modal-loose-making-type').value = makingType;
             
             populateModalStamps(metal);
             
@@ -1653,19 +1742,24 @@
             const newMetal = document.getElementById('modal-loose-metal-select').value;
             const newStamp = document.getElementById('modal-loose-stamp-select').value;
             const newMaking = parseFloat(document.getElementById('modal-loose-making-percent').value);
+            const newMakingType = document.getElementById('modal-loose-making-type').value;
 
             if (!newStamp) {
                 showCustomAlert('Please select a Stamp/Purity.');
                 return;
             }
             if (isNaN(newMaking) || newMaking < 0) {
-                showCustomAlert('Please enter a valid Making Charge (%).');
+                showCustomAlert('Please enter a valid Making Charge.');
                 return;
             }
 
             document.getElementById('loose-metal-select').value = newMetal;
             document.getElementById('loose-stamp-select').value = newStamp;
             document.getElementById('loose-making-percent').value = newMaking;
+            document.getElementById('loose-making-type').value = newMakingType;
+            
+            // Update display text
+            document.getElementById('loose-current-selection').textContent = `Selected: ${newMetal} ${newStamp}`;
 
             closeLooseAlter();
             calculateLoosePrice();
@@ -1684,7 +1778,7 @@
                 return;
             }
             if (isNaN(newMaking) || newMaking < 0) {
-                showCustomAlert('Please enter a valid Making Charge (%).');
+                showCustomAlert('Please enter a valid Making Charge.');
                 return;
             }
             
@@ -1694,7 +1788,7 @@
                 return;
             }
 
-            showCustomConfirm(`Save ${newMetal} ${newStamp} with ${newMaking.toFixed(2)}% making as the permanent default?`, 'Confirm Save', () => {
+            showCustomConfirm(`Save ${newMetal} ${newStamp} with ${newMaking.toFixed(2)} making as the permanent default?`, 'Confirm Save', () => {
                 looseDefaultsCloud = {
                     metal: newMetal,
                     stamp: newStamp,
@@ -1705,6 +1799,9 @@
                 document.getElementById('loose-metal-select').value = newMetal;
                 document.getElementById('loose-stamp-select').value = newStamp;
                 document.getElementById('loose-making-percent').value = newMaking;
+                
+                // Update display text
+                document.getElementById('loose-current-selection').textContent = `Selected: ${newMetal} ${newStamp}`;
 
                 showCustomAlert('Loose defaults saved successfully. They will load automatically next time.');
                 closeLooseAlter();
@@ -1717,7 +1814,20 @@
             const priceDisplay = document.getElementById('loose-price-display');
             const metal = document.getElementById('loose-metal-select').value.toLowerCase();
             const stamp = document.getElementById('loose-stamp-select').value;
-            const makingPercent = parseFloat(document.getElementById('loose-making-percent').value);
+            
+            // New Making Charge Logic
+            const makingType = document.getElementById('loose-making-type').value; // %, per_g, per_pc
+            const makingValue = parseFloat(document.getElementById('loose-making-percent').value); // Reused ID for value
+            
+            // Update the display text for making charge
+            let makingDisplayStr = "";
+            if(makingType === '%') makingDisplayStr = `${makingValue}%`;
+            else if(makingType === 'per_g') makingDisplayStr = `₹${makingValue}/g`;
+            else makingDisplayStr = `₹${makingValue} (Fixed)`;
+            
+            document.getElementById('loose-making-display').textContent = `Making: ${makingDisplayStr}`;
+
+
             const weight = parseFloat(weightInput.value);
 
             if (isNaN(weight) || weight <= 0) {
@@ -1734,7 +1844,16 @@
             }
 
             const metalVal = weight * rate;
-            const making = metalVal * (makingPercent / 100);
+            let making = 0;
+
+            if (makingType === '%') {
+                making = metalVal * (makingValue / 100);
+            } else if (makingType === 'per_g') {
+                making = makingValue * weight;
+            } else if (makingType === 'per_pc') {
+                making = makingValue;
+            }
+
             const subtotal = metalVal + making;
             const taxAmount = subtotal * (taxRate / 100);
             const finalPrice = subtotal + taxAmount;
@@ -1791,6 +1910,93 @@
             showCustomAlert('Other added to cart!');
             document.getElementById('repair-amount').value = '';
         }
+
+        // --- PRESET FUNCTIONS (NEW) ---
+        function openPresetModal() {
+            renderPresetList();
+            document.getElementById('preset-modal').style.display = 'flex';
+        }
+
+        function addNewPreset() {
+            const name = document.getElementById('new-preset-name').value.trim();
+            if (!name) {
+                showCustomAlert("Please enter a preset name.");
+                return;
+            }
+            
+            const metal = document.getElementById('loose-metal-select').value;
+            const stamp = document.getElementById('loose-stamp-select').value;
+            const makingType = document.getElementById('loose-making-type').value;
+            const makingValue = parseFloat(document.getElementById('loose-making-percent').value) || 0;
+
+            const newPreset = {
+                id: Date.now(),
+                name: name,
+                metal: metal,
+                stamp: stamp,
+                makingType: makingType,
+                makingValue: makingValue
+            };
+
+            loosePresets.push(newPreset);
+            localStorage.setItem('suhagLoosePresets', JSON.stringify(loosePresets));
+            
+            document.getElementById('new-preset-name').value = '';
+            renderPresetList();
+            showCustomAlert("Preset saved!");
+        }
+
+        function deletePreset(id) {
+            loosePresets = loosePresets.filter(p => p.id !== id);
+            localStorage.setItem('suhagLoosePresets', JSON.stringify(loosePresets));
+            renderPresetList();
+        }
+
+        function loadPreset(id) {
+            const preset = loosePresets.find(p => p.id === id);
+            if (preset) {
+                document.getElementById('loose-metal-select').value = preset.metal;
+                document.getElementById('loose-stamp-select').value = preset.stamp;
+                document.getElementById('loose-making-type').value = preset.makingType;
+                document.getElementById('loose-making-percent').value = preset.makingValue;
+                
+                // Update display text
+                document.getElementById('loose-current-selection').textContent = `Selected: ${preset.metal} ${preset.stamp}`;
+
+                calculateLoosePrice();
+                closeModal('preset-modal');
+                showCustomAlert(`Loaded: ${preset.name}`);
+            }
+        }
+
+        function renderPresetList() {
+            const list = document.getElementById('preset-list');
+            list.innerHTML = '';
+            
+            if (loosePresets.length === 0) {
+                list.innerHTML = '<p style="text-align:center; color:#999;">No presets saved.</p>';
+            } else {
+                loosePresets.forEach(preset => {
+                    const row = document.createElement('div');
+                    row.className = 'preset-row';
+                    
+                    let makingDisplay = '';
+                    if(preset.makingType === '%') makingDisplay = `${preset.makingValue}%`;
+                    else if(preset.makingType === 'per_g') makingDisplay = `₹${preset.makingValue}/g`;
+                    else makingDisplay = `₹${preset.makingValue} Fixed`;
+
+                    row.innerHTML = `
+                        <button class="preset-item-btn" onclick="loadPreset(${preset.id})">
+                            <strong>${preset.name}</strong><br>
+                            <span style="font-size:12px; color:#666;">${preset.metal} ${preset.stamp} | ${makingDisplay}</span>
+                        </button>
+                        <button class="preset-del-btn" onclick="deletePreset(${preset.id})">&times;</button>
+                    `;
+                    list.appendChild(row);
+                });
+            }
+        }
+        // ------------------------------
         
         // --- END LOOSE CALCULATION FUNCTIONS ---
 
@@ -2512,6 +2718,17 @@
                 oldGoldItems = [];
             }
             
+            // --- Load Presets from Local Storage ---
+            try {
+                const savedPresets = localStorage.getItem('suhagLoosePresets');
+                if (savedPresets) {
+                    loosePresets = JSON.parse(savedPresets);
+                }
+            } catch (e) {
+                console.error("Failed to load presets", e);
+                loosePresets = [];
+            }
+            
             updateCartIcon(); // Update counter on load
 
             // --- Start Firebase Sync ---
@@ -2566,6 +2783,12 @@
         // Auto Calc Functions
         window.renderBaseRateCalc = renderBaseRateCalc;
         window.applyBaseRates = applyBaseRates;
+        
+        // Preset Functions
+        window.openPresetModal = openPresetModal;
+        window.addNewPreset = addNewPreset;
+        window.loadPreset = loadPreset;
+        window.deletePreset = deletePreset;
 
     </script>
 </body>
