@@ -1045,6 +1045,7 @@
     <div id="preset-modal">
         <div id="preset-content">
             <h3>Manage Presets</h3>
+            <p style="font-size:12px; text-align:center; color:#666; margin-top:-10px;">(Admin PIN Required to Add/Delete)</p>
             
             <div style="background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #eee;">
                 <h4 style="margin: 0 0 8px 0; font-size: 14px;">Add New Preset:</h4>
@@ -1248,7 +1249,8 @@
                 taxRate: taxRate,
                 products: productData,
                 looseDefaults: looseDefaultsCloud,
-                baseCalcDefaults: baseCalcDefaults, // NEW: Include calc defaults in backup
+                baseCalcDefaults: baseCalcDefaults, 
+                presets: loosePresets, // Include presets in backup
                 backupTimestamp: new Date().toISOString()
             };
             const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
@@ -1287,7 +1289,7 @@
                     }
 
                     showCustomConfirm(
-                        "WARNING: This will overwrite ALL current cloud data with the data from this backup file. Are you sure?", 
+                        "WARNING: This will overwrite ALL current cloud data (Rates, Products, Presets) with this backup. Are you sure?", 
                         "Confirm Restore", 
                         () => {
                             // Use provided values or fall back to defaults if missing in JSON
@@ -1296,7 +1298,8 @@
                                 taxRate: jsonContent.taxRate || 0,
                                 products: jsonContent.products || {},
                                 looseDefaults: jsonContent.looseDefaults || { metal: 'Gold', stamp: '750', making: 35 },
-                                baseCalcDefaults: jsonContent.baseCalcDefaults || {} // Restore new defaults
+                                baseCalcDefaults: jsonContent.baseCalcDefaults || {},
+                                presets: jsonContent.presets || [] // Restore presets
                             };
 
                             if (window.dbSet) {
@@ -1341,7 +1344,7 @@
         let currentMakingInput = 0;
         let makingOverride = null;
         let looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 }; 
-        let baseCalcDefaults = {}; // NEW: Store calc defaults
+        let baseCalcDefaults = {}; 
         let currentBarcode = ''; 
         let showWeightOnMain = false; // State for toggling weight display
         
@@ -1353,7 +1356,7 @@
         // NEW: Global for Old Gold Items
         let oldGoldItems = [];
         
-        // NEW: Global for Presets
+        // NEW: Global for Presets - Now synced from cloud, default empty
         let loosePresets = [];
 
         // === FIREBASE SYNC FUNCTIONS ===
@@ -1371,12 +1374,10 @@
                     taxRate = cloudData.taxRate || 0;
                     productData = cloudData.products || {};
                     looseDefaultsCloud = cloudData.looseDefaults || { metal: 'Gold', stamp: '750', making: 35 };
-                    baseCalcDefaults = cloudData.baseCalcDefaults || {}; // Sync defaults
+                    baseCalcDefaults = cloudData.baseCalcDefaults || {}; 
+                    loosePresets = cloudData.presets || []; // Sync presets from cloud
                     console.log("Data synced from Firebase.");
                 } else {
-                    // --- CRITICAL FIX: PREVENT DATA WIPE ON LOAD ---
-                    // If cloud returns null (empty or error), DO NOT SAVE defaults back to cloud.
-                    // Just use defaults locally for display.
                     console.warn("No data found in cloud (or network error). Using local defaults for display. NOT overwriting cloud.");
                     
                     rates = JSON.parse(JSON.stringify(defaultRates));
@@ -1384,8 +1385,7 @@
                     productData = {};
                     looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 };
                     baseCalcDefaults = {};
-                    
-                    // REMOVED: saveAllDataToCloud();  <-- THIS LINE WAS CAUSING THE WIPE
+                    loosePresets = [];
                 }
 
                 
@@ -1417,7 +1417,8 @@
                 taxRate: taxRate, 
                 products: productData,
                 looseDefaults: looseDefaultsCloud,
-                baseCalcDefaults: baseCalcDefaults // Save calc defaults
+                baseCalcDefaults: baseCalcDefaults,
+                presets: loosePresets // Save presets to cloud
             };
             window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToSave)
             .then(() => {
@@ -1432,7 +1433,7 @@
         function clearAllData() {
             if (!window.dbSet) return;
             
-            showCustomConfirm('Clear ALL synced data (rates, tax, products, loose defaults)? This can be undone.', 'Confirm Clear', () => {
+            showCustomConfirm('Clear ALL synced data (rates, tax, products, presets)? This can be undone.', 'Confirm Clear', () => {
                 window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), null)
                 .then(() => {
                     showCustomAlert('All cloud data cleared. Reloading page.');
@@ -1911,13 +1912,16 @@
             document.getElementById('repair-amount').value = '';
         }
 
-        // --- PRESET FUNCTIONS (NEW) ---
+        // --- PRESET FUNCTIONS (UPDATED FOR CLOUD & PIN) ---
         function openPresetModal() {
             renderPresetList();
             document.getElementById('preset-modal').style.display = 'flex';
         }
 
         function addNewPreset() {
+            // PIN CHECK ADDED
+            if (!checkPin()) return;
+
             const name = document.getElementById('new-preset-name').value.trim();
             if (!name) {
                 showCustomAlert("Please enter a preset name.");
@@ -1939,20 +1943,26 @@
             };
 
             loosePresets.push(newPreset);
-            localStorage.setItem('suhagLoosePresets', JSON.stringify(loosePresets));
+            // NOW SAVING TO CLOUD
+            saveAllDataToCloud();
             
             document.getElementById('new-preset-name').value = '';
             renderPresetList();
-            showCustomAlert("Preset saved!");
+            showCustomAlert("Preset saved to cloud!");
         }
 
         function deletePreset(id) {
+            // PIN CHECK ADDED
+            if (!checkPin()) return;
+
             loosePresets = loosePresets.filter(p => p.id !== id);
-            localStorage.setItem('suhagLoosePresets', JSON.stringify(loosePresets));
+            // NOW SAVING TO CLOUD
+            saveAllDataToCloud();
             renderPresetList();
         }
 
         function loadPreset(id) {
+            // No PIN needed to load/use a preset
             const preset = loosePresets.find(p => p.id === id);
             if (preset) {
                 document.getElementById('loose-metal-select').value = preset.metal;
@@ -2718,16 +2728,7 @@
                 oldGoldItems = [];
             }
             
-            // --- Load Presets from Local Storage ---
-            try {
-                const savedPresets = localStorage.getItem('suhagLoosePresets');
-                if (savedPresets) {
-                    loosePresets = JSON.parse(savedPresets);
-                }
-            } catch (e) {
-                console.error("Failed to load presets", e);
-                loosePresets = [];
-            }
+            // Presets are now loaded from CLOUD, not local storage
             
             updateCartIcon(); // Update counter on load
 
