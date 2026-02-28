@@ -934,8 +934,9 @@
     <button id="add-old-gold-btn" onclick="openOldGoldModal()">+</button>
 
     <div id="loose-calculator">
-        <div style="width: 100%; display: flex; justify-content: flex-end; padding: 0 5px;">
-            <button id="preset-btn" onclick="openPresetModal()">★ Presets</button>
+        <div style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 0 5px; margin-bottom: 10px;">
+            <div id="loose-active-preset" style="display: none; color: #9c27b0; font-weight: bold; font-size: 16px;"></div>
+            <button id="preset-btn" onclick="openPresetModal()" style="margin-bottom: 0; margin-left: auto;">★ Presets</button>
         </div>
 
         <h2 style="display: none;">Loose Jewellery Price Calculator</h2>
@@ -1641,6 +1642,9 @@
         // --- LOOSE CALCULATOR FUNCTIONS ---
 
         function setLooseDefaults() { 
+            // Hide the active preset display whenever reverting to defaults
+            document.getElementById('loose-active-preset').style.display = 'none';
+
             const defaults = looseDefaultsCloud; 
             
             let metal = defaults.metal || 'Gold';
@@ -1740,6 +1744,9 @@
         }
 
         function updateLooseInputs() {
+            // Hide the preset badge if we manually override settings
+            document.getElementById('loose-active-preset').style.display = 'none';
+
             const newMetal = document.getElementById('modal-loose-metal-select').value;
             const newStamp = document.getElementById('modal-loose-stamp-select').value;
             const newMaking = parseFloat(document.getElementById('modal-loose-making-percent').value);
@@ -1768,6 +1775,9 @@
 
         function saveLooseDefaultsToCloud() {
             if (!checkPin()) return; 
+
+            // Clear active preset flag since these are now just normal defaults
+            document.getElementById('loose-active-preset').style.display = 'none';
 
             const newMetal = document.getElementById('modal-loose-metal-select').value;
             const newStamp = document.getElementById('modal-loose-stamp-select').value;
@@ -1972,6 +1982,11 @@
                 
                 // Update display text
                 document.getElementById('loose-current-selection').textContent = `Selected: ${preset.metal} ${preset.stamp}`;
+
+                // --- UPDATE THE PRESET NAME UI ---
+                const presetBadge = document.getElementById('loose-active-preset');
+                presetBadge.textContent = `★ ${preset.name}`;
+                presetBadge.style.display = 'block';
 
                 calculateLoosePrice();
                 closeModal('preset-modal');
