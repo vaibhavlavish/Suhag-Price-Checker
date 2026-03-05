@@ -942,11 +942,11 @@
         <h2 style="display: none;">Loose Jewellery Price Calculator</h2>
         
         <input type="hidden" id="loose-metal-select" value="Gold">
-        <input type="hidden" id="loose-stamp-select" value="750">
+        <input type="hidden" id="loose-stamp-select" value="18K">
         <input type="hidden" id="loose-making-type" value="%">
         <input type="hidden" id="loose-making-percent" value="35">
         
-       <div id="loose-current-selection" style="display: none;">Selected: Gold 750</div>
+       <div id="loose-current-selection" style="display: none;">Selected: Gold 18K</div>
         
         <label for="loose-weight">Weight (Grams):</label>
         <input type="number" id="loose-weight" placeholder="Enter weight in grams" step="0.01" oninput="calculateLoosePrice()">
@@ -1298,7 +1298,7 @@
                                 rates: jsonContent.rates,
                                 taxRate: jsonContent.taxRate || 0,
                                 products: jsonContent.products || {},
-                                looseDefaults: jsonContent.looseDefaults || { metal: 'Gold', stamp: '750', making: 35 },
+                                looseDefaults: jsonContent.looseDefaults || { metal: 'Gold', stamp: '18K', making: 35 },
                                 baseCalcDefaults: jsonContent.baseCalcDefaults || {},
                                 presets: jsonContent.presets || [] // Restore presets
                             };
@@ -1327,8 +1327,8 @@
 
         // Default rates structure - UPDATED PER REQUEST
         const defaultRates = {
-            gold: { '916': 0, '750': 0 },        // Removed '999'
-            silver: { 'S925': 0, 'S8': 0 },      // Removed '999'
+            gold: { '22K': 0, '18K': 0, '9K': 0 },        // Removed '999'
+            silver: { 'S92': 0, 'S8': 0 },      // Removed '999'
             pc: { '900': 0 }                     // Removed '950' (and 999)
         };
         
@@ -1344,7 +1344,7 @@
         let currentMakingType = '';
         let currentMakingInput = 0;
         let makingOverride = null;
-        let looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 }; 
+        let looseDefaultsCloud = { metal: 'Gold', stamp: '18K', making: 35 }; 
         let baseCalcDefaults = {}; 
         let currentBarcode = ''; 
         let showWeightOnMain = false; // State for toggling weight display
@@ -1374,7 +1374,7 @@
                     rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
                     taxRate = cloudData.taxRate || 0;
                     productData = cloudData.products || {};
-                    looseDefaultsCloud = cloudData.looseDefaults || { metal: 'Gold', stamp: '750', making: 35 };
+                    looseDefaultsCloud = cloudData.looseDefaults || { metal: 'Gold', stamp: '18K', making: 35 };
                     baseCalcDefaults = cloudData.baseCalcDefaults || {}; 
                     loosePresets = cloudData.presets || []; // Sync presets from cloud
                     console.log("Data synced from Firebase.");
@@ -1384,7 +1384,7 @@
                     rates = JSON.parse(JSON.stringify(defaultRates));
                     taxRate = 0;
                     productData = {};
-                    looseDefaultsCloud = { metal: 'Gold', stamp: '750', making: 35 };
+                    looseDefaultsCloud = { metal: 'Gold', stamp: '18K', making: 35 };
                     baseCalcDefaults = {};
                     loosePresets = [];
                 }
@@ -1648,7 +1648,7 @@
             const defaults = looseDefaultsCloud; 
             
             let metal = defaults.metal || 'Gold';
-            let stamp = defaults.stamp || '750';
+            let stamp = defaults.stamp || '18K';
             let making = defaults.making || 35; 
             // Note: defaults from cloud only support %, keeping type as % for compatibility with existing data
             let makingType = '%';
