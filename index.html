@@ -1048,7 +1048,7 @@
                 <div style="display:flex; gap:5px; margin-bottom:5px;">
                     <select id="modal-loose-making-type" style="flex:1; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
                         <option value="%">% (Percent)</option>
-                        <option value="wastage">% (Wastage on Pure)</option>
+                        <option value="wastage">% (W)</option>
                         <option value="per_g">₹ Per Gram</option>
                         <option value="per_pc">₹ Fixed (Pc)</option>
              
@@ -2229,7 +2229,7 @@
                 currentType = makingOverride.type;
             }
             
-            let displayType = currentType === 'wastage' ? '% (Wastage on Pure)' : currentType;
+            let displayType = currentType === 'wastage' ? '% (W)' : currentType;
             const html = `<p><strong>Current:</strong> ${currentInput.toFixed(2)} ${displayType}</p>`;
             document.getElementById('alter-body').innerHTML = html;
             
@@ -2275,7 +2275,7 @@
                 if (activeMakingType === '%') {
                     makingStr = `${makingInput}%`;
                 } else if (activeMakingType === 'wastage') {
-                    makingStr = `${makingInput}% (Wastage on Pure)`;
+                    makingStr = `${makingInput}% (W)`;
                 } else if (activeMakingType === 'per g') {
                     makingStr = `${makingInput.toFixed(2)} (per g)`;
                 } else if (activeMakingType === 'per pc') {
