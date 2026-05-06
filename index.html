@@ -1131,7 +1131,7 @@
     <div id="custom-modal" class="modal">
         <div id="custom-modal-content" style="max-width: 320px; text-align: center;">
             <h3 id="custom-modal-title" style="font-size: 1.25rem; margin-bottom: 10px;">Alert</h3>
-            <p id="custom-modal-message" style="margin-bottom: 20px;">This is a message.</p>
+            <p id="custom-modal-message" style="margin-bottom: 20px;"></p>
             <div id="custom-modal-actions" style="display: flex; gap: 10px;">
                 </div>
         </div>
@@ -1234,20 +1234,21 @@
         const modalActions = document.getElementById('custom-modal-actions');
         let confirmCallback = null;
 
+        // UPDATED: Now sets innerHTML so we can inject formatted price breakdown tables
         function showCustomAlert(message, title = 'Alert') {
             modalTitle.textContent = title;
-            modalMessage.textContent = message;
-            modalActions.innerHTML = `<button class="action-btn primary-btn full-width-btn" onclick="closeCustomModal()">OK</button>`;
+            modalMessage.innerHTML = message;
+            modalActions.innerHTML = `<button class="action-btn primary-btn full-width-btn" style="padding: 10px; background: #4CAF50; color: white; border: none; border-radius: 20px; font-weight: bold; width: 100%; cursor: pointer;" onclick="closeCustomModal()">OK</button>`;
             customModal.style.display = 'flex';
         }
 
         function showCustomConfirm(message, title = 'Confirm', onConfirm) {
             modalTitle.textContent = title;
-            modalMessage.textContent = message;
+            modalMessage.innerHTML = message;
             confirmCallback = onConfirm;
             modalActions.innerHTML = `
-                <button class="action-btn secondary-btn half-width-btn" onclick="closeCustomModal()">Cancel</button>
-                <button class="action-btn primary-btn half-width-btn" onclick="executeConfirm()">OK</button>
+                <button class="action-btn secondary-btn half-width-btn" style="padding: 10px; background: #f44336; color: white; border: none; border-radius: 20px; font-weight: bold; width: 45%; cursor: pointer;" onclick="closeCustomModal()">Cancel</button>
+                <button class="action-btn primary-btn half-width-btn" style="padding: 10px; background: #4CAF50; color: white; border: none; border-radius: 20px; font-weight: bold; width: 45%; cursor: pointer;" onclick="executeConfirm()">OK</button>
             `;
             customModal.style.display = 'flex';
         }
@@ -2240,10 +2241,72 @@
             document.getElementById('new-making').focus();
         }
 
+        // NEW: Function to display full formatted price breakdown
+        function showPriceBreakdown() {
+            if (!currentProduct) return;
+            const d = currentProduct;
+            const mKey = d.metal, stamp = d.stamp;
+            const rate = rates[mKey] && rates[mKey][stamp] !== undefined ? rates[mKey][stamp] : 0;
+            const metalVal = d.netWeight * rate;
+            const otherCharge = d.otherCharge || 0;
+            const subtotal = metalVal + currentMakingAmount + otherCharge;
+            
+            let makingInput = currentMakingInput;
+            let activeMakingType = currentMakingType; 
+            if (makingOverride) {
+                makingInput = makingOverride.input;
+                activeMakingType = makingOverride.type;
+            }
+
+            let makingStr = '0';
+            if (activeMakingType === '%') makingStr = `${makingInput}%`;
+            else if (activeMakingType === 'wastage') makingStr = `${makingInput}% (W)`;
+            else if (activeMakingType === 'per g') makingStr = `₹${makingInput.toFixed(2)}/g`;
+            else if (activeMakingType === 'per pc') makingStr = `₹${makingInput.toFixed(2)}/pc`;
+
+            let breakdownHtml = `
+                <div style="text-align: left; font-size: 15px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #eee; margin-top: 10px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Metal (${d.netWeight.toFixed(2)}g × ₹${rate.toFixed(2)}):</span>
+                        <strong>₹${metalVal.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Making (${makingStr}):</span>
+                        <strong>₹${currentMakingAmount.toFixed(2)}</strong>
+                    </div>
+            `;
+            
+            if (otherCharge > 0) {
+                breakdownHtml += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Other Charges:</span>
+                        <strong>₹${otherCharge.toFixed(2)}</strong>
+                    </div>
+                `;
+            }
+            
+            breakdownHtml += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                        <span style="color: #333; font-weight: bold;">Subtotal:</span>
+                        <strong style="color: #333;">₹${subtotal.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Tax (${taxRate}%):</span>
+                        <strong>₹${currentTaxAmount.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; border-top: 2px solid #333; padding-top: 12px; font-size: 18px; color: #4CAF50; font-weight: bold;">
+                        <span>Final Total:</span>
+                        <span>₹${currentFinalPrice.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+            
+            showCustomAlert(breakdownHtml, 'Complete Price Breakdown');
+        }
+
         function showDetails() {
             if (!currentProduct) return;
             const d = currentProduct;
-            // MODIFIED: Added Size to details view
             let html = `
                 <p><strong>Item Name:</strong> <span>${d.itemName || ''}</span></p>
                 <p><strong>Barcode:</strong> <span>${currentBarcode}</span></p>
@@ -2282,11 +2345,12 @@
                     makingStr = `${makingInput.toFixed(2)} (per pc)`;
                 }
                 
+                // UPDATED: 'i' button now calls the detailed breakdown function 
                 let infoButtonHtml = '';
-                if (currentMakingAmount > 0 && currentMakingAmount < 1500) {
+                if (currentMakingAmount > 0) {
                     infoButtonHtml = `
-                        <button onclick="showCustomAlert('Making Charge Amount: ₹' + currentMakingAmount.toFixed(2))" 
-                                style="width: 20px; height: 20px; border-radius: 50%; border: 1px solid #999; background: #eee; color: #333; font-size: 14px; font-weight: bold; font-style: normal; padding: 0; line-height: 19px; text-align: center; cursor: pointer; margin-right: 8px; vertical-align: middle;">
+                        <button onclick="showPriceBreakdown()" 
+                                style="width: 22px; height: 22px; border-radius: 50%; border: none; background: #2196F3; color: white; font-size: 14px; font-weight: bold; font-style: normal; padding: 0; text-align: center; cursor: pointer; margin-right: 8px; vertical-align: middle; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
                             i
                         </button>
                     `;
@@ -2630,7 +2694,7 @@
                 const workbook = XLSX.read(data, {type: 'array'});
                 const sheet = workbook.Sheets[workbook.SheetNames[0]];
                 const json = XLSX.utils.sheet_to_json(sheet, {header: 1});
-                const headers = (json[0] || []).map(h => (h || '').toString().trim().toLowerCase());
+                 const headers = (json[0] || []).map(h => (h || '').toString().trim().toLowerCase());
                 const cols = {
                     tagNo: findColumn(headers, ['tag no', 'tagno', 'barcode']),
                     itemName: findColumn(headers, ['item name', 'name', 'product name', 'item']),
