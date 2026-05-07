@@ -2295,6 +2295,47 @@
                         <strong>${d.netWeight.toFixed(2)} gm</strong>
                     </div>
                 `;
+            } else if (activeMakingType === 'per g') {
+                const totalRatePerGram = rate + makingInput;
+                breakdownHtml += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="color: #555;">Metal rate</span>
+                        <strong>₹${rate.toFixed(0)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span style="color: #555;">Making (₹${makingInput.toFixed(0)}/g)</span>
+                        <strong>₹${makingInput.toFixed(0)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; border-top: 1px dashed #ccc; padding-top: 6px;">
+                        <span style="color: #555;"></span>
+                        <strong>₹${totalRatePerGram.toFixed(0)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Weight</span>
+                        <strong>${d.netWeight.toFixed(2)} gm</strong>
+                    </div>
+                `;
+            } else if (activeMakingType === '%') {
+                const makingPerGram = rate * (makingInput / 100);
+                const totalRatePerGram = rate + makingPerGram;
+                breakdownHtml += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="color: #555;">Metal rate</span>
+                        <strong>₹${rate.toFixed(0)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span style="color: #555;">Making<br><span style="font-size:12px;">(${rate.toFixed(0)}*${makingInput}%)</span></span>
+                        <strong>₹${makingPerGram.toFixed(0)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; border-top: 1px dashed #ccc; padding-top: 6px;">
+                        <span style="color: #555;"></span>
+                        <strong>₹${totalRatePerGram.toFixed(0)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Weight</span>
+                        <strong>${d.netWeight.toFixed(2)} gm</strong>
+                    </div>
+                `;
             } else {
                 breakdownHtml += `
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
