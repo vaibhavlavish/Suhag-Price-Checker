@@ -918,6 +918,7 @@
         <div id="options-menu">
             <button onclick="showSection('update-rates')">Update Rates</button>
             <button onclick="showSection('excel-upload')">Upload Excel</button>
+            <button onclick="showStockSection()" style="color:#4CAF50; font-weight:600;">📦 Stock</button>
             <button onclick="downloadBackup()" class="backup">Download Backup</button>
             <button onclick="triggerRestore()" class="restore">Restore Backup (JSON)</button>
             <button onclick="clearAll()">Clear Screen</button>
@@ -1211,6 +1212,30 @@
       
         <button onclick="showSection('main')">Back to Main</button>
     </div>
+    <div id="stock-view" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; min-height:calc(100vh - 60px); width:100%; max-width:480px; margin:0 auto;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
+            <h2 style="margin:0; font-size:20px;">📦 Stock</h2>
+            <input type="text" id="stock-search" placeholder="Search..." oninput="renderStockView()" 
+                style="flex:1; padding:9px 13px; border:1px solid #ddd; border-radius:20px; font-size:14px; background:white; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
+            <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:20px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap;">← Back</button>
+        </div>
+        <!-- Sort Bar -->
+        <div style="display:flex; gap:6px; margin-bottom:10px; overflow-x:auto; padding-bottom:2px; -webkit-overflow-scrolling:touch;">
+            <span style="font-size:12px; color:#888; align-self:center; white-space:nowrap; padding-right:2px;">Sort:</span>
+            <button id="sort-btn-default" onclick="setStockSort('default')" style="background:#1a1a1a; color:white; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">A–Z</button>
+            <button id="sort-btn-price-asc" onclick="setStockSort('price-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Price ↑</button>
+            <button id="sort-btn-price-desc" onclick="setStockSort('price-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Price ↓</button>
+            <button id="sort-btn-weight-asc" onclick="setStockSort('weight-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Weight ↑</button>
+            <button id="sort-btn-weight-desc" onclick="setStockSort('weight-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Weight ↓</button>
+            <button id="sort-btn-making-asc" onclick="setStockSort('making-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Making ↑</button>
+            <button id="sort-btn-making-desc" onclick="setStockSort('making-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Making ↓</button>
+            <button id="sort-btn-size-asc" onclick="setStockSort('size-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Size ↑</button>
+            <button id="sort-btn-size-desc" onclick="setStockSort('size-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Size ↓</button>
+        </div>
+        <div id="stock-summary" style="background:white; border-radius:10px; padding:10px 16px; margin-bottom:12px; font-size:14px; color:#555; box-shadow:0 1px 4px rgba(0,0,0,0.08);"></div>
+        <div id="stock-body"></div>
+    </div>
+
     <div id="excel-upload">
         <h2>Upload Excel Sheet</h2>
         <p style="font-size:14px; text-align:center; color:#666;">
@@ -1511,6 +1536,7 @@
             document.getElementById('update-rates').style.display = 'none';
             document.getElementById('excel-upload').style.display = 'none';
             document.getElementById('loose-calculator').style.display = 'none';
+            document.getElementById('stock-view').style.display = 'none';
 
             document.querySelectorAll('#taskbar button').forEach(btn => {
                 btn.classList.remove('active');
@@ -1532,7 +1558,7 @@
                 calculateLoosePrice(); 
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = 'block';
+                document.getElementById(section).style.display = section === 'stock-view' ? 'flex' : 'block';
             }
 
             if (section === 'update-rates') {
@@ -1554,6 +1580,204 @@
         
         function closeOptions() {
             document.getElementById('options-menu').classList.remove('show');
+        }
+
+        function showStockSection() {
+            closeOptions();
+            showSection('stock-view');
+            renderStockView();
+        }
+
+        function calcProductFinalPrice(barcode) {
+            const d = productData[barcode];
+            if (!d) return null;
+            let final = 0, making = 0;
+            const otherCharge = d.otherCharge || 0;
+            const weight = d.netWeight || 0;
+
+            if (d.mrp > 0) {
+                const total = d.mrp + otherCharge;
+                final = total + total * (taxRate / 100);
+                return { final, makingType: 'MRP', makingInput: d.mrp };
+            }
+
+            const mKey = d.metal, stamp = d.stamp;
+            if (!mKey || !stamp || !rates[mKey] || !rates[mKey][stamp] || rates[mKey][stamp] === 0) return null;
+
+            const rate = rates[mKey][stamp];
+            const metalVal = weight * rate;
+            let makingType = '', makingInput = 0;
+
+            if (d.makingPerPc > 0) {
+                making = d.makingPerPc; makingType = 'per pc'; makingInput = d.makingPerPc;
+            } else if (d.makingWastage > 0) {
+                const pureRate = getPureRate(mKey);
+                if (pureRate === 0) return null;
+                making = pureRate * weight * (d.makingWastage / 100);
+                makingType = 'wastage'; makingInput = d.makingWastage;
+            } else if (d.makingPerGram > 0) {
+                making = d.makingPerGram * weight; makingType = 'per g'; makingInput = d.makingPerGram;
+            } else if (d.makingPercent > 0) {
+                making = metalVal * (d.makingPercent / 100); makingType = '%'; makingInput = d.makingPercent;
+            }
+
+            const total = metalVal + making + otherCharge;
+            final = total + total * (taxRate / 100);
+            return { final, makingType, makingInput };
+        }
+
+        let currentStockSort = 'default';
+
+        function setStockSort(sortKey) {
+            currentStockSort = sortKey;
+            // Update button styles
+            document.querySelectorAll('[id^="sort-btn-"]').forEach(btn => {
+                btn.style.background = '#eee';
+                btn.style.color = '#333';
+            });
+            const active = document.getElementById('sort-btn-' + sortKey);
+            if (active) { active.style.background = '#1a1a1a'; active.style.color = 'white'; }
+            renderStockView();
+        }
+
+        function getMakingNumeric(priceResult) {
+            if (!priceResult) return 0;
+            const { makingType, makingInput } = priceResult;
+            if (makingType === 'MRP') return 0;
+            return makingInput || 0;
+        }
+
+        function renderStockView() {
+            const searchVal = (document.getElementById('stock-search')?.value || '').toLowerCase();
+            const body = document.getElementById('stock-body');
+            const summary = document.getElementById('stock-summary');
+            body.innerHTML = '';
+
+            // Collect all matching items as flat list first
+            let allItems = [];
+            for (const barcode in productData) {
+                const d = productData[barcode];
+                const name = (d.itemName || 'Unknown').trim();
+                if (searchVal && !name.toLowerCase().includes(searchVal) && !barcode.toLowerCase().includes(searchVal)) continue;
+                const priceResult = calcProductFinalPrice(barcode);
+                allItems.push({ barcode, d, name, priceResult });
+            }
+
+            if (allItems.length === 0) {
+                body.innerHTML = `<div style="text-align:center; padding:40px; color:#999; font-size:16px;">No products found.</div>`;
+                summary.textContent = '0 products';
+                return;
+            }
+
+            const sort = currentStockSort;
+            const isGrouped = sort === 'default';
+
+            if (!isGrouped) {
+                // Flat sorted list
+                allItems.sort((a, b) => {
+                    if (sort === 'price-asc')    return (a.priceResult?.final || 0) - (b.priceResult?.final || 0);
+                    if (sort === 'price-desc')   return (b.priceResult?.final || 0) - (a.priceResult?.final || 0);
+                    if (sort === 'weight-asc')   return (a.d.netWeight || 0) - (b.d.netWeight || 0);
+                    if (sort === 'weight-desc')  return (b.d.netWeight || 0) - (a.d.netWeight || 0);
+                    if (sort === 'making-asc')   return getMakingNumeric(a.priceResult) - getMakingNumeric(b.priceResult);
+                    if (sort === 'making-desc')  return getMakingNumeric(b.priceResult) - getMakingNumeric(a.priceResult);
+                    if (sort === 'size-asc')     return (parseFloat(a.d.size) || 0) - (parseFloat(b.d.size) || 0);
+                    if (sort === 'size-desc')    return (parseFloat(b.d.size) || 0) - (parseFloat(a.d.size) || 0);
+                    return 0;
+                });
+
+                // Determine column label for secondary info
+                const colLabel = sort.startsWith('price') ? 'Price' : sort.startsWith('weight') ? 'Net Wt' : sort.startsWith('making') ? 'Making' : 'Size';
+
+                const productTypes = new Set(allItems.map(i => i.name)).size;
+                summary.innerHTML = `<strong>${productTypes}</strong> types &nbsp;|&nbsp; <strong>${allItems.length}</strong> items &nbsp;|&nbsp; <em style="color:#888;">sorted by ${colLabel}</em>`;
+
+                const card = document.createElement('div');
+                card.style.cssText = 'background:white; border-radius:12px; margin-bottom:14px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;';
+
+                const thead = document.createElement('div');
+                thead.style.cssText = 'display:grid; grid-template-columns:2fr 1.2fr 1fr 1fr; padding:7px 14px; background:#1a1a1a; font-size:12px; color:#aaa; font-weight:600; border-bottom:1px solid #333;';
+                thead.innerHTML = `<span>Barcode / Item</span><span style="text-align:center;">${colLabel}</span><span style="text-align:center;">Making</span><span style="text-align:right;">Price</span>`;
+                card.appendChild(thead);
+
+                allItems.forEach((item, idx) => {
+                    const { barcode, d, priceResult } = item;
+                    const priceStr = priceResult ? `₹${priceResult.final.toFixed(2)}` : '—';
+                    let makingStr = '—';
+                    if (priceResult) {
+                        const { makingType, makingInput } = priceResult;
+                        if (makingType === 'MRP') makingStr = 'MRP';
+                        else if (makingType === '%') makingStr = `${makingInput}%`;
+                        else if (makingType === 'wastage') makingStr = `${makingInput}%(W)`;
+                        else if (makingType === 'per g') makingStr = `₹${makingInput}/g`;
+                        else if (makingType === 'per pc') makingStr = `₹${makingInput}pc`;
+                    }
+                    let colVal = '—';
+                    if (sort.startsWith('price'))   colVal = priceResult ? `₹${priceResult.final.toFixed(0)}` : '—';
+                    if (sort.startsWith('weight'))  colVal = d.netWeight ? `${d.netWeight}g` : '—';
+                    if (sort.startsWith('making'))  colVal = makingStr;
+                    if (sort.startsWith('size'))    colVal = d.size || '—';
+
+                    const row = document.createElement('div');
+                    row.style.cssText = `display:grid; grid-template-columns:2fr 1.2fr 1fr 1fr; padding:9px 14px; font-size:13px; align-items:center; border-bottom:${idx < allItems.length - 1 ? '1px solid #f0f0f0' : 'none'}; background:${idx % 2 === 1 ? '#fafafa' : 'white'};`;
+                    row.innerHTML = `
+                        <div><span style="font-weight:600; color:#333;">${barcode}</span><br><span style="font-size:11px; color:#999;">${d.itemName || ''}</span></div>
+                        <span style="text-align:center; color:#555; font-size:12px;">${colVal}</span>
+                        <span style="text-align:center; color:#888; font-size:12px;">${makingStr}</span>
+                        <span style="text-align:right; font-weight:700; color:#4CAF50;">${priceStr}</span>
+                    `;
+                    card.appendChild(row);
+                });
+                body.appendChild(card);
+
+            } else {
+                // Grouped by product name (A–Z default)
+                const groups = {};
+                allItems.forEach(item => {
+                    if (!groups[item.name]) groups[item.name] = [];
+                    groups[item.name].push(item);
+                });
+                const sortedNames = Object.keys(groups).sort();
+                summary.innerHTML = `<strong>${sortedNames.length}</strong> product type${sortedNames.length !== 1 ? 's' : ''} &nbsp;|&nbsp; <strong>${allItems.length}</strong> total item${allItems.length !== 1 ? 's' : ''}`;
+
+                sortedNames.forEach(name => {
+                    const items = groups[name];
+                    const card = document.createElement('div');
+                    card.style.cssText = 'background:white; border-radius:12px; margin-bottom:14px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;';
+
+                    const header = document.createElement('div');
+                    header.style.cssText = 'background:#1a1a1a; color:white; padding:10px 14px; font-size:15px; font-weight:700; display:flex; justify-content:space-between; align-items:center;';
+                    header.innerHTML = `<span>${name}</span><span style="background:#4CAF50; color:white; border-radius:20px; padding:2px 10px; font-size:12px;">${items.length} pc</span>`;
+                    card.appendChild(header);
+
+                    const thead = document.createElement('div');
+                    thead.style.cssText = 'display:grid; grid-template-columns:1fr 1fr 1fr; padding:6px 14px; background:#f5f5f5; font-size:12px; color:#888; font-weight:600; border-bottom:1px solid #eee;';
+                    thead.innerHTML = `<span>Barcode</span><span style="text-align:center;">Making</span><span style="text-align:right;">Price</span>`;
+                    card.appendChild(thead);
+
+                    items.sort((a, b) => a.barcode.localeCompare(b.barcode)).forEach(({ barcode, d, priceResult }, idx) => {
+                        const priceStr = priceResult ? `₹${priceResult.final.toFixed(2)}` : '—';
+                        let makingStr = '—';
+                        if (priceResult) {
+                            const { makingType, makingInput } = priceResult;
+                            if (makingType === 'MRP') makingStr = 'MRP';
+                            else if (makingType === '%') makingStr = `${makingInput}%`;
+                            else if (makingType === 'wastage') makingStr = `${makingInput}%(W)`;
+                            else if (makingType === 'per g') makingStr = `₹${makingInput}/g`;
+                            else if (makingType === 'per pc') makingStr = `₹${makingInput}pc`;
+                        }
+                        const row = document.createElement('div');
+                        row.style.cssText = `display:grid; grid-template-columns:1fr 1fr 1fr; padding:10px 14px; font-size:14px; align-items:center; border-bottom:${idx < items.length - 1 ? '1px solid #f0f0f0' : 'none'}; background:${idx % 2 === 1 ? '#fafafa' : 'white'};`;
+                        row.innerHTML = `
+                            <span style="font-weight:600; color:#333;">${barcode}</span>
+                            <span style="text-align:center; color:#888; font-size:12px;">${makingStr}</span>
+                            <span style="text-align:right; font-weight:700; color:#4CAF50;">${priceStr}</span>
+                        `;
+                        card.appendChild(row);
+                    });
+                    body.appendChild(card);
+                });
+            }
         }
         
         document.addEventListener('click', function(e) {
