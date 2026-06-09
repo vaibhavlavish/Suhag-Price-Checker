@@ -1127,9 +1127,33 @@
             <div id="cart-total-summary">
                 </div>
  
+            <!-- Adjust Panel -->
+            <div id="adjust-panel" style="display:none; background:#f3e5f5; border-radius:12px; padding:14px; margin-bottom:10px; border:1.5px solid #ce93d8;">
+                <div style="font-size:13px; font-weight:700; color:#6a1b9a; margin-bottom:10px;">⚙ Adjust Final Amount</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+                    <div>
+                        <label style="font-size:11px; color:#555; display:block; margin-bottom:3px;">Discount (₹)</label>
+                        <input type="number" id="adjust-discount" placeholder="e.g. 500" min="0" step="1"
+                               oninput="syncAdjustFromDiscount()"
+                               style="width:100%; padding:8px; border:1px solid #ce93d8; border-radius:8px; font-size:14px; box-sizing:border-box; background:white;">
+                    </div>
+                    <div>
+                        <label style="font-size:11px; color:#555; display:block; margin-bottom:3px;">Final Amount (₹)</label>
+                        <input type="number" id="adjust-final" placeholder="e.g. 9500" min="0" step="1"
+                               oninput="syncAdjustFromFinal()"
+                               style="width:100%; padding:8px; border:1px solid #ce93d8; border-radius:8px; font-size:14px; box-sizing:border-box; background:white;">
+                    </div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button onclick="applyAdjust()" style="flex:1; background:#6a1b9a; color:white; border:none; border-radius:8px; padding:8px; font-size:13px; font-weight:700; cursor:pointer;">Apply</button>
+                    <button onclick="clearAdjust()" style="flex:1; background:#eee; color:#555; border:none; border-radius:8px; padding:8px; font-size:13px; cursor:pointer;">Clear</button>
+                </div>
+            </div>
+
             <div id="cart-modal-buttons">
                  <button id="close-cart-modal" onclick="closeModal('cart-modal')">Close</button>
                  <button id="clear-cart-btn" onclick="clearCart()">Clear Cart</button>
+                 <button id="adjust-btn" onclick="toggleAdjustPanel()" style="background:#9c27b0; color:white; font-weight:700;">⚙ Adjust</button>
                  <button id="checkout-btn" onclick="checkoutCart()" style="background:#4CAF50; color:white; font-weight:700;">Checkout ✓</button>
             </div>
         </div>
@@ -1467,6 +1491,7 @@
         let currentLooseItem = null;
         // NEW: Global for Old Gold Items
         let oldGoldItems = [];
+        let cartAdjustment = 0;
         // NEW: Global for Presets - Now synced from cloud, default empty
         let loosePresets = [];
         // Making Charge Profiles
@@ -1806,7 +1831,8 @@
                     if (sort.startsWith('size'))    colVal = d.size || '—';
 
                     const row = document.createElement('div');
-                    row.style.cssText = `display:grid; grid-template-columns:2fr 1.2fr 1fr 1fr; padding:9px 14px; font-size:13px; align-items:center; border-bottom:${idx < allItems.length - 1 ? '1px solid #f0f0f0' : 'none'}; background:${idx % 2 === 1 ? '#fafafa' : 'white'};`;
+                    row.style.cssText = `display:grid; grid-template-columns:2fr 1.2fr 1fr 1fr; padding:9px 14px; font-size:13px; align-items:center; border-bottom:${idx < allItems.length - 1 ? '1px solid #f0f0f0' : 'none'}; background:${idx % 2 === 1 ? '#fafafa' : 'white'}; cursor:pointer;`;
+                    row.onclick = () => { showSection('main'); lookupProduct(barcode); };
                     row.innerHTML = `
                         <div><span style="font-weight:600; color:#333;">${barcode}</span><br><span style="font-size:11px; color:#999;">${d.itemName || ''}</span></div>
                         <span style="text-align:center; color:#555; font-size:12px;">${colVal}</span>
@@ -1854,7 +1880,8 @@
                             else if (makingType === 'per pc') makingStr = `₹${makingInput}pc`;
                         }
                         const row = document.createElement('div');
-                        row.style.cssText = `display:grid; grid-template-columns:1fr 1fr 1fr; padding:10px 14px; font-size:14px; align-items:center; border-bottom:${idx < items.length - 1 ? '1px solid #f0f0f0' : 'none'}; background:${idx % 2 === 1 ? '#fafafa' : 'white'};`;
+                        row.style.cssText = `display:grid; grid-template-columns:1fr 1fr 1fr; padding:10px 14px; font-size:14px; align-items:center; border-bottom:${idx < items.length - 1 ? '1px solid #f0f0f0' : 'none'}; background:${idx % 2 === 1 ? '#fafafa' : 'white'}; cursor:pointer;`;
+                        row.onclick = () => { showSection('main'); lookupProduct(barcode); };
                         row.innerHTML = `
                             <span style="font-weight:600; color:#333;">${barcode}</span>
                             <span style="text-align:center; color:#888; font-size:12px;">${makingStr}</span>
@@ -2891,7 +2918,7 @@
             let oldGoldTotal = 0;
             oldGoldItems.forEach(item => oldGoldTotal += item.value);
 
-            let netPayable = cartTotal - oldGoldTotal;
+            let netPayable = cartTotal - oldGoldTotal - cartAdjustment;
             // Generate Summary HTML
             let summaryHtml = `
                 <div style="display:flex; justify-content:space-between;">
@@ -2903,18 +2930,20 @@
                     <div style="display:flex; justify-content:space-between; color: #f44336;">
                         <span>Less Old jewellery:</span><span>- ₹${oldGoldTotal.toFixed(2)}</span>
                     </div>
-                    <div style="display:flex; justify-content:space-between; font-size: 1.1em; font-weight: bold; border-top: 1px dashed #ccc; padding-top: 5px; margin-top: 5px;">
-                        <span>Net Payable:</span><span>₹${netPayable.toFixed(2)}</span>
+                `;
+            }
+            if (cartAdjustment > 0) {
+                summaryHtml += `
+                    <div style="display:flex; justify-content:space-between; color:#6a1b9a;">
+                        <span>Discount:</span><span>- ₹${cartAdjustment.toFixed(2)}</span>
                     </div>
                 `;
-            } else {
-                 // Standard display if no old gold
-                 summaryHtml = `
-                    <div style="display:flex; justify-content:space-between; font-size: 1.3em;">
-                        <span>Total:</span><span>₹${cartTotal.toFixed(2)}</span>
-                    </div>
-                 `;
             }
+            summaryHtml += `
+                <div style="display:flex; justify-content:space-between; font-size:1.2em; font-weight:bold; border-top:1px dashed #ccc; padding-top:5px; margin-top:5px;">
+                    <span>Net Payable:</span><span style="color:${cartAdjustment > 0 ? '#6a1b9a' : '#222'};">₹${netPayable.toFixed(2)}</span>
+                </div>
+            `;
             
             cartTotalSummaryDiv.innerHTML = summaryHtml;
             // --- REFACTORED CART LOGIC END ---
@@ -3394,6 +3423,63 @@
         }
 
 
+
+        // =============================================
+        // === CART ADJUST FUNCTIONS ===================
+        // =============================================
+
+        function toggleAdjustPanel() {
+            const panel = document.getElementById('adjust-panel');
+            const isOpen = panel.style.display !== 'none';
+            if (!isOpen) {
+                // Pre-fill with current discount if any
+                document.getElementById('adjust-discount').value = cartAdjustment > 0 ? cartAdjustment : '';
+                const cartTotal = cart.reduce((s, i) => s + i.finalPrice, 0);
+                const oldGoldTotal = oldGoldItems.reduce((s, i) => s + i.value, 0);
+                const currentNet = cartTotal - oldGoldTotal;
+                document.getElementById('adjust-final').value = cartAdjustment > 0 ? (currentNet - cartAdjustment).toFixed(0) : '';
+            }
+            panel.style.display = isOpen ? 'none' : 'block';
+        }
+
+        function _getCartBase() {
+            const cartTotal = cart.reduce((s, i) => s + i.finalPrice, 0);
+            const oldGoldTotal = oldGoldItems.reduce((s, i) => s + i.value, 0);
+            return cartTotal - oldGoldTotal; // base before discount
+        }
+
+        function syncAdjustFromDiscount() {
+            const disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
+            const base = _getCartBase();
+            document.getElementById('adjust-final').value = disc > 0 ? Math.max(0, base - disc).toFixed(0) : '';
+        }
+
+        function syncAdjustFromFinal() {
+            const final = parseFloat(document.getElementById('adjust-final').value);
+            if (isNaN(final)) { document.getElementById('adjust-discount').value = ''; return; }
+            const base = _getCartBase();
+            const disc = Math.max(0, base - final);
+            document.getElementById('adjust-discount').value = disc > 0 ? disc.toFixed(0) : '';
+        }
+
+        function applyAdjust() {
+            const disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
+            const base = _getCartBase();
+            if (disc < 0) { showCustomAlert('Discount cannot be negative.'); return; }
+            if (disc > base) { showCustomAlert('Discount cannot exceed payable amount.'); return; }
+            cartAdjustment = disc;
+            document.getElementById('adjust-panel').style.display = 'none';
+            openCart(); // re-render summary
+        }
+
+        function clearAdjust() {
+            cartAdjustment = 0;
+            document.getElementById('adjust-discount').value = '';
+            document.getElementById('adjust-final').value = '';
+            document.getElementById('adjust-panel').style.display = 'none';
+            openCart();
+        }
+
         // =============================================
         // === BILL HISTORY FUNCTIONS ==================
         // =============================================
@@ -3412,13 +3498,15 @@
                     items: JSON.parse(JSON.stringify(cart)),
                     total,
                     oldGoldTotal,
-                    netPayable: total - oldGoldTotal
+                    discount: cartAdjustment,
+                    netPayable: total - oldGoldTotal - cartAdjustment
                 };
                 billHistory.unshift(bill); // newest first
                 if (billHistory.length > 500) billHistory = billHistory.slice(0, 500); // hard cap
                 saveAllDataToCloud();
                 cart = [];
                 oldGoldItems = [];
+                cartAdjustment = 0;
                 localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
                 localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
                 updateCartIcon();
@@ -3468,8 +3556,9 @@
                         <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:13px; font-weight:700; color:#333;">
                             <span>Total</span><span>₹${bill.total.toFixed(0)}</span>
                         </div>
-                        ${bill.oldGoldTotal > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12px; color:#f44336;"><span>Less Old Gold</span><span>-₹${bill.oldGoldTotal.toFixed(0)}</span></div>
-                        <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:800; color:#1565C0; border-top:1px dashed #ccc; padding-top:6px; margin-top:4px;"><span>Net Payable</span><span>₹${bill.netPayable.toFixed(0)}</span></div>` : ''}
+                        ${bill.oldGoldTotal > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12px; color:#f44336;"><span>Less Old Gold</span><span>-₹${bill.oldGoldTotal.toFixed(0)}</span></div>` : ''}
+                        ${bill.discount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12px; color:#6a1b9a;"><span>Discount</span><span>-₹${bill.discount.toFixed(0)}</span></div>` : ''}
+                        ${(bill.oldGoldTotal > 0 || bill.discount > 0) ? `<div style="display:flex; justify-content:space-between; font-size:14px; font-weight:800; color:#1565C0; border-top:1px dashed #ccc; padding-top:6px; margin-top:4px;"><span>Net Payable</span><span>₹${bill.netPayable.toFixed(0)}</span></div>` : ''}
                         <button onclick="deleteBill(${bill.id})" style="margin-top:10px; background:#f44336; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer; float:right;">Delete Bill</button>
                         <div style="clear:both;"></div>
                     </div>
@@ -3691,6 +3780,11 @@
         window.deleteProfile = deleteProfile;
         // Bill History
         window.checkoutCart = checkoutCart;
+        window.toggleAdjustPanel = toggleAdjustPanel;
+        window.syncAdjustFromDiscount = syncAdjustFromDiscount;
+        window.syncAdjustFromFinal = syncAdjustFromFinal;
+        window.applyAdjust = applyAdjust;
+        window.clearAdjust = clearAdjust;
         window.renderBillHistory = renderBillHistory;
         window.toggleBillDetail = toggleBillDetail;
         window.deleteBill = deleteBill;
