@@ -1517,7 +1517,7 @@
                     baseCalcDefaults = cloudData.baseCalcDefaults || {}; 
                     loosePresets = cloudData.presets || []; // Sync presets from cloud
                     makingProfiles = cloudData.makingProfiles || [{ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 }];
-                    activeProfileId = cloudData.activeProfileId || 'default';
+                    activeProfileId = localStorage.getItem('activeProfileId') || 'default';
                     console.log("Data synced from Firebase.");
                 } else {
                     console.warn("No data found in cloud (or network error). Using local defaults for display. NOT overwriting cloud.");
@@ -1529,7 +1529,7 @@
                     baseCalcDefaults = {};
                     loosePresets = [];
                     makingProfiles = [{ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 }];
-                    activeProfileId = 'default';
+                    activeProfileId = localStorage.getItem('activeProfileId') || 'default';
                 }
 
                 
@@ -1561,8 +1561,7 @@
                 looseDefaults: looseDefaultsCloud,
                 baseCalcDefaults: baseCalcDefaults,
                 presets: loosePresets, // Save presets to cloud
-                makingProfiles: makingProfiles,
-                activeProfileId: activeProfileId
+                makingProfiles: makingProfiles
             };
             window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToSave)
             .then(() => {
@@ -3312,6 +3311,7 @@
 
         function setActiveProfile(id) {
             activeProfileId = id;
+            localStorage.setItem('activeProfileId', id);
             saveAllDataToCloud();
             updateProfileBadge();
             renderProfileList();
@@ -3352,6 +3352,7 @@
             makingProfiles = makingProfiles.filter(p => p.id !== id);
             if (activeProfileId === id) {
                 activeProfileId = 'default';
+                localStorage.setItem('activeProfileId', 'default');
                 updateProfileBadge();
                 if (currentBarcode) runPriceCalculation();
             }
