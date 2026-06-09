@@ -920,6 +920,8 @@
             <button onclick="showSection('excel-upload')">Upload Excel</button>
             <button onclick="showStockSection()" style="color:#4CAF50; font-weight:600;">📦 Stock</button>
             <button onclick="openProfileModal()" style="color:#1565C0; font-weight:600;">⚙ Making Profiles</button>
+            <button onclick="showSection('bill-history')" style="color:#4CAF50; font-weight:600;">🧾 Bill History</button>
+            <button onclick="showSection('bulk-check')" style="color:#9c27b0; font-weight:600;">📋 Bulk Price Check</button>
             <button onclick="downloadBackup()" class="backup">Download Backup</button>
             <button onclick="triggerRestore()" class="restore">Restore Backup (JSON)</button>
             <button onclick="clearAll()">Clear Screen</button>
@@ -1128,6 +1130,7 @@
             <div id="cart-modal-buttons">
                  <button id="close-cart-modal" onclick="closeModal('cart-modal')">Close</button>
                  <button id="clear-cart-btn" onclick="clearCart()">Clear Cart</button>
+                 <button id="checkout-btn" onclick="checkoutCart()" style="background:#4CAF50; color:white; font-weight:700;">Checkout ✓</button>
             </div>
         </div>
     </div>
@@ -1517,6 +1520,7 @@
                     baseCalcDefaults = cloudData.baseCalcDefaults || {}; 
                     loosePresets = cloudData.presets || []; // Sync presets from cloud
                     makingProfiles = cloudData.makingProfiles || [{ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 }];
+                    billHistory = cloudData.billHistory || [];
                     activeProfileId = localStorage.getItem('activeProfileId') || 'default';
                     console.log("Data synced from Firebase.");
                 } else {
@@ -1561,7 +1565,8 @@
                 looseDefaults: looseDefaultsCloud,
                 baseCalcDefaults: baseCalcDefaults,
                 presets: loosePresets, // Save presets to cloud
-                makingProfiles: makingProfiles
+                makingProfiles: makingProfiles,
+                billHistory: billHistory
             };
             window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToSave)
             .then(() => {
@@ -1605,6 +1610,8 @@
             document.getElementById('loose-calculator').style.display = 'none';
             document.getElementById('stock-view').style.display = 'none';
             document.getElementById('profiles-section').style.display = 'none';
+            document.getElementById('bill-history').style.display = 'none';
+            document.getElementById('bulk-check').style.display = 'none';
 
             document.querySelectorAll('#taskbar button').forEach(btn => {
                 btn.classList.remove('active');
@@ -1629,6 +1636,18 @@
                 document.getElementById(section).style.display = section === 'stock-view' ? 'flex' : 'block';
             }
 
+            if (section === 'bill-history') {
+                renderBillHistory();
+            }
+            if (section === 'bulk-check') {
+                document.getElementById('bulk-barcode').value = '';
+                setTimeout(() => document.getElementById('bulk-barcode').focus(), 100);
+                // Route any keypress to the input (like main screen)
+                document.getElementById('bulk-check').addEventListener('keydown', bulkKeyRouter, true);
+            } else {
+                const bc = document.getElementById('bulk-check');
+                if (bc) bc.removeEventListener('keydown', bulkKeyRouter, true);
+            }
             if (section === 'update-rates') {
                 renderRatesTable();
                 const metal = document.getElementById('metal-select').value;
@@ -3374,7 +3393,244 @@
             }
         }
 
+
+        // =============================================
+        // === BILL HISTORY FUNCTIONS ==================
+        // =============================================
+        let billHistory = []; // loaded from cloud on init
+
+        function checkoutCart() {
+            if (cart.length === 0) { showCustomAlert('Cart is empty.'); return; }
+            showCustomConfirm('Save this cart as a completed bill?', 'Checkout', () => {
+                let total = 0;
+                cart.forEach(i => total += i.finalPrice);
+                let oldGoldTotal = 0;
+                oldGoldItems.forEach(i => oldGoldTotal += i.value);
+                const bill = {
+                    id: Date.now(),
+                    timestamp: new Date().toISOString(),
+                    items: JSON.parse(JSON.stringify(cart)),
+                    total,
+                    oldGoldTotal,
+                    netPayable: total - oldGoldTotal
+                };
+                billHistory.unshift(bill); // newest first
+                if (billHistory.length > 500) billHistory = billHistory.slice(0, 500); // hard cap
+                saveAllDataToCloud();
+                cart = [];
+                oldGoldItems = [];
+                localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
+                localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
+                updateCartIcon();
+                closeModal('cart-modal');
+                if (billHistory.length >= 100) {
+                    showCustomAlert('Bill saved! Cart cleared.\n\n⚠️ You have ' + billHistory.length + ' bills saved. Consider clearing old bills from Bill History.');
+                } else {
+                    showCustomAlert('Bill saved! Cart cleared.');
+                }
+            });
+        }
+
+        function renderBillHistory() {
+            const container = document.getElementById('bill-history-list');
+            if (!billHistory || billHistory.length === 0) {
+                container.innerHTML = '<p style="color:#aaa; text-align:center; font-size:14px; padding:20px 0;">No bills yet.</p>';
+                return;
+            }
+            const warningHtml = billHistory.length >= 100
+                ? `<div style="background:#fff3e0; border:1.5px solid #FF9800; border-radius:10px; padding:10px 14px; margin-bottom:12px; font-size:13px; color:#e65100; font-weight:600;">
+                    ⚠️ You have ${billHistory.length} bills saved. Clear old bills to keep things running smoothly.
+                   </div>` : '';
+            container.innerHTML = warningHtml + billHistory.map((bill, idx) => {
+                const d = new Date(bill.timestamp);
+                const dateStr = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+                const timeStr = d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
+                const itemsHtml = bill.items.map(it =>
+                    `<div style="display:flex; justify-content:space-between; font-size:12px; padding:3px 0; border-bottom:1px dotted #eee;">
+                        <span style="color:#444;">${it.itemName}${it.barcode ? ' <span style="color:#aaa;">('+it.barcode+')</span>' : ''}</span>
+                        <span style="font-weight:600;">₹${it.finalPrice.toFixed(0)}</span>
+                    </div>`
+                ).join('');
+                return `
+                <div style="background:white; border-radius:12px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,0.08); overflow:hidden;">
+                    <div onclick="toggleBillDetail(${idx})" style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; cursor:pointer; background:#f9f9f9;">
+                        <div>
+                            <div style="font-size:14px; font-weight:700; color:#222;">${dateStr} &nbsp; <span style="color:#888; font-weight:400; font-size:12px;">${timeStr}</span></div>
+                            <div style="font-size:12px; color:#888; margin-top:2px;">${bill.items.length} item${bill.items.length !== 1 ? 's' : ''}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-size:16px; font-weight:800; color:#1565C0;">₹${bill.netPayable.toFixed(0)}</div>
+                            ${bill.oldGoldTotal > 0 ? `<div style="font-size:11px; color:#f44336;">-₹${bill.oldGoldTotal.toFixed(0)} old gold</div>` : ''}
+                        </div>
+                    </div>
+                    <div id="bill-detail-${idx}" style="display:none; padding:10px 14px 12px; border-top:1px solid #eee;">
+                        ${itemsHtml}
+                        <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:13px; font-weight:700; color:#333;">
+                            <span>Total</span><span>₹${bill.total.toFixed(0)}</span>
+                        </div>
+                        ${bill.oldGoldTotal > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12px; color:#f44336;"><span>Less Old Gold</span><span>-₹${bill.oldGoldTotal.toFixed(0)}</span></div>
+                        <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:800; color:#1565C0; border-top:1px dashed #ccc; padding-top:6px; margin-top:4px;"><span>Net Payable</span><span>₹${bill.netPayable.toFixed(0)}</span></div>` : ''}
+                        <button onclick="deleteBill(${bill.id})" style="margin-top:10px; background:#f44336; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer; float:right;">Delete Bill</button>
+                        <div style="clear:both;"></div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function toggleBillDetail(idx) {
+            const el = document.getElementById('bill-detail-' + idx);
+            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function deleteBill(id) {
+            billHistory = billHistory.filter(b => b.id !== id);
+            saveAllDataToCloud();
+            renderBillHistory();
+        }
+
+        function clearBillHistory() {
+            if (billHistory.length === 0) { showCustomAlert('No history to clear.'); return; }
+            showCustomConfirm('Delete all bill history? This cannot be undone.', 'Clear History', () => {
+                billHistory = [];
+                saveAllDataToCloud();
+                renderBillHistory();
+            });
+        }
+
+        // =============================================
+        // === BULK PRICE CHECK FUNCTIONS ==============
+        // =============================================
+        let bulkList = [];
+
+        // Route keypresses on bulk-check section to the barcode input
+        function bulkKeyRouter(e) {
+            const input = document.getElementById('bulk-barcode');
+            if (!input) return;
+            if (document.activeElement === input) return; // already focused
+            // Ignore modifier-only, tab, shift, ctrl etc
+            if (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Enter') {
+                input.focus();
+            }
+        }
+
+        function bulkAddItem() {
+            const input = document.getElementById('bulk-barcode');
+            const rawBarcode = (input.value || '').trim();
+            if (!rawBarcode) return;
+            // Case-insensitive lookup: find matching key regardless of case
+            const matchedKey = Object.keys(productData).find(k => k.toUpperCase() === rawBarcode.toUpperCase());
+            const barcode = matchedKey || rawBarcode.toUpperCase();
+            if (!productData[barcode]) {
+                showCustomAlert('Barcode not found: ' + rawBarcode);
+                input.value = '';
+                return;
+            }
+            // Avoid duplicate barcodes
+            if (bulkList.find(i => i.barcode === barcode)) {
+                showCustomAlert('Already in list.');
+                input.value = '';
+                return;
+            }
+            const d = productData[barcode];
+            // Calculate price using active profile (mirrors runPriceCalculation logic)
+            let final = 0, making = 0;
+            const otherCharge = d.otherCharge || 0;
+            const weight = d.netWeight;
+            if (d.mrp > 0) {
+                final = d.mrp + otherCharge + (d.mrp + otherCharge) * (taxRate / 100);
+            } else {
+                const mKey = d.metal, stamp = d.stamp;
+                if (!mKey || !stamp || !rates[mKey] || !rates[mKey][stamp]) {
+                    showCustomAlert('Rates missing for ' + barcode);
+                    input.value = '';
+                    return;
+                }
+                const rate = rates[mKey][stamp];
+                const metalVal = weight * rate;
+                const pureRate = getPureRate(mKey);
+                let mType = '', mInput = 0;
+                if (d.makingPerPc > 0)       { making = d.makingPerPc; mType = 'per pc'; mInput = d.makingPerPc; }
+                else if (d.makingWastage > 0) { making = pureRate * weight * (d.makingWastage/100); mType = 'wastage'; mInput = d.makingWastage; }
+                else if (d.makingPerGram > 0) { making = d.makingPerGram * weight; mType = 'per g'; mInput = d.makingPerGram; }
+                else if (d.makingPercent > 0) { making = metalVal * (d.makingPercent/100); mType = '%'; mInput = d.makingPercent; }
+                // Apply active profile offset
+                const prof = getActiveProfile();
+                if (prof && mType) {
+                    if (mType === 'wastage' && prof.wastage) { const adj = Math.max(0, mInput+prof.wastage); making = pureRate*weight*(adj/100); }
+                    else if (mType === 'per g' && prof.perGram) { const adj = Math.max(0, mInput+prof.perGram); making = adj*weight; }
+                    else if (mType === '%' && prof.percent) { const adj = Math.max(0, mInput+prof.percent); making = metalVal*(adj/100); }
+                    else if (mType === 'per pc' && prof.perPc) { const adj = Math.max(0, mInput+prof.perPc); making = adj; }
+                }
+                const total = metalVal + making + otherCharge;
+                final = total + total * (taxRate / 100);
+            }
+            bulkList.push({ barcode, name: d.itemName || barcode, price: final, weight: d.netWeight, makingOverride: null });
+            input.value = '';
+            input.select();
+            renderBulkList();
+            setTimeout(() => { input.value = ''; input.focus(); }, 10);
+        }
+
+        function renderBulkList() {
+            const container = document.getElementById('bulk-list');
+            const totalEl = document.getElementById('bulk-total');
+            if (bulkList.length === 0) {
+                container.innerHTML = '';
+                totalEl.style.display = 'none';
+                return;
+            }
+            let grandTotal = 0;
+            container.innerHTML = bulkList.map((item, idx) => {
+                grandTotal += item.price;
+                const overrideJson = JSON.stringify(item.makingOverride);
+                return `<div onclick='bulkViewOnMain("${item.barcode}", ${overrideJson})' style="display:flex; align-items:center; gap:8px; padding:10px 12px; margin-bottom:6px; background:white; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,0.07); cursor:pointer;">
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-size:14px; font-weight:700; color:#222; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name}</div>
+                        <div style="font-size:11px; color:#888;">${item.barcode} · ${item.weight.toFixed(2)}g</div>
+                    </div>
+                    <div style="font-size:15px; font-weight:800; color:#1565C0; white-space:nowrap;">₹${item.price.toFixed(0)}</div>
+                    <button onclick='event.stopPropagation(); bulkAddToCart(${idx})' style="background:#4CAF50; color:white; border:none; border-radius:7px; padding:5px 8px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap;">+Cart</button>
+                    <button onclick='event.stopPropagation(); removeBulkItem(${idx})' style="background:#f44336; color:white; border:none; border-radius:7px; padding:5px 8px; font-size:12px; cursor:pointer;">✕</button>
+                </div>`;
+            }).join('');
+            totalEl.textContent = 'Total: ₹' + grandTotal.toFixed(0);
+            totalEl.style.display = 'block';
+        }
+
+        function removeBulkItem(idx) {
+            bulkList.splice(idx, 1);
+            renderBulkList();
+        }
+
+        function bulkViewOnMain(barcode, overrideData) {
+            showSection('main');
+            document.getElementById('barcode').value = barcode;
+            lookupProduct(barcode, overrideData || null);
+        }
+
+        function bulkAddToCart(idx) {
+            const item = bulkList[idx];
+            if (!item) return;
+            const cartItem = {
+                id: Date.now() + Math.random(),
+                barcode: item.barcode,
+                itemName: item.name,
+                finalPrice: item.price,
+                makingOverride: item.makingOverride || null
+            };
+            cart.push(cartItem);
+            localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
+            updateCartIcon();
+            showCustomAlert(item.name + ' added to cart!');
+        }
+
+        function clearBulkList() {
+            bulkList = [];
+            renderBulkList();
+        }
+
         // --- Expose functions to global scope for HTML onclick ---
+
         window.showSection = showSection;
         window.toggleOptions = toggleOptions;
         window.closeOptions = closeOptions;
@@ -3433,7 +3689,44 @@
         window.saveNewProfile = saveNewProfile;
         window.setActiveProfile = setActiveProfile;
         window.deleteProfile = deleteProfile;
+        // Bill History
+        window.checkoutCart = checkoutCart;
+        window.renderBillHistory = renderBillHistory;
+        window.toggleBillDetail = toggleBillDetail;
+        window.deleteBill = deleteBill;
+        window.clearBillHistory = clearBillHistory;
+        // Bulk Price Check
+        window.bulkLookupDebounce = bulkLookupDebounce;
+        window.removeBulkItem = removeBulkItem;
+        window.clearBulkList = clearBulkList;
+        window.bulkViewOnMain = bulkViewOnMain;
+        window.bulkAddToCart = bulkAddToCart;
 
     </script>
+
+    <!-- Bill History Section -->
+    <div id="bill-history" style="display:none;">
+        <h2>🧾 Bill History</h2>
+        <p style="font-size:13px; text-align:center; color:#888; margin-top:-10px;">Past checkouts saved on this device</p>
+        <div id="bill-history-list"></div>
+        <hr>
+        <button onclick="clearBillHistory()" class="danger" style="margin-bottom:8px;">🗑 Clear All History</button>
+        <button onclick="showSection('main')">← Back to Main</button>
+    </div>
+
+    <!-- Bulk Price Check Section -->
+    <div id="bulk-check" style="display:none;">
+        <h2>📋 Bulk Price Check</h2>
+        <p style="font-size:13px; text-align:center; color:#888; margin-top:-10px;">Scan barcodes to compare prices — uses active profile</p>
+        <input type="text" id="bulk-barcode" placeholder="Scan or type barcode, press Enter..." autocomplete="off"
+               onkeydown="if(event.key==='Enter') bulkAddItem()"
+               style="font-size:16px;">
+        <div id="bulk-list" style="margin-top:12px;"></div>
+        <div id="bulk-total" style="text-align:right; font-size:17px; font-weight:700; color:#1565C0; padding:10px 0; display:none;"></div>
+        <hr>
+        <button onclick="clearBulkList()" style="background:#e65100; color:white; margin-bottom:8px;">🗑 Clear List</button>
+        <button onclick="showSection('main')">← Back to Main</button>
+    </div>
+
 </body>
 </html>
