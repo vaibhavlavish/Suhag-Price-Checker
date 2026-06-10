@@ -3727,8 +3727,11 @@
                 document.getElementById('bulk-barcode').value = value;
                 bulkAddItem();
             } else {
-                document.getElementById('barcode').value = value;
+                const inp = document.getElementById('barcode');
+                inp.value = value;
                 lookupProduct(value);
+                // Clear after lookup so physical scanner gets a clean empty field
+                setTimeout(() => { inp.value = ''; inp.focus(); }, 120);
             }
         }
 
