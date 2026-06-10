@@ -101,55 +101,65 @@
         #options-menu {
             display: none;
             position: absolute;
-            top: 100%;
-            right: 12px;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-            overflow: hidden;
+            top: calc(100% + 6px);
+            right: 8px;
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08);
             z-index: 1000;
-            min-width: 180px;
-            margin-top: 4px;
+            width: 240px;
+            padding: 8px 0;
+            overflow: hidden;
         }
         #options-menu.show {
             display: block;
-            animation: fadeIn 0.2s ease-out;
+            animation: menuSlideIn 0.18s ease-out;
         }
-        @keyframes fadeIn {
-            from { opacity: 0;
-            transform: translateY(-8px); }
-            to { opacity: 1; transform: translateY(0);
-            }
+        @keyframes menuSlideIn {
+            from { opacity: 0; transform: translateY(-10px) scale(0.97); }
+            to   { opacity: 1; transform: translateY(0)   scale(1);     }
+        }
+        .menu-section-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            color: #aaa;
+            text-transform: uppercase;
+            padding: 10px 16px 4px;
+        }
+        .menu-divider {
+            height: 1px;
+            background: #f0f0f0;
+            margin: 6px 12px;
         }
         #options-menu button {
-            display: block;
+            display: flex;
+            align-items: center;
+            gap: 10px;
             width: 100%;
             background: none;
             border: none;
-            padding: 14px 16px;
+            padding: 10px 16px;
             text-align: left;
-            font-size: 15px;
-            color: #333;
+            font-size: 14px;
+            font-weight: 500;
+            color: #222;
             cursor: pointer;
-            border-bottom: 1px solid #eee;
+            transition: background 0.12s;
+            border-radius: 0;
+            box-sizing: border-box;
         }
-        #options-menu button:last-child {
-            border-bottom: none;
+        #options-menu button:hover { background: #f5f5f5; }
+        #options-menu button .menu-icon {
+            width: 28px; height: 28px;
+            border-radius: 7px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px; flex-shrink: 0;
         }
-        #options-menu button.danger {
-            color: #d32f2f;
-        }
-        #options-menu button.backup {
-            color: #2196F3;
-            font-weight: 600;
-        }
-        #options-menu button.restore {
-            color: #FF9800;
-            font-weight: 600;
-        }
-        #options-menu button.danger:hover {
-            background-color: #ffebee;
-        }
+        #options-menu button.danger { color: #c62828; }
+        #options-menu button.danger:hover { background: #ffebee; }
+        #options-menu button.backup { color: #1565C0; }
+        #options-menu button.restore { color: #e65100; }
         #main-screen {
             flex: 1;
             display: flex;
@@ -916,18 +926,46 @@
         <button id="options-btn" onclick="toggleOptions()">More</button>
  
         <div id="options-menu">
-            <button onclick="showSection('update-rates')">Update Rates</button>
-            <button onclick="showSection('excel-upload')">Upload Excel</button>
-            <button onclick="showStockSection()" style="color:#4CAF50; font-weight:600;">📦 Stock</button>
-            <button onclick="openProfileModal()" style="color:#1565C0; font-weight:600;">⚙ Making Profiles</button>
-            <button onclick="showSection('bill-history')" style="color:#4CAF50; font-weight:600;">🧾 Bill History</button>
-            <button onclick="showSection('bulk-check')" style="color:#9c27b0; font-weight:600;">📋 Bulk Price Check</button>
-            <button onclick="downloadBackup()" class="backup">Download Backup</button>
-            <button onclick="triggerRestore()" class="restore">Restore Backup (JSON)</button>
-            <button onclick="clearAll()">Clear Screen</button>
-            <button onclick="clearCart(); closeOptions();" class="danger" style="color:#e65100; border-left: 3px solid #FF9800;">🛒 Clear Cart</button>
-            <button onclick="clearAllDataWrapper()" class="danger">Clear All Data (Cloud)</button>
-  
+            <div class="menu-section-label">Navigate</div>
+            <button onclick="showSection('update-rates')">
+                <span class="menu-icon" style="background:#e3f2fd;">💰</span> Update Rates
+            </button>
+            <button onclick="showSection('excel-upload')">
+                <span class="menu-icon" style="background:#e8f5e9;">📂</span> Upload Excel
+            </button>
+            <button onclick="showStockSection()">
+                <span class="menu-icon" style="background:#e8f5e9;">📦</span> Stock View
+            </button>
+            <button onclick="openProfileModal()">
+                <span class="menu-icon" style="background:#e3f2fd;">⚙️</span> Making Profiles
+            </button>
+            <button onclick="showSection('bill-history')">
+                <span class="menu-icon" style="background:#f3e5f5;">🧾</span> Bill History
+            </button>
+            <button onclick="showSection('bulk-check')">
+                <span class="menu-icon" style="background:#f3e5f5;">📋</span> Bulk Price Check
+            </button>
+
+            <div class="menu-divider"></div>
+            <div class="menu-section-label">Data</div>
+            <button onclick="downloadBackup()" class="backup">
+                <span class="menu-icon" style="background:#e3f2fd;">💾</span> Download Backup
+            </button>
+            <button onclick="triggerRestore()" class="restore">
+                <span class="menu-icon" style="background:#fff3e0;">📥</span> Restore Backup
+            </button>
+
+            <div class="menu-divider"></div>
+            <div class="menu-section-label">Actions</div>
+            <button onclick="clearAll()">
+                <span class="menu-icon" style="background:#f5f5f5;">🧹</span> Clear Screen
+            </button>
+            <button onclick="clearCart(); closeOptions();" class="danger">
+                <span class="menu-icon" style="background:#fff3e0;">🛒</span> Clear Cart
+            </button>
+            <button onclick="clearAllDataWrapper()" class="danger">
+                <span class="menu-icon" style="background:#ffebee;">⚠️</span> Clear All Data
+            </button>
         </div>
     </div>
 
