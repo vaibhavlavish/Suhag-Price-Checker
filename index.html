@@ -1551,6 +1551,7 @@
         }
 
         function getActiveProfile() {
+            if (!makingProfiles || makingProfiles.length === 0) return null;
             return makingProfiles.find(p => p.id === activeProfileId) || makingProfiles[0];
         }
 
@@ -1582,7 +1583,10 @@
                     looseDefaultsCloud = cloudData.looseDefaults || { metal: 'Gold', stamp: '18K', making: 35 };
                     baseCalcDefaults = cloudData.baseCalcDefaults || {}; 
                     loosePresets = cloudData.presets || []; // Sync presets from cloud
-                    makingProfiles = cloudData.makingProfiles || [{ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 }];
+                    makingProfiles = cloudData.makingProfiles || [];
+                    if (!makingProfiles.find(p => p.id === 'default')) {
+                        makingProfiles.unshift({ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 });
+                    }
                     billHistory = cloudData.billHistory || [];
                     activeProfileId = localStorage.getItem('activeProfileId') || 'default';
                     console.log("Data synced from Firebase.");
@@ -3012,13 +3016,13 @@
                 showCustomAlert('Cart is already empty.');
                 return;
             }
-            showCustomConfirm('Are you sure you want to clear the entire cart? This can be undone.', 'Confirm Clear Cart', () => {
+            showCustomConfirm('Clear the entire cart? This cannot be undone.', 'Confirm Clear Cart', () => {
                 cart = [];
+                cartAdjustment = 0;
                 localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
                 updateCartIcon();
-                openCart(); 
-                // Re-render the empty cart modal
-                showCustomAlert('Cart cleared successfully.');
+                openCart();
+                showCustomAlert('Cart cleared.');
             });
         }
         // --- END CART FUNCTIONS ---
@@ -3503,8 +3507,9 @@
         function applyAdjust() {
             const disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
             const base = _getCartBase();
+            if (cart.length === 0) { showCustomAlert('Cart is empty.'); return; }
             if (disc < 0) { showCustomAlert('Discount cannot be negative.'); return; }
-            if (disc > base) { showCustomAlert('Discount cannot exceed payable amount.'); return; }
+            if (disc > base) { showCustomAlert('Discount cannot exceed payable amount (₹' + base.toFixed(0) + ').'); return; }
             cartAdjustment = disc;
             document.getElementById('adjust-panel').style.display = 'none';
             openCart(); // re-render summary
@@ -3524,7 +3529,7 @@
         let billHistory = []; // loaded from cloud on init
 
         function checkoutCart() {
-            if (cart.length === 0) { showCustomAlert('Cart is empty.'); return; }
+            if (!cart || cart.length === 0) { showCustomAlert('Cart is empty.'); return; }
             showCustomConfirm('Save this cart as a completed bill?', 'Checkout', () => {
                 let total = 0;
                 cart.forEach(i => total += i.finalPrice);
@@ -3662,7 +3667,12 @@
             // Calculate price using active profile (mirrors runPriceCalculation logic)
             let final = 0, making = 0;
             const otherCharge = d.otherCharge || 0;
-            const weight = d.netWeight;
+            const weight = parseFloat(d.netWeight) || 0;
+            if (!d.mrp && weight === 0) {
+                showCustomAlert('Item has no weight: ' + barcode);
+                input.value = '';
+                return;
+            }
             if (d.mrp > 0) {
                 final = d.mrp + otherCharge + (d.mrp + otherCharge) * (taxRate / 100);
             } else {
@@ -3682,8 +3692,8 @@
                 else if (d.makingPercent > 0) { making = metalVal * (d.makingPercent/100); mType = '%'; mInput = d.makingPercent; }
                 // Apply active profile offset
                 const prof = getActiveProfile();
-                if (prof && mType) {
-                    if (mType === 'wastage' && prof.wastage) { const adj = Math.max(0, mInput+prof.wastage); making = pureRate*weight*(adj/100); }
+                if (prof && prof.id !== 'default' && mType) {
+                    if (mType === 'wastage' && prof.wastage) { const adj = Math.max(0, mInput+prof.wastage); making = pureRate > 0 ? pureRate*weight*(adj/100) : making; }
                     else if (mType === 'per g' && prof.perGram) { const adj = Math.max(0, mInput+prof.perGram); making = adj*weight; }
                     else if (mType === '%' && prof.percent) { const adj = Math.max(0, mInput+prof.percent); making = metalVal*(adj/100); }
                     else if (mType === 'per pc' && prof.perPc) { const adj = Math.max(0, mInput+prof.perPc); making = adj; }
@@ -3713,7 +3723,7 @@
                 return `<div onclick='bulkViewOnMain("${item.barcode}", ${overrideJson})' style="display:flex; align-items:center; gap:8px; padding:10px 12px; margin-bottom:6px; background:white; border-radius:10px; box-shadow:0 1px 4px rgba(0,0,0,0.07); cursor:pointer;">
                     <div style="flex:1; min-width:0;">
                         <div style="font-size:14px; font-weight:700; color:#222; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.name}</div>
-                        <div style="font-size:11px; color:#888;">${item.barcode} · ${item.weight.toFixed(2)}g</div>
+                        <div style="font-size:11px; color:#888;">${item.barcode} · ${(item.weight||0).toFixed(2)}g</div>
                     </div>
                     <div style="font-size:15px; font-weight:800; color:#1565C0; white-space:nowrap;">₹${item.price.toFixed(0)}</div>
                     <button onclick='event.stopPropagation(); bulkAddToCart(${idx})' style="background:#4CAF50; color:white; border:none; border-radius:7px; padding:5px 8px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap;">+Cart</button>
