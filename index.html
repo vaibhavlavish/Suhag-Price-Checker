@@ -913,6 +913,7 @@
             box-shadow: 0 1px 4px;
         }
     </style>
+    <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
 </head>
 <body>
     <div id="taskbar">
@@ -972,7 +973,13 @@
     <input type="file" id="restore-file-input" accept=".json" style="display: none;" onchange="processRestoreFile()">
 
     <div id="main-screen">
-        <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus style="flex:1; margin-bottom:0;">
+            <button onclick="openCamera('barcode')" id="cam-btn-main" title="Scan with camera"
+                style="flex-shrink:0; width:46px; height:46px; border-radius:12px; background:#1565C0; color:white; border:none; font-size:22px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(21,101,192,0.3);">
+                📷
+            </button>
+        </div>
         <div id="product-code" onclick="toggleProductInfo()"></div> <h1 id="price-display">0.00</h1>
         
         <div id="main-buttons-container">
@@ -3523,6 +3530,124 @@
             openCart();
         }
 
+
+        // =============================================
+        // === CAMERA BARCODE SCANNER ==================
+        // =============================================
+        let cameraStream    = null;
+        let cameraTarget    = 'barcode'; // 'barcode' or 'bulk'
+        let cameraAnimFrame = null;
+        let zxingReader     = null;
+        let cameraActive    = false;
+
+        function openCamera(target) {
+            cameraTarget = target || 'barcode';
+            document.getElementById('camera-overlay').style.display = 'flex';
+            document.getElementById('camera-status').textContent = 'Starting camera…';
+            cameraActive = true;
+            startCameraStream();
+        }
+
+        function closeCamera() {
+            cameraActive = false;
+            document.getElementById('camera-overlay').style.display = 'none';
+            if (cameraStream) {
+                cameraStream.getTracks().forEach(t => t.stop());
+                cameraStream = null;
+            }
+            if (cameraAnimFrame) { cancelAnimationFrame(cameraAnimFrame); cameraAnimFrame = null; }
+            if (zxingReader) { try { zxingReader.reset(); } catch(e){} zxingReader = null; }
+            const video = document.getElementById('camera-video');
+            video.srcObject = null;
+        }
+
+        async function startCameraStream() {
+            const video = document.getElementById('camera-video');
+            try {
+                cameraStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+                });
+                video.srcObject = cameraStream;
+                await video.play();
+                document.getElementById('camera-status').textContent = 'Point camera at barcode';
+                // Try BarcodeDetector first, fall back to ZXing
+                if ('BarcodeDetector' in window) {
+                    startBarcodeDetector(video);
+                } else {
+                    startZXing(video);
+                }
+            } catch (err) {
+                document.getElementById('camera-status').textContent = '⚠️ Camera access denied';
+                console.error('Camera error:', err);
+            }
+        }
+
+        // ── BarcodeDetector (native, fast) ─────────────────────────
+        async function startBarcodeDetector(video) {
+            const detector = new BarcodeDetector({ formats: [
+                'code_128','code_39','ean_13','ean_8','upc_a','upc_e',
+                'qr_code','data_matrix','aztec','pdf417','itf','codabar'
+            ]});
+            async function detect() {
+                if (!cameraActive) return;
+                try {
+                    const barcodes = await detector.detect(video);
+                    if (barcodes.length > 0) {
+                        onBarcodeDetected(barcodes[0].rawValue);
+                        return;
+                    }
+                } catch(e) {}
+                cameraAnimFrame = requestAnimationFrame(detect);
+            }
+            cameraAnimFrame = requestAnimationFrame(detect);
+        }
+
+        // ── ZXing fallback (cross-platform) ────────────────────────
+        function startZXing(video) {
+            if (typeof ZXing === 'undefined') {
+                document.getElementById('camera-status').textContent = '⚠️ Scanner library not loaded';
+                return;
+            }
+            try {
+                const hints = new Map();
+                const formats = [
+                    ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
+                    ZXing.BarcodeFormat.EAN_13,   ZXing.BarcodeFormat.EAN_8,
+                    ZXing.BarcodeFormat.UPC_A,    ZXing.BarcodeFormat.UPC_E,
+                    ZXing.BarcodeFormat.QR_CODE,  ZXing.BarcodeFormat.DATA_MATRIX
+                ];
+                hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, formats);
+                zxingReader = new ZXing.BrowserMultiFormatReader(hints);
+                zxingReader.decodeFromVideoElement(video, (result, err) => {
+                    if (!cameraActive) return;
+                    if (result) { onBarcodeDetected(result.getText()); }
+                });
+            } catch(e) {
+                document.getElementById('camera-status').textContent = '⚠️ Scanner error: ' + e.message;
+            }
+        }
+
+        // ── Common result handler ───────────────────────────────────
+        function onBarcodeDetected(value) {
+            if (!value || !cameraActive) return;
+            // Vibrate if supported
+            if (navigator.vibrate) navigator.vibrate(80);
+            closeCamera();
+            const cleaned = value.trim().toUpperCase();
+            if (cameraTarget === 'bulk') {
+                const input = document.getElementById('bulk-barcode');
+                input.value = cleaned;
+                bulkAddItem();
+            } else {
+                const input = document.getElementById('barcode');
+                input.value = cleaned;
+                lookupProduct(cleaned);
+            }
+        }
+
+        window.openCamera  = openCamera;
+        window.closeCamera = closeCamera;
+
         // =============================================
         // === BILL HISTORY FUNCTIONS ==================
         // =============================================
@@ -3869,6 +3994,42 @@
         <button onclick="clearBulkList()" style="background:#e65100; color:white; margin-bottom:8px;">🗑 Clear List</button>
         <button onclick="showSection('main')">← Back to Main</button>
     </div>
+
+
+    <!-- Camera Scanner Overlay -->
+    <div id="camera-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:9999; flex-direction:column; align-items:center; justify-content:center;">
+        <div style="position:relative; width:100%; max-width:420px;">
+            <!-- Viewfinder frame -->
+            <div style="position:relative; width:100%; padding-bottom:75%; background:#000; border-radius:12px; overflow:hidden;">
+                <video id="camera-video" style="position:absolute; inset:0; width:100%; height:100%; object-fit:cover;" playsinline muted></video>
+                <!-- Scanning reticle -->
+                <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none;">
+                    <div style="width:65%; height:45%; position:relative;">
+                        <!-- Corner brackets -->
+                        <div style="position:absolute; top:0;    left:0;  width:22px; height:22px; border-top:3px solid #4CAF50;  border-left:3px solid #4CAF50;  border-radius:3px 0 0 0;"></div>
+                        <div style="position:absolute; top:0;    right:0; width:22px; height:22px; border-top:3px solid #4CAF50;  border-right:3px solid #4CAF50; border-radius:0 3px 0 0;"></div>
+                        <div style="position:absolute; bottom:0; left:0;  width:22px; height:22px; border-bottom:3px solid #4CAF50; border-left:3px solid #4CAF50; border-radius:0 0 0 3px;"></div>
+                        <div style="position:absolute; bottom:0; right:0; width:22px; height:22px; border-bottom:3px solid #4CAF50; border-right:3px solid #4CAF50; border-radius:0 0 3px 0;"></div>
+                        <!-- Scan line animation -->
+                        <div id="scan-line" style="position:absolute; left:0; right:0; height:2px; background:linear-gradient(90deg, transparent, #4CAF50, transparent); animation: scanLine 1.8s ease-in-out infinite;"></div>
+                    </div>
+                </div>
+            </div>
+            <!-- Status text -->
+            <div id="camera-status" style="color:white; text-align:center; margin-top:14px; font-size:15px; font-weight:500;">Point camera at barcode</div>
+            <!-- Close button -->
+            <button onclick="closeCamera()" style="display:block; margin:16px auto 0; background:rgba(255,255,255,0.15); color:white; border:1.5px solid rgba(255,255,255,0.3); border-radius:10px; padding:10px 32px; font-size:15px; cursor:pointer; backdrop-filter:blur(4px);">✕ Cancel</button>
+        </div>
+    </div>
+
+    <style>
+        @keyframes scanLine {
+            0%   { top: 8%;  opacity: 0; }
+            10%  { opacity: 1; }
+            90%  { opacity: 1; }
+            100% { top: 88%; opacity: 0; }
+        }
+    </style>
 
 </body>
 </html>
