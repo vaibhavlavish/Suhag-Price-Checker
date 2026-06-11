@@ -913,7 +913,7 @@
             box-shadow: 0 1px 4px;
         }
     </style>
-    <script src="https://unpkg.com/@zxing/library@0.18.6/umd/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js"></script>
 </head>
 <body>
     <div id="taskbar">
@@ -3537,7 +3537,7 @@
         let cameraStream      = null;
         let cameraTarget      = 'barcode';
         let cameraAnimFrame   = null;
-        let zxingReader       = null;
+        let zxingReader       = null; // canvas-based, no instance needed on iOS
         let cameraActive      = false;
         // Stability detection state
         let camLastValue      = '';
@@ -3646,27 +3646,59 @@
             requestAnimationFrame(detect);
         }
 
-        // ── ZXing fallback ─────────────────────────────────────────
+        // ── ZXing fallback (canvas frame-capture — works on iPad/Safari) ──
         function startZXing(video) {
             if (typeof ZXing === 'undefined') {
                 document.getElementById('camera-status').textContent = '⚠️ Scanner library not loaded';
                 return;
             }
             try {
+                // Build hints
                 const hints = new Map();
                 hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
                     ZXing.BarcodeFormat.CODE_128, ZXing.BarcodeFormat.CODE_39,
                     ZXing.BarcodeFormat.EAN_13,   ZXing.BarcodeFormat.EAN_8,
                     ZXing.BarcodeFormat.UPC_A,    ZXing.BarcodeFormat.UPC_E,
+                    ZXing.BarcodeFormat.ITF,      ZXing.BarcodeFormat.CODABAR,
                 ]);
                 hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
-                zxingReader = new ZXing.BrowserMultiFormatReader(hints);
-                zxingReader.decodeFromVideoElement(video, (result, err) => {
+
+                // Use low-level MultiFormatReader — avoids ZXing's internal
+                // video handling which fails on Safari/iPad
+                const mfReader = new ZXing.MultiFormatReader();
+                mfReader.setHints(hints);
+
+                const canvas = document.createElement('canvas');
+                const ctx    = canvas.getContext('2d', { willReadFrequently: true });
+                let lastTick = 0;
+
+                function tick(ts) {
                     if (!cameraActive) return;
-                    onRawDetection(result ? result.getText() : null);
-                });
+                    // ~10 fps — enough for smooth scanning, easy on battery
+                    if (ts - lastTick >= 100) {
+                        lastTick = ts;
+                        if (video.readyState >= 2 && video.videoWidth > 0) {
+                            canvas.width  = video.videoWidth;
+                            canvas.height = video.videoHeight;
+                            ctx.drawImage(video, 0, 0);
+                            try {
+                                const lum    = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+                                const bmp    = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+                                const result = mfReader.decode(bmp);
+                                onRawDetection(result.getText());
+                                // Don't stop — stability needs repeated reads
+                            } catch(e) {
+                                // NotFoundException thrown every frame when no barcode — normal
+                                onRawDetection(null);
+                            }
+                        }
+                    }
+                    cameraAnimFrame = requestAnimationFrame(tick);
+                }
+                cameraAnimFrame = requestAnimationFrame(tick);
+
             } catch(e) {
-                document.getElementById('camera-status').textContent = '⚠️ Scanner error';
+                document.getElementById('camera-status').textContent = '⚠️ Scanner error: ' + e.message;
             }
         }
 
