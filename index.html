@@ -521,7 +521,7 @@
             box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
         }
         /* Updated button selector to exclude new cart buttons and old gold */
-        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#close-cart-modal):not(#clear-cart-btn):not(#clear-screen-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(.remove-item-btn):not(#preset-btn):not(.preset-item-btn):not(.preset-del-btn) {
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#close-cart-modal):not(#clear-cart-btn):not(#clear-screen-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(.remove-item-btn):not(#preset-btn):not(.preset-item-btn):not(.preset-del-btn):not(.preset-edit-btn) {
             background-color: #4CAF50;
             color: white;
             cursor: pointer;
@@ -857,6 +857,19 @@
             align-items: center;
             justify-content: center;
         }
+        .preset-edit-btn {
+            background-color: #FF9800;
+            color: white;
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
         
         /* Responsive adjustments */
         @media (min-width: 480px) {
@@ -1131,12 +1144,29 @@
     <div id="preset-modal">
         <div id="preset-content">
             <h3>Manage Presets</h3>
-            <p style="font-size:12px; text-align:center; color:#666; margin-top:-10px;">(Admin PIN Required to Add/Delete)</p>
+            <p style="font-size:12px; text-align:center; color:#666; margin-top:-10px;">(Admin PIN Required to Add/Edit/Delete)</p>
             
             <div style="background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #eee;">
-                <h4 style="margin: 0 0 8px 0; font-size: 14px;">Add New Preset:</h4>
+                <h4 id="preset-form-title" style="margin: 0 0 8px 0; font-size: 14px;">Add New Preset:</h4>
                 <input type="text" id="new-preset-name" placeholder="Preset Name (e.g. Bangles)" style="margin-top:0;">
-                <button onclick="addNewPreset()" style="background-color: #4CAF50; width: 100%; margin-top: 5px;">Save Current Settings</button>
+                <label for="preset-modal-metal" style="font-size:12px; margin: 8px 0 2px 0;">Metal:</label>
+                <select id="preset-modal-metal" onchange="updatePresetModalStamps()" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%;">
+                    <option value="Gold">Gold</option>
+                    <option value="Silver">Silver</option>
+                    <option value="PC">PC</option>
+                </select>
+                <label for="preset-modal-stamp" style="font-size:12px; margin: 0 0 2px 0;">Stamp:</label>
+                <select id="preset-modal-stamp" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%;"></select>
+                <label for="preset-modal-making-type" style="font-size:12px; margin: 0 0 2px 0;">Making Type:</label>
+                <select id="preset-modal-making-type" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%;">
+                    <option value="%">% (Percent)</option>
+                    <option value="wastage">% (W) Wastage</option>
+                    <option value="per_g">₹ Per Gram</option>
+                    <option value="per_pc">₹ Fixed (Pc)</option>
+                </select>
+                <label for="preset-modal-making-value" style="font-size:12px; margin: 0 0 2px 0;">Making Value:</label>
+                <input type="number" id="preset-modal-making-value" placeholder="e.g. 35" step="0.25" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%; box-sizing:border-box;">
+                <button id="preset-save-btn" onclick="addNewPreset()" style="background-color: #4CAF50; width: 100%; margin-top: 5px;">Save Preset</button>
             </div>
             
             <h4 style="margin: 15px 0 5px 0; font-size: 14px;">Load Preset:</h4>
@@ -2388,7 +2418,54 @@
         // --- PRESET FUNCTIONS (UPDATED FOR CLOUD & PIN) ---
         function openPresetModal() {
             renderPresetList();
+            _resetPresetForm();
+            updatePresetModalStamps();
             document.getElementById('preset-modal').style.display = 'flex';
+        }
+
+        function updatePresetModalStamps() {
+            const metal = (document.getElementById('preset-modal-metal').value || 'Gold').toLowerCase();
+            const stampSelect = document.getElementById('preset-modal-stamp');
+            const stamps = rates[metal] ? Object.keys(rates[metal]) : [];
+            stampSelect.innerHTML = stamps.map(s => `<option value="${s}">${s}</option>`).join('') || '<option value="">No stamps</option>';
+        }
+
+        let _editingPresetId = null;
+
+        function editPreset(id) {
+            if (!checkPin()) return;
+            const p = loosePresets.find(pr => pr.id === id);
+            if (!p) return;
+            _editingPresetId = id;
+            // Pre-fill modal form with preset values
+            document.getElementById('new-preset-name').value = p.name;
+            document.getElementById('preset-modal-metal').value = p.metal;
+            // Refresh stamps for this metal, then set stamp
+            updatePresetModalStamps();
+            setTimeout(() => {
+                document.getElementById('preset-modal-stamp').value = p.stamp;
+                document.getElementById('preset-modal-making-type').value = p.makingType;
+                document.getElementById('preset-modal-making-value').value = p.makingValue;
+            }, 50);
+            // Update modal UI to show edit mode
+            document.getElementById('preset-form-title').textContent = 'Edit Preset:';
+            const btn = document.getElementById('preset-save-btn');
+            btn.textContent = '💾 Update Preset';
+            btn.style.backgroundColor = '#FF9800';
+            // Scroll form into view
+            document.getElementById('preset-form-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function _resetPresetForm() {
+            document.getElementById('new-preset-name').value = '';
+            document.getElementById('preset-modal-metal').value = 'Gold';
+            document.getElementById('preset-modal-making-type').value = '%';
+            document.getElementById('preset-modal-making-value').value = '';
+            const title = document.getElementById('preset-form-title');
+            if (title) title.textContent = 'Add New Preset:';
+            const btn = document.getElementById('preset-save-btn');
+            if (btn) { btn.textContent = 'Save Preset'; btn.style.backgroundColor = '#4CAF50'; }
+            _editingPresetId = null;
         }
 
         function addNewPreset() {
@@ -2400,10 +2477,16 @@
                 return;
             }
             
-            const metal = document.getElementById('loose-metal-select').value;
-            const stamp = document.getElementById('loose-stamp-select').value;
-            const makingType = document.getElementById('loose-making-type').value;
-            const makingValue = parseFloat(document.getElementById('loose-making-percent').value) || 0;
+            const metal = document.getElementById('preset-modal-metal').value;
+            const stamp = document.getElementById('preset-modal-stamp').value;
+            const makingType = document.getElementById('preset-modal-making-type').value;
+            const makingValue = parseFloat(document.getElementById('preset-modal-making-value').value) || 0;
+
+            if (!stamp) {
+                showCustomAlert("Please select a stamp.");
+                return;
+            }
+
             const newPreset = {
                 id: Date.now(),
                 name: name,
@@ -2413,13 +2496,18 @@
                 makingValue: makingValue
             };
 
-            loosePresets.push(newPreset);
-            // NOW SAVING TO CLOUD
+            if (_editingPresetId) {
+                const idx = loosePresets.findIndex(p => p.id === _editingPresetId);
+                if (idx !== -1) loosePresets[idx] = { ...loosePresets[idx], ...newPreset, id: loosePresets[idx].id };
+            } else {
+                loosePresets.push(newPreset);
+            }
             saveAllDataToCloud();
-            
-            document.getElementById('new-preset-name').value = '';
+            _resetPresetForm();
+            updatePresetModalStamps();
             renderPresetList();
-            showCustomAlert("Preset saved to cloud!");
+            showCustomAlert(_editingPresetId ? "Preset updated!" : "Preset saved to cloud!");
+            _editingPresetId = null;
         }
 
         function deletePreset(id) {
@@ -2475,6 +2563,7 @@
                             <strong>${preset.name}</strong><br>
                             <span style="font-size:12px; color:#666;">${preset.metal} ${preset.stamp} | ${makingDisplay}</span>
                         </button>
+                        <button class="preset-edit-btn" onclick="editPreset(${preset.id})">✏</button>
                         <button class="preset-del-btn" onclick="deletePreset(${preset.id})">&times;</button>
                     `;
                     list.appendChild(row);
@@ -4274,6 +4363,8 @@
         window.addNewPreset = addNewPreset;
         window.loadPreset = loadPreset;
         window.deletePreset = deletePreset;
+        window.editPreset = editPreset;
+        window.updatePresetModalStamps = updatePresetModalStamps;
         // Profile Functions
         window.openProfileModal = openProfileModal;
         window.switchProfileTab = switchProfileTab;
