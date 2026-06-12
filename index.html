@@ -1221,7 +1221,7 @@
         <div id="profile-list" style="margin-bottom:8px;"></div>
         <hr>
 
-        <h3 style="font-size:15px; color:#333; text-align:center; margin-bottom:12px;">Create New Profile</h3>
+        <h3 id="profile-form-title" style="font-size:15px; color:#333; text-align:center; margin-bottom:12px;">Create New Profile</h3>
 
         <label for="new-profile-name">Profile Name</label>
         <input type="text" id="new-profile-name" placeholder="e.g. B2B, Retail, Wholesale">
@@ -1282,7 +1282,7 @@
             </div>
         </div>
 
-        <button onclick="saveNewProfile()" style="background:#1565C0; margin-top:10px;">Save Profile</button>
+        <button id="profile-save-btn" onclick="saveNewProfile()" style="background:#1565C0; margin-top:10px;">Save Profile</button>
         <hr>
         <button onclick="showSection('main')">&#8592; Back to Main</button>
     </div>
@@ -3411,11 +3411,7 @@
         function openProfileModal() {
             showSection('profiles-section');
             renderProfileList();
-            // Clear new profile form and reset to Gold tab
-            ['new-profile-name',
-             'np-gold-wastage','np-gold-pergram','np-gold-percent','np-gold-perpc',
-             'np-silver-wastage','np-silver-pergram','np-silver-percent','np-silver-perpc'
-            ].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+            _resetProfileForm();
             switchProfileTab('gold');
         }
 
@@ -3461,6 +3457,7 @@
                         <div style="font-size:11px; color:#888; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${offsetStr}</div>
                     </div>
                     ${!isActive ? `<button onclick="setActiveProfile('${p.id}')" style="padding:5px 10px; background:#1565C0; color:white; border:none; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Use</button>` : `<span style="font-size:11px; color:#1565C0; font-weight:600; white-space:nowrap;">Active</span>`}
+                    ${!isDefault ? `<button onclick="editProfile('${p.id}')"   style="padding:5px 8px; background:#FF9800; color:white; border:none; border-radius:7px; font-size:12px; cursor:pointer;">✏</button>` : ''}
                     ${!isDefault ? `<button onclick="deleteProfile('${p.id}')" style="padding:5px 8px; background:#f44336; color:white; border:none; border-radius:7px; font-size:12px; cursor:pointer;">✕</button>` : ''}
                 </div>`;
             }).join('');
@@ -3486,12 +3483,40 @@
             document.getElementById('np-tab-silver').style.color      = isGold ? '#888'    : '#546e7a';
         }
 
+        let _editingProfileId = null; // null = create mode, id = edit mode
+
+        function editProfile(id) {
+            if (!checkPin()) return;
+            const p = makingProfiles.find(pr => pr.id === id);
+            if (!p) return;
+            _editingProfileId = id;
+            // Pre-fill name
+            document.getElementById('new-profile-name').value = p.name;
+            // Pre-fill gold fields
+            const g = p.gold || {};
+            document.getElementById('np-gold-wastage').value = g.wastage || '';
+            document.getElementById('np-gold-pergram').value = g.perGram || '';
+            document.getElementById('np-gold-percent').value = g.percent || '';
+            document.getElementById('np-gold-perpc').value   = g.perPc   || '';
+            // Pre-fill silver fields
+            const s = p.silver || {};
+            document.getElementById('np-silver-wastage').value = s.wastage || '';
+            document.getElementById('np-silver-pergram').value = s.perGram || '';
+            document.getElementById('np-silver-percent').value = s.percent || '';
+            document.getElementById('np-silver-perpc').value   = s.perPc   || '';
+            // Update button label and scroll form into view
+            document.getElementById('profile-save-btn').textContent = '💾 Update Profile';
+            document.getElementById('profile-save-btn').style.background = '#FF9800';
+            document.getElementById('profile-form-title').textContent = 'Edit Profile';
+            switchProfileTab('gold');
+            document.getElementById('profile-save-btn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
         function saveNewProfile() {
             if (!checkPin()) return;
             const name = document.getElementById('new-profile-name').value.trim();
             if (!name) { showCustomAlert('Please enter a profile name.'); return; }
-            const newProfile = {
-                id: 'prof_' + Date.now(),
+            const profileData = {
                 name,
                 gold: {
                     wastage : parseFloat(document.getElementById('np-gold-wastage').value)  || 0,
@@ -3506,14 +3531,32 @@
                     perPc   : parseFloat(document.getElementById('np-silver-perpc').value)   || 0,
                 }
             };
-            makingProfiles.push(newProfile);
+            if (_editingProfileId) {
+                // Edit mode — update existing
+                const idx = makingProfiles.findIndex(p => p.id === _editingProfileId);
+                if (idx !== -1) makingProfiles[idx] = { ...makingProfiles[idx], ...profileData };
+                _editingProfileId = null;
+            } else {
+                // Create mode — add new
+                makingProfiles.push({ id: 'prof_' + Date.now(), ...profileData });
+            }
             saveAllDataToCloud();
-            // Clear form
+            if (currentBarcode) runPriceCalculation();
+            // Reset form
+            _resetProfileForm();
+            renderProfileList();
+        }
+
+        function _resetProfileForm() {
             ['new-profile-name',
              'np-gold-wastage','np-gold-pergram','np-gold-percent','np-gold-perpc',
              'np-silver-wastage','np-silver-pergram','np-silver-percent','np-silver-perpc'
             ].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
-            renderProfileList();
+            const btn = document.getElementById('profile-save-btn');
+            if (btn) { btn.textContent = 'Save Profile'; btn.style.background = '#1565C0'; }
+            const title = document.getElementById('profile-form-title');
+            if (title) title.textContent = 'Create New Profile';
+            _editingProfileId = null;
         }
 
         function deleteProfile(id) {
@@ -4234,6 +4277,7 @@
         // Profile Functions
         window.openProfileModal = openProfileModal;
         window.switchProfileTab = switchProfileTab;
+        window.editProfile = editProfile;
         window.saveNewProfile = saveNewProfile;
         window.setActiveProfile = setActiveProfile;
         window.deleteProfile = deleteProfile;
