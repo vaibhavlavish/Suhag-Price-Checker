@@ -1512,6 +1512,7 @@
                 presets: loosePresets, // Include presets in backup
                 makingProfiles: makingProfiles,
                 activeProfileId: activeProfileId,
+                billHistory: billHistory,
                 backupTimestamp: new Date().toISOString()
             };
             const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
@@ -1559,8 +1560,14 @@
                                 products: jsonContent.products || {},
                                 looseDefaults: jsonContent.looseDefaults || { metal: 'Gold', stamp: '18K', making: 35 },
                                 baseCalcDefaults: jsonContent.baseCalcDefaults || {},
-                                presets: jsonContent.presets || [] // Restore presets
+                                presets: jsonContent.presets || [], // Restore presets
+                                makingProfiles: jsonContent.makingProfiles || [{ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 }],
+                                billHistory: jsonContent.billHistory || []
                             };
+
+                            if (jsonContent.activeProfileId) {
+                                localStorage.setItem('activeProfileId', jsonContent.activeProfileId);
+                            }
 
                             if (window.dbSet) {
                                 window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToRestore)
