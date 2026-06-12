@@ -325,7 +325,7 @@
         /* --- END NEW BUTTON LAYOUT STYLES --- */
         
         /* Reused Modal Styles */
-        #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal, #old-gold-modal, #preset-modal { /* Added preset-modal */
+        #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal, #old-gold-modal, #preset-modal, #payment-modal {
             display: none;
             position: fixed;
             top: 0;
@@ -1216,10 +1216,9 @@
     <!-- Making Profiles Modal -->
     <div id="profiles-section" style="display:none;">
         <h2>⚙ Making Profiles</h2>
-        <p style="font-size:13px; text-align:center; color:#888; margin-top:-10px;">Offsets added on top of Excel making charges per product</p>
+        <p style="font-size:13px; text-align:center; color:#888; margin-top:-10px;">Offsets added on top of Excel making charges — separate for Gold &amp; Silver</p>
 
         <div id="profile-list" style="margin-bottom:8px;"></div>
-
         <hr>
 
         <h3 style="font-size:15px; color:#333; text-align:center; margin-bottom:12px;">Create New Profile</h3>
@@ -1227,22 +1226,59 @@
         <label for="new-profile-name">Profile Name</label>
         <input type="text" id="new-profile-name" placeholder="e.g. B2B, Retail, Wholesale">
 
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px;">
-            <div>
-                <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">Wastage offset (%)</label>
-                <input type="number" id="np-wastage" placeholder="e.g. +5 or -2" step="0.1" style="margin-bottom:0;">
+        <!-- Metal tabs -->
+        <div style="display:flex; gap:0; margin-bottom:14px; border-radius:10px; overflow:hidden; border:1.5px solid #e0e0e0;">
+            <button id="np-tab-gold" onclick="switchProfileTab('gold')"
+                style="flex:1; padding:10px; border:none; background:#FFF8E1; color:#F57F17; font-weight:700; font-size:14px; cursor:pointer; border-right:1px solid #e0e0e0;">
+                🥇 Gold
+            </button>
+            <button id="np-tab-silver" onclick="switchProfileTab('silver')"
+                style="flex:1; padding:10px; border:none; background:white; color:#888; font-weight:600; font-size:14px; cursor:pointer;">
+                🥈 Silver
+            </button>
+        </div>
+
+        <!-- Gold offsets -->
+        <div id="np-gold-fields">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px;">
+                <div>
+                    <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">Wastage offset (%)</label>
+                    <input type="number" id="np-gold-wastage" placeholder="e.g. +5 or -2" step="0.1" style="margin-bottom:0;">
+                </div>
+                <div>
+                    <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">Per Gram offset (&#8377;)</label>
+                    <input type="number" id="np-gold-pergram" placeholder="e.g. +100" step="1" style="margin-bottom:0;">
+                </div>
+                <div>
+                    <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">% Making offset (%)</label>
+                    <input type="number" id="np-gold-percent" placeholder="e.g. +10" step="0.1" style="margin-bottom:0;">
+                </div>
+                <div>
+                    <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">Per PC offset (&#8377;)</label>
+                    <input type="number" id="np-gold-perpc" placeholder="e.g. +50" step="1" style="margin-bottom:0;">
+                </div>
             </div>
-            <div>
-                <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">Per Gram offset (&#8377;)</label>
-                <input type="number" id="np-pergram" placeholder="e.g. +100" step="1" style="margin-bottom:0;">
-            </div>
-            <div>
-                <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">% Making offset (%)</label>
-                <input type="number" id="np-percent" placeholder="e.g. +10" step="0.1" style="margin-bottom:0;">
-            </div>
-            <div>
-                <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">Per PC offset (&#8377;)</label>
-                <input type="number" id="np-perpc" placeholder="e.g. +50" step="1" style="margin-bottom:0;">
+        </div>
+
+        <!-- Silver offsets -->
+        <div id="np-silver-fields" style="display:none;">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px;">
+                <div>
+                    <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">Wastage offset (%)</label>
+                    <input type="number" id="np-silver-wastage" placeholder="e.g. +5 or -2" step="0.1" style="margin-bottom:0;">
+                </div>
+                <div>
+                    <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">Per Gram offset (&#8377;)</label>
+                    <input type="number" id="np-silver-pergram" placeholder="e.g. +100" step="1" style="margin-bottom:0;">
+                </div>
+                <div>
+                    <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">% Making offset (%)</label>
+                    <input type="number" id="np-silver-percent" placeholder="e.g. +10" step="0.1" style="margin-bottom:0;">
+                </div>
+                <div>
+                    <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">Per PC offset (&#8377;)</label>
+                    <input type="number" id="np-silver-perpc" placeholder="e.g. +50" step="1" style="margin-bottom:0;">
+                </div>
             </div>
         </div>
 
@@ -2540,20 +2576,25 @@
                 if (!makingOverride && currentMakingType !== '') {
                     const prof = getActiveProfile();
                     if (prof) {
-                        if (currentMakingType === 'wastage' && prof.wastage !== 0) {
-                            const adj = Math.max(0, currentMakingInput + prof.wastage);
+                        // Pick metal-specific offsets; fall back to flat (legacy) profile
+                        const metal = (d.metal || '').toLowerCase(); // 'gold' or 'silver'
+                        const offsets = (metal === 'gold' && prof.gold)     ? prof.gold
+                                      : (metal === 'silver' && prof.silver) ? prof.silver
+                                      : prof; // legacy flat profile
+                        if (currentMakingType === 'wastage' && offsets.wastage) {
+                            const adj = Math.max(0, currentMakingInput + offsets.wastage);
                             making = pureRate * weight * (adj / 100);
                             currentMakingInput = adj;
-                        } else if (currentMakingType === 'per g' && prof.perGram !== 0) {
-                            const adj = Math.max(0, currentMakingInput + prof.perGram);
+                        } else if (currentMakingType === 'per g' && offsets.perGram) {
+                            const adj = Math.max(0, currentMakingInput + offsets.perGram);
                             making = adj * weight;
                             currentMakingInput = adj;
-                        } else if (currentMakingType === '%' && prof.percent !== 0) {
-                            const adj = Math.max(0, currentMakingInput + prof.percent);
+                        } else if (currentMakingType === '%' && offsets.percent) {
+                            const adj = Math.max(0, currentMakingInput + offsets.percent);
                             making = metalVal * (adj / 100);
                             currentMakingInput = adj;
-                        } else if (currentMakingType === 'per pc' && prof.perPc !== 0) {
-                            const adj = Math.max(0, currentMakingInput + prof.perPc);
+                        } else if (currentMakingType === 'per pc' && offsets.perPc) {
+                            const adj = Math.max(0, currentMakingInput + offsets.perPc);
                             making = adj;
                             currentMakingInput = adj;
                         }
@@ -3370,12 +3411,22 @@
         function openProfileModal() {
             showSection('profiles-section');
             renderProfileList();
-            // Clear new profile form
-            document.getElementById('new-profile-name').value = '';
-            document.getElementById('np-wastage').value = '';
-            document.getElementById('np-pergram').value = '';
-            document.getElementById('np-percent').value = '';
-            document.getElementById('np-perpc').value = '';
+            // Clear new profile form and reset to Gold tab
+            ['new-profile-name',
+             'np-gold-wastage','np-gold-pergram','np-gold-percent','np-gold-perpc',
+             'np-silver-wastage','np-silver-pergram','np-silver-percent','np-silver-perpc'
+            ].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+            switchProfileTab('gold');
+        }
+
+        function _profileOffsetStr(obj, label) {
+            if (!obj) return '';
+            const parts = [];
+            if (obj.wastage) parts.push(`W:${obj.wastage>0?'+':''}${obj.wastage}%`);
+            if (obj.perGram) parts.push(`/g:${obj.perGram>0?'+':''}₹${obj.perGram}`);
+            if (obj.percent) parts.push(`%:${obj.percent>0?'+':''}${obj.percent}%`);
+            if (obj.perPc)   parts.push(`pc:${obj.perPc>0?'+':''}₹${obj.perPc}`);
+            return parts.length ? `<span style="color:#888;">${label}:</span> ${parts.join(' · ')}` : '';
         }
 
         function renderProfileList() {
@@ -3386,14 +3437,23 @@
                 return;
             }
             container.innerHTML = makingProfiles.map(p => {
-                const isActive = p.id === activeProfileId;
+                const isActive  = p.id === activeProfileId;
                 const isDefault = p.id === 'default';
-                const offsets = [];
-                if (p.wastage) offsets.push(`W:${p.wastage > 0 ? '+' : ''}${p.wastage}%`);
-                if (p.perGram) offsets.push(`/g:${p.perGram > 0 ? '+' : ''}₹${p.perGram}`);
-                if (p.percent) offsets.push(`%:${p.percent > 0 ? '+' : ''}${p.percent}%`);
-                if (p.perPc) offsets.push(`pc:${p.perPc > 0 ? '+' : ''}₹${p.perPc}`);
-                const offsetStr = offsets.length > 0 ? offsets.join(' · ') : 'No offsets (base)';
+                // Support both old flat structure and new gold/silver structure
+                let offsetStr;
+                if (p.gold || p.silver) {
+                    const g = _profileOffsetStr(p.gold,   '🥇');
+                    const s = _profileOffsetStr(p.silver, '🥈');
+                    offsetStr = [g, s].filter(Boolean).join('  ') || 'No offsets (base)';
+                } else {
+                    // Legacy flat profile
+                    const parts = [];
+                    if (p.wastage) parts.push(`W:${p.wastage>0?'+':''}${p.wastage}%`);
+                    if (p.perGram) parts.push(`/g:${p.perGram>0?'+':''}₹${p.perGram}`);
+                    if (p.percent) parts.push(`%:${p.percent>0?'+':''}${p.percent}%`);
+                    if (p.perPc)   parts.push(`pc:${p.perPc>0?'+':''}₹${p.perPc}`);
+                    offsetStr = parts.length ? parts.join(' · ') : 'No offsets (base)';
+                }
                 return `
                 <div style="display:flex; align-items:center; gap:8px; padding:10px 12px; margin-bottom:8px; border-radius:10px; background:${isActive ? '#e3f2fd' : '#f5f5f5'}; border:${isActive ? '1.5px solid #1565C0' : '1.5px solid transparent'};">
                     <div style="flex:1; min-width:0;">
@@ -3416,30 +3476,43 @@
             showSection('main');
         }
 
+        function switchProfileTab(metal) {
+            const isGold = metal === 'gold';
+            document.getElementById('np-gold-fields').style.display   = isGold ? 'block' : 'none';
+            document.getElementById('np-silver-fields').style.display = isGold ? 'none'  : 'block';
+            document.getElementById('np-tab-gold').style.background   = isGold ? '#FFF8E1' : 'white';
+            document.getElementById('np-tab-gold').style.color        = isGold ? '#F57F17' : '#888';
+            document.getElementById('np-tab-silver').style.background = isGold ? 'white'   : '#F5F5F5';
+            document.getElementById('np-tab-silver').style.color      = isGold ? '#888'    : '#546e7a';
+        }
+
         function saveNewProfile() {
             if (!checkPin()) return;
             const name = document.getElementById('new-profile-name').value.trim();
             if (!name) { showCustomAlert('Please enter a profile name.'); return; }
-            const wastage  = parseFloat(document.getElementById('np-wastage').value)  || 0;
-            const perGram  = parseFloat(document.getElementById('np-pergram').value)  || 0;
-            const percent  = parseFloat(document.getElementById('np-percent').value)  || 0;
-            const perPc    = parseFloat(document.getElementById('np-perpc').value)    || 0;
             const newProfile = {
                 id: 'prof_' + Date.now(),
                 name,
-                wastage,
-                perGram,
-                percent,
-                perPc
+                gold: {
+                    wastage : parseFloat(document.getElementById('np-gold-wastage').value)  || 0,
+                    perGram : parseFloat(document.getElementById('np-gold-pergram').value)  || 0,
+                    percent : parseFloat(document.getElementById('np-gold-percent').value)  || 0,
+                    perPc   : parseFloat(document.getElementById('np-gold-perpc').value)    || 0,
+                },
+                silver: {
+                    wastage : parseFloat(document.getElementById('np-silver-wastage').value) || 0,
+                    perGram : parseFloat(document.getElementById('np-silver-pergram').value) || 0,
+                    percent : parseFloat(document.getElementById('np-silver-percent').value) || 0,
+                    perPc   : parseFloat(document.getElementById('np-silver-perpc').value)   || 0,
+                }
             };
             makingProfiles.push(newProfile);
             saveAllDataToCloud();
             // Clear form
-            document.getElementById('new-profile-name').value = '';
-            document.getElementById('np-wastage').value = '';
-            document.getElementById('np-pergram').value = '';
-            document.getElementById('np-percent').value = '';
-            document.getElementById('np-perpc').value = '';
+            ['new-profile-name',
+             'np-gold-wastage','np-gold-pergram','np-gold-percent','np-gold-perpc',
+             'np-silver-wastage','np-silver-pergram','np-silver-percent','np-silver-perpc'
+            ].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
             renderProfileList();
         }
 
@@ -3778,36 +3851,120 @@
 
         function checkoutCart() {
             if (!cart || cart.length === 0) { showCustomAlert('Cart is empty.'); return; }
-            showCustomConfirm('Save this cart as a completed bill?', 'Checkout', () => {
-                let total = 0;
-                cart.forEach(i => total += i.finalPrice);
-                let oldGoldTotal = 0;
-                oldGoldItems.forEach(i => oldGoldTotal += i.value);
-                const bill = {
-                    id: Date.now(),
-                    timestamp: new Date().toISOString(),
-                    items: JSON.parse(JSON.stringify(cart)),
-                    total,
-                    oldGoldTotal,
-                    discount: cartAdjustment,
-                    netPayable: total - oldGoldTotal - cartAdjustment
-                };
-                billHistory.unshift(bill); // newest first
-                if (billHistory.length > 500) billHistory = billHistory.slice(0, 500); // hard cap
-                saveAllDataToCloud();
-                cart = [];
-                oldGoldItems = [];
-                cartAdjustment = 0;
-                localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
-                localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
-                updateCartIcon();
-                closeModal('cart-modal');
-                if (billHistory.length >= 100) {
-                    showCustomAlert('Bill saved! Cart cleared.\n\n⚠️ You have ' + billHistory.length + ' bills saved. Consider clearing old bills from Bill History.');
-                } else {
-                    showCustomAlert('Bill saved! Cart cleared.');
-                }
-            });
+            // Calculate net payable and show payment modal
+            let total = 0; cart.forEach(i => total += i.finalPrice);
+            let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
+            const net = total - oldGoldTotal - cartAdjustment;
+            // Reset payment modal state
+            document.getElementById('pay-net-label').textContent = 'Net Payable: ₹' + net.toFixed(0);
+            document.getElementById('pay-partial-section').style.display = 'none';
+            document.getElementById('pay-cash-amt').value  = '';
+            document.getElementById('pay-upi-amt').value   = '';
+            document.getElementById('pay-card-amt').value  = '';
+            document.getElementById('pay-partial-status').textContent = '';
+            document.querySelectorAll('.pay-mode-btn').forEach(b => b.classList.remove('selected'));
+            window._selectedPayMode = '';
+            document.getElementById('payment-modal').style.display = 'flex';
+        }
+
+        function selectPayMode(mode) {
+            window._selectedPayMode = mode;
+            document.querySelectorAll('.pay-mode-btn').forEach(b => b.classList.remove('selected'));
+            document.getElementById('pay-btn-' + mode).classList.add('selected');
+            const isPartial = mode === 'partial';
+            document.getElementById('pay-partial-section').style.display = isPartial ? 'block' : 'none';
+            if (isPartial) {
+                // Pre-fill cash with full amount as starting point
+                let total = 0; cart.forEach(i => total += i.finalPrice);
+                let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
+                const net = total - oldGoldTotal - cartAdjustment;
+                document.getElementById('pay-cash-amt').value = net.toFixed(0);
+                document.getElementById('pay-upi-amt').value  = '';
+                document.getElementById('pay-card-amt').value = '';
+                syncPartialPayment('cash');
+                setTimeout(() => document.getElementById('pay-cash-amt').focus(), 50);
+            }
+        }
+
+        function syncPartialPayment(changed) {
+            let total = 0; cart.forEach(i => total += i.finalPrice);
+            let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
+            const net = Math.round(total - oldGoldTotal - cartAdjustment);
+            const cash = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
+            const upi  = parseFloat(document.getElementById('pay-upi-amt').value)  || 0;
+            const card = parseFloat(document.getElementById('pay-card-amt').value) || 0;
+            const sum  = cash + upi + card;
+            const remaining = net - sum;
+            const statusEl = document.getElementById('pay-partial-status');
+            if (Math.abs(remaining) < 1) {
+                statusEl.textContent = '✓ Balanced';
+                statusEl.style.color = '#4CAF50';
+            } else if (remaining > 0) {
+                statusEl.textContent = '₹' + remaining.toFixed(0) + ' remaining';
+                statusEl.style.color = '#e65100';
+            } else {
+                statusEl.textContent = '₹' + Math.abs(remaining).toFixed(0) + ' over';
+                statusEl.style.color = '#f44336';
+            }
+        }
+
+        function confirmPayment() {
+            const mode = window._selectedPayMode;
+            if (!mode) { showCustomAlert('Please select a payment method.'); return; }
+
+            let payment = {};
+            if (mode === 'partial') {
+                const cash = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
+                const upi  = parseFloat(document.getElementById('pay-upi-amt').value)  || 0;
+                const card = parseFloat(document.getElementById('pay-card-amt').value) || 0;
+                if (cash + upi + card === 0) { showCustomAlert('Enter at least one amount.'); return; }
+                payment = { mode: 'partial', cash, upi, card };
+            } else {
+                payment = { mode };
+            }
+
+            // Build and save bill
+            let total = 0; cart.forEach(i => total += i.finalPrice);
+            let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
+            const bill = {
+                id: Date.now(),
+                timestamp: new Date().toISOString(),
+                items: JSON.parse(JSON.stringify(cart)),
+                total,
+                oldGoldTotal,
+                discount: cartAdjustment,
+                netPayable: total - oldGoldTotal - cartAdjustment,
+                payment
+            };
+            billHistory.unshift(bill);
+            if (billHistory.length > 500) billHistory = billHistory.slice(0, 500);
+            saveAllDataToCloud();
+            cart = []; oldGoldItems = []; cartAdjustment = 0;
+            localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
+            localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
+            updateCartIcon();
+            closeModal('payment-modal');
+            closeModal('cart-modal');
+            const msg = billHistory.length >= 100
+                ? 'Bill saved!\n\n⚠️ ' + billHistory.length + ' bills saved — consider clearing old ones.'
+                : 'Bill saved!';
+            showCustomAlert(msg);
+        }
+
+
+        function _payLabel(payment) {
+            if (!payment) return '';
+            if (payment.mode === 'cash')    return '💵 Cash';
+            if (payment.mode === 'upi')     return '📱 UPI';
+            if (payment.mode === 'card')    return '💳 Card';
+            if (payment.mode === 'partial') {
+                const parts = [];
+                if (payment.cash > 0) parts.push('💵 ₹' + payment.cash.toFixed(0));
+                if (payment.upi  > 0) parts.push('📱 ₹' + payment.upi.toFixed(0));
+                if (payment.card > 0) parts.push('💳 ₹' + payment.card.toFixed(0));
+                return parts.join(' + ');
+            }
+            return payment.mode;
         }
 
         function renderBillHistory() {
@@ -3835,7 +3992,7 @@
                     <div onclick="toggleBillDetail(${idx})" style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; cursor:pointer; background:#f9f9f9;">
                         <div>
                             <div style="font-size:14px; font-weight:700; color:#222;">${dateStr} &nbsp; <span style="color:#888; font-weight:400; font-size:12px;">${timeStr}</span></div>
-                            <div style="font-size:12px; color:#888; margin-top:2px;">${bill.items.length} item${bill.items.length !== 1 ? 's' : ''}</div>
+                            <div style="font-size:12px; color:#888; margin-top:2px;">${bill.items.length} item${bill.items.length !== 1 ? 's' : ''}${bill.payment ? ' · <span style="font-weight:600; color:#1565C0;">' + _payLabel(bill.payment) + '</span>' : ''}</div>
                         </div>
                         <div style="text-align:right;">
                             <div style="font-size:16px; font-weight:800; color:#1565C0;">₹${bill.netPayable.toFixed(0)}</div>
@@ -3850,6 +4007,7 @@
                         ${bill.oldGoldTotal > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12px; color:#f44336;"><span>Less Old Gold</span><span>-₹${bill.oldGoldTotal.toFixed(0)}</span></div>` : ''}
                         ${bill.discount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12px; color:#6a1b9a;"><span>Discount</span><span>-₹${bill.discount.toFixed(0)}</span></div>` : ''}
                         ${(bill.oldGoldTotal > 0 || bill.discount > 0) ? `<div style="display:flex; justify-content:space-between; font-size:14px; font-weight:800; color:#1565C0; border-top:1px dashed #ccc; padding-top:6px; margin-top:4px;"><span>Net Payable</span><span>₹${bill.netPayable.toFixed(0)}</span></div>` : ''}
+                        ${bill.payment ? `<div style="margin-top:8px; padding:8px 10px; background:#e3f2fd; border-radius:8px; font-size:12px; color:#1565C0; font-weight:600;">💳 ${_payLabel(bill.payment)}</div>` : ''}
                         <button onclick="deleteBill(${bill.id})" style="margin-top:10px; background:#f44336; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer; float:right;">Delete Bill</button>
                         <div style="clear:both;"></div>
                     </div>
@@ -3941,10 +4099,14 @@
                 // Apply active profile offset
                 const prof = getActiveProfile();
                 if (prof && prof.id !== 'default' && mType) {
-                    if (mType === 'wastage' && prof.wastage) { const adj = Math.max(0, mInput+prof.wastage); making = pureRate > 0 ? pureRate*weight*(adj/100) : making; }
-                    else if (mType === 'per g' && prof.perGram) { const adj = Math.max(0, mInput+prof.perGram); making = adj*weight; }
-                    else if (mType === '%' && prof.percent) { const adj = Math.max(0, mInput+prof.percent); making = metalVal*(adj/100); }
-                    else if (mType === 'per pc' && prof.perPc) { const adj = Math.max(0, mInput+prof.perPc); making = adj; }
+                    const bMetal = (d.metal || '').toLowerCase();
+                    const off = (bMetal === 'gold' && prof.gold)     ? prof.gold
+                              : (bMetal === 'silver' && prof.silver) ? prof.silver
+                              : prof;
+                    if (mType === 'wastage' && off.wastage) { const adj = Math.max(0, mInput+off.wastage); making = pureRate > 0 ? pureRate*weight*(adj/100) : making; }
+                    else if (mType === 'per g' && off.perGram) { const adj = Math.max(0, mInput+off.perGram); making = adj*weight; }
+                    else if (mType === '%' && off.percent) { const adj = Math.max(0, mInput+off.percent); making = metalVal*(adj/100); }
+                    else if (mType === 'per pc' && off.perPc) { const adj = Math.max(0, mInput+off.perPc); making = adj; }
                 }
                 const total = metalVal + making + otherCharge;
                 final = total + total * (taxRate / 100);
@@ -4071,11 +4233,15 @@
         window.deletePreset = deletePreset;
         // Profile Functions
         window.openProfileModal = openProfileModal;
+        window.switchProfileTab = switchProfileTab;
         window.saveNewProfile = saveNewProfile;
         window.setActiveProfile = setActiveProfile;
         window.deleteProfile = deleteProfile;
         // Bill History
         window.checkoutCart = checkoutCart;
+        window.selectPayMode = selectPayMode;
+        window.syncPartialPayment = syncPartialPayment;
+        window.confirmPayment = confirmPayment;
         window.toggleAdjustPanel = toggleAdjustPanel;
         window.syncAdjustFromDiscount = syncAdjustFromDiscount;
         window.syncAdjustFromFinal = syncAdjustFromFinal;
@@ -4172,6 +4338,87 @@
             10%  { opacity:1; }
             90%  { opacity:1; }
             100% { top:88%; opacity:0; }
+        }
+    </style>
+
+
+    <!-- Payment Modal -->
+    <div id="payment-modal" class="modal" style="display:none; align-items:flex-end; z-index:1100;">
+        <div style="background:white; border-radius:20px 20px 0 0; width:100%; max-width:480px; padding:22px 20px 32px; box-shadow:0 -8px 32px rgba(0,0,0,0.15); max-height:90vh; overflow-y:auto;">
+
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <h3 style="margin:0; font-size:18px; color:#1a1a1a;">💳 Payment Method</h3>
+                <button onclick="closeModal('payment-modal')" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0;">✕</button>
+            </div>
+            <div id="pay-net-label" style="font-size:13px; color:#888; margin-bottom:18px;"></div>
+
+            <!-- Mode selector -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px;">
+                <button onclick="selectPayMode('cash')"   id="pay-btn-cash"    class="pay-mode-btn">💵 Cash</button>
+                <button onclick="selectPayMode('upi')"    id="pay-btn-upi"     class="pay-mode-btn">📱 UPI</button>
+                <button onclick="selectPayMode('card')"   id="pay-btn-card"    class="pay-mode-btn">💳 Card</button>
+                <button onclick="selectPayMode('partial')" id="pay-btn-partial" class="pay-mode-btn">🔀 Partial</button>
+            </div>
+
+            <!-- Partial split inputs (shown only for partial) -->
+            <div id="pay-partial-section" style="display:none; background:#f8f8f8; border-radius:12px; padding:14px; margin-bottom:16px;">
+                <div style="font-size:12px; font-weight:700; color:#555; margin-bottom:10px; text-transform:uppercase; letter-spacing:0.05em;">Split Payment</div>
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:18px;">💵</span>
+                        <div style="flex:1;">
+                            <label style="font-size:11px; color:#888; display:block; margin-bottom:2px;">Cash (₹)</label>
+                            <input type="number" id="pay-cash-amt"  placeholder="0" min="0" step="1"
+                                   oninput="syncPartialPayment('cash')"
+                                   style="width:100%; padding:8px 10px; border:1.5px solid #e0e0e0; border-radius:8px; font-size:15px; font-weight:600; box-sizing:border-box;">
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:18px;">📱</span>
+                        <div style="flex:1;">
+                            <label style="font-size:11px; color:#888; display:block; margin-bottom:2px;">UPI (₹)</label>
+                            <input type="number" id="pay-upi-amt"   placeholder="0" min="0" step="1"
+                                   oninput="syncPartialPayment('upi')"
+                                   style="width:100%; padding:8px 10px; border:1.5px solid #e0e0e0; border-radius:8px; font-size:15px; font-weight:600; box-sizing:border-box;">
+                        </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="font-size:18px;">💳</span>
+                        <div style="flex:1;">
+                            <label style="font-size:11px; color:#888; display:block; margin-bottom:2px;">Card (₹)</label>
+                            <input type="number" id="pay-card-amt"  placeholder="0" min="0" step="1"
+                                   oninput="syncPartialPayment('card')"
+                                   style="width:100%; padding:8px 10px; border:1.5px solid #e0e0e0; border-radius:8px; font-size:15px; font-weight:600; box-sizing:border-box;">
+                        </div>
+                    </div>
+                </div>
+                <!-- Running total check -->
+                <div id="pay-partial-status" style="margin-top:10px; font-size:13px; font-weight:700; text-align:right; color:#888;"></div>
+            </div>
+
+            <button onclick="confirmPayment()" id="pay-confirm-btn"
+                style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer; letter-spacing:0.02em;">
+                ✓ Confirm &amp; Save Bill
+            </button>
+        </div>
+    </div>
+
+    <style>
+        .pay-mode-btn {
+            padding: 14px 10px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 600;
+            color: #333;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .pay-mode-btn.selected {
+            border-color: #1565C0;
+            background: #e3f2fd;
+            color: #1565C0;
         }
     </style>
 
