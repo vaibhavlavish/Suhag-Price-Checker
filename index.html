@@ -938,7 +938,7 @@
             <span id="cart-counter-nav" class="badge" style="display: none;">0</span>
         </button>
         <button id="options-btn" onclick="toggleOptions()">More</button>
- 
+
         <div id="options-menu">
             <div class="menu-section-label">Navigate</div>
             <button onclick="showSection('update-rates')">
@@ -981,6 +981,18 @@
                 <span class="menu-icon" style="background:#ffebee;">⚠️</span> Clear All Data
             </button>
         </div>
+    </div>
+
+    <div id="data-source-bar" style="
+        background:#222;
+        color: rgba(255,255,255,0.75);
+        font-size: 11px;
+        font-weight: 600;
+        text-align: center;
+        padding: 4px 8px;
+        white-space: nowrap;
+    ">
+        <span id="data-source-badge">⏳ Loading</span>
     </div>
 
     <input type="file" id="restore-file-input" accept=".json" style="display: none;" onchange="processRestoreFile()">
@@ -1639,65 +1651,191 @@
             }
         }
 
+        // === OFFLINE CACHE HELPERS ===
+        const CACHE_KEY = 'suhagPriceCheckerDataCache';
+
+        function saveDataToLocalCache(data) {
+            try {
+                const cachePayload = {
+                    ...data,
+                    _cachedAt: new Date().toISOString()
+                };
+                localStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
+            } catch (e) {
+                console.warn("Could not save to local cache:", e);
+            }
+        }
+
+        function loadDataFromLocalCache() {
+            try {
+                const raw = localStorage.getItem(CACHE_KEY);
+                if (!raw) return null;
+                return JSON.parse(raw);
+            } catch (e) {
+                console.warn("Could not read local cache:", e);
+                return null;
+            }
+        }
+
+        function setDataSourceBadge(mode, timestamp) {
+            const badge = document.getElementById('data-source-badge');
+            if (!badge) return;
+            if (mode === 'live') {
+                badge.textContent = '☁️ Live';
+                badge.style.color = '#81c784';
+            } else if (mode === 'syncing') {
+                badge.textContent = '🔄 Syncing...';
+                badge.style.color = '#64b5f6';
+            } else if (mode === 'pending') {
+                badge.textContent = '⚠️ Changes pending sync';
+                badge.style.color = '#ffb74d';
+            } else if (mode === 'cached') {
+                let label = '📦 Cached';
+                if (timestamp) {
+                    try {
+                        const d = new Date(timestamp);
+                        const day = d.getDate().toString().padStart(2, '0');
+                        const mon = (d.getMonth()+1).toString().padStart(2, '0');
+                        const hr  = d.getHours().toString().padStart(2, '0');
+                        const min = d.getMinutes().toString().padStart(2, '0');
+                        label = `📦 ${day}/${mon} ${hr}:${min}`;
+                    } catch(_) {}
+                }
+                badge.textContent = label;
+                badge.style.color = '#ffb74d';
+            } else {
+                badge.textContent = '⏳ Loading';
+                badge.style.color = 'rgba(255,255,255,0.7)';
+            }
+        }
+
+        // === PENDING SYNC HELPERS ===
+        const PENDING_SYNC_KEY = 'suhagPriceCheckerPendingSync';
+
+        function markPendingSync() {
+            try { localStorage.setItem(PENDING_SYNC_KEY, '1'); } catch(_) {}
+            setDataSourceBadge('pending');
+        }
+
+        function clearPendingSync() {
+            try { localStorage.removeItem(PENDING_SYNC_KEY); } catch(_) {}
+        }
+
+        function hasPendingSync() {
+            try { return localStorage.getItem(PENDING_SYNC_KEY) === '1'; } catch(_) { return false; }
+        }
+
+        // Attempt to push any pending offline changes as soon as we're back online
+        function attemptPendingSync() {
+            if (!hasPendingSync()) return;
+            if (!navigator.onLine) return;
+            if (!window.dbSet || !window.firebaseDB) return;
+            setDataSourceBadge('syncing');
+            saveAllDataToCloud();
+        }
+
+        window.addEventListener('online', attemptPendingSync);
+        // Also retry periodically in case 'online' event doesn't fire reliably
+        setInterval(attemptPendingSync, 15000);
+
+        function applyDataSnapshot(cloudData) {
+            rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
+            taxRate = cloudData.taxRate || 0;
+            productData = cloudData.products || {};
+            looseDefaultsCloud = cloudData.looseDefaults || { metal: 'Gold', stamp: '18K', making: 35 };
+            baseCalcDefaults = cloudData.baseCalcDefaults || {};
+            loosePresets = cloudData.presets || [];
+            makingProfiles = cloudData.makingProfiles || [];
+            if (!makingProfiles.find(p => p.id === 'default')) {
+                makingProfiles.unshift({ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 });
+            }
+            billHistory = cloudData.billHistory || [];
+            activeProfileId = localStorage.getItem('activeProfileId') || 'default';
+        }
+
+        function refreshUI() {
+            renderRatesTable();
+            if (currentBarcode) {
+                runPriceCalculation();
+            } else {
+                document.getElementById('tax-percent').value = taxRate;
+            }
+            populateStamps('stamp-select', document.getElementById('metal-select').value);
+            populateStamps('manage-stamp', document.getElementById('metal-select').value);
+            renderBaseRateCalc();
+            setLooseDefaults();
+            calculateLoosePrice();
+            updateProfileBadge();
+        }
+
         // === FIREBASE SYNC FUNCTIONS ===
         function syncData() {
-            if (!window.dbOnValue) {
-                console.error("Firebase SDK  loaded correctly. Check console/network tab.");
+            attemptPendingSync();
+
+            // --- Step 1: Try to load from local cache immediately so app works offline ---
+            const cachedData = loadDataFromLocalCache();
+            if (cachedData) {
+                applyDataSnapshot(cachedData);
+                setDataSourceBadge('cached', cachedData._cachedAt);
+                refreshUI();
+                console.log("Loaded from local cache. Attempting Firebase sync...");
+            }
+
+            // --- Step 2: Try Firebase; if SDK not available, stay on cache ---
+            if (!window.dbOnValue || !window.firebaseDB) {
+                console.warn("Firebase SDK not available (offline?). Running on local cache.");
+                if (!cachedData) {
+                    // No cache and no Firebase — use hardcoded defaults silently
+                    rates = JSON.parse(JSON.stringify(defaultRates));
+                    taxRate = 0; productData = {};
+                    looseDefaultsCloud = { metal: 'Gold', stamp: '18K', making: 35 };
+                    baseCalcDefaults = {}; loosePresets = [];
+                    makingProfiles = [{ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 }];
+                    activeProfileId = 'default';
+                    setDataSourceBadge('cached', null);
+                    refreshUI();
+                }
                 return;
             }
+
             const dataRef = window.dbRef(window.firebaseDB, 'jewelryData');
             window.dbOnValue(dataRef, (snapshot) => {
-                const cloudData = snapshot.val(); 
-                
+                const cloudData = snapshot.val();
+
                 if (cloudData) {
-                    rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
-                    taxRate = cloudData.taxRate || 0;
-                    productData = cloudData.products || {};
-                    looseDefaultsCloud = cloudData.looseDefaults || { metal: 'Gold', stamp: '18K', making: 35 };
-                    baseCalcDefaults = cloudData.baseCalcDefaults || {}; 
-                    loosePresets = cloudData.presets || []; // Sync presets from cloud
-                    makingProfiles = cloudData.makingProfiles || [];
-                    if (!makingProfiles.find(p => p.id === 'default')) {
-                        makingProfiles.unshift({ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 });
-                    }
-                    billHistory = cloudData.billHistory || [];
-                    activeProfileId = localStorage.getItem('activeProfileId') || 'default';
-                    console.log("Data synced from Firebase.");
+                    applyDataSnapshot(cloudData);
+                    // Save fresh copy to local cache for offline use
+                    saveDataToLocalCache(cloudData);
+                    setDataSourceBadge('live');
+                    console.log("Data synced from Firebase and cached locally.");
                 } else {
-                    console.warn("No data found in cloud (or network error). Using local defaults for display. NOT overwriting cloud.");
-                    
-                    rates = JSON.parse(JSON.stringify(defaultRates));
-                    taxRate = 0;
-                    productData = {};
-                    looseDefaultsCloud = { metal: 'Gold', stamp: '18K', making: 35 };
-                    baseCalcDefaults = {};
-                    loosePresets = [];
-                    makingProfiles = [{ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 }];
-                    activeProfileId = localStorage.getItem('activeProfileId') || 'default';
+                    console.warn("No data in cloud. Using local cache/defaults.");
+                    if (!cachedData) {
+                        rates = JSON.parse(JSON.stringify(defaultRates));
+                        taxRate = 0; productData = {};
+                        looseDefaultsCloud = { metal: 'Gold', stamp: '18K', making: 35 };
+                        baseCalcDefaults = {}; loosePresets = [];
+                        makingProfiles = [{ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 }];
+                        activeProfileId = localStorage.getItem('activeProfileId') || 'default';
+                    }
+                    setDataSourceBadge('cached', cachedData ? cachedData._cachedAt : null);
                 }
 
-                
-                renderRatesTable();
-                if (currentBarcode) {
-                    runPriceCalculation();
-                } else {
-                    document.getElementById('tax-percent').value = taxRate;
-                }
-                populateStamps('stamp-select', document.getElementById('metal-select').value);
-                populateStamps('manage-stamp', document.getElementById('metal-select').value);
-                // NEW: Initialize the new calc renderer
-                renderBaseRateCalc();
-                setLooseDefaults(); 
-                calculateLoosePrice();
-                updateProfileBadge();
+                refreshUI();
             }, (error) => {
                 console.error("Firebase read failed:", error);
-                showCustomAlert("Error connecting to cloud database. Please check your connection.");
+                if (cachedData) {
+                    // Already loaded cache above — just keep it, don't pop an alert
+                    console.warn("Firebase error, continuing with cached data.");
+                    setDataSourceBadge('cached', cachedData._cachedAt);
+                } else {
+                    setDataSourceBadge('cached', null);
+                    refreshUI(); // still render with empty defaults
+                }
             });
         }
 
         function saveAllDataToCloud() {
-            if (!window.dbSet) return;
             const dataToSave = { 
                 rates: rates, 
                 taxRate: taxRate, 
@@ -1708,13 +1846,26 @@
                 makingProfiles: makingProfiles,
                 billHistory: billHistory
             };
+
+            // Always keep local cache up to date so nothing is lost offline
+            saveDataToLocalCache(dataToSave);
+
+            if (!window.dbSet || !window.firebaseDB || !navigator.onLine) {
+                // Can't reach Firebase right now — remember to push later
+                markPendingSync();
+                return;
+            }
+
             window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToSave)
             .then(() => {
                 console.log("Data saved to Firebase successfully.");
+                clearPendingSync();
+                setDataSourceBadge('live');
             })
             .catch((error) => {
                 console.error("Firebase write failed:", error);
-                showCustomAlert("Data save failed. Check your Firebase Rules/Connection.", true);
+                markPendingSync();
+                showCustomAlert("You're offline. Changes saved locally and will sync automatically when you're back online.", true);
             });
         }
 
