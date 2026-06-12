@@ -1725,18 +1725,22 @@
             try { return localStorage.getItem(PENDING_SYNC_KEY) === '1'; } catch(_) { return false; }
         }
 
-        // Attempt to push any pending offline changes as soon as we're back online
+        function stripCacheMeta(cacheObj) {
+            const { _cachedAt, ...rest } = cacheObj;
+            return rest;
+        }
+
+        // Attempt to push any pending offline changes — only called after a
+        // successful, merged cloud read inside syncData(). Never called blindly.
         function attemptPendingSync() {
             if (!hasPendingSync()) return;
             if (!navigator.onLine) return;
             if (!window.dbSet || !window.firebaseDB) return;
-            setDataSourceBadge('syncing');
-            saveAllDataToCloud();
+            // Re-run syncData so the cloud snapshot is read and merged first
+            syncData();
         }
 
         window.addEventListener('online', attemptPendingSync);
-        // Also retry periodically in case 'online' event doesn't fire reliably
-        setInterval(attemptPendingSync, 15000);
 
         function applyDataSnapshot(cloudData) {
             rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
@@ -1770,7 +1774,6 @@
 
         // === FIREBASE SYNC FUNCTIONS ===
         function syncData() {
-            attemptPendingSync();
 
             // --- Step 1: Try to load from local cache immediately so app works offline ---
             const cachedData = loadDataFromLocalCache();
@@ -1803,10 +1806,21 @@
                 const cloudData = snapshot.val();
 
                 if (cloudData) {
-                    applyDataSnapshot(cloudData);
-                    // Save fresh copy to local cache for offline use
-                    saveDataToLocalCache(cloudData);
-                    setDataSourceBadge('live');
+                    if (hasPendingSync()) {
+                        // We have offline edits in local cache — merge them on top of
+                        // the cloud snapshot we just read, then push the merged result.
+                        // (cachedData holds our offline-edited state)
+                        const merged = Object.assign({}, cloudData, cachedData ? stripCacheMeta(cachedData) : {});
+                        applyDataSnapshot(merged);
+                        saveDataToLocalCache(merged);
+                        setDataSourceBadge('syncing');
+                        saveAllDataToCloud();
+                    } else {
+                        applyDataSnapshot(cloudData);
+                        // Save fresh copy to local cache for offline use
+                        saveDataToLocalCache(cloudData);
+                        setDataSourceBadge('live');
+                    }
                     console.log("Data synced from Firebase and cached locally.");
                 } else {
                     console.warn("No data in cloud. Using local cache/defaults.");
