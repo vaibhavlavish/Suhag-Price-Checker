@@ -45,14 +45,15 @@
             box-sizing: border-box;
             -webkit-tap-highlight-color: transparent;
         }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        html, body {
+            height: 100%;
             margin: 0;
             padding: 0;
+            overflow: hidden;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background-color: #f5f5f5;
-            height: 100vh;
-            overflow-y: auto;
-            -webkit-overflow-scrolling: touch;
             display: flex;
             flex-direction: column;
             touch-action: manipulation;
@@ -172,9 +173,11 @@
             padding: 20px 15px;
             background-color: #f5f5f5;
             overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
             width: 100%;
-            max-width: 480px; /* Max width for content */
+            max-width: 480px;
             margin: 0 auto;
+            min-height: 0;
         }
         #loose-calculator {
             flex: 1;
@@ -185,9 +188,11 @@
             padding: 20px 15px;
             background-color: #f5f5f5;
             overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
             width: 100%;
             max-width: 420px;
             margin: 0 auto;
+            min-height: 0;
         }
         #barcode, #loose-weight { /* Added loose-weight here for styling */
             font-size: 20px;
@@ -490,16 +495,16 @@
         /* Hidden sections - includes the new loose calculator */
         #update-rates, #excel-upload { 
             display: none;
-            max-width: 100%;
-            margin: 0 auto; /* Center the sections */
+            max-width: 480px;
+            margin: 0 auto;
             background: white;
             padding: 20px 15px;
-            border-radius: 12px; /* Add rounding */
+            border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-            /* Add shadow */
             flex: 1;
             overflow-y: auto;
-            max-width: 480px; /* Match main screen width */
+            -webkit-overflow-scrolling: touch;
+            min-height: 0;
         }
         #update-rates h2, #excel-upload h2, #loose-calculator h2 {
             color: #333;
@@ -899,12 +904,14 @@
         #update-rates, #excel-upload, #profiles-section, #bulk-check {
             flex: 1;
             overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
             padding: 20px 15px;
             background: #f5f5f5;
             width: 100%;
             max-width: 480px;
             margin: 0 auto;
             box-sizing: border-box;
+            min-height: 0;
         }
 
         /* --- Ledger Styles --- */
@@ -914,10 +921,12 @@
             flex-direction: column;
             background: #f5f5f5;
             overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
             width: 100%;
             max-width: 480px;
             margin: 0 auto;
             padding: 0;
+            min-height: 0;
         }
         #ledger-cash-banner {
             background: linear-gradient(135deg, #1a1a1a 0%, #2e7d32 100%);
@@ -1578,7 +1587,7 @@
       
         <button onclick="showSection('main')">Back to Main</button>
     </div>
-    <div id="stock-view" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; width:100%; max-width:480px; margin:0 auto;">
+    <div id="stock-view" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:480px; margin:0 auto; min-height:0;">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
             <h2 style="margin:0; font-size:20px;">📦 Stock</h2>
             <input type="text" id="stock-search" placeholder="Search..." oninput="renderStockView()" 
@@ -4538,7 +4547,10 @@
             let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
             const net = total - oldGoldTotal - cartAdjustment;
             // Reset payment modal state
-            document.getElementById('pay-net-label').textContent = 'Net Payable: ₹' + net.toFixed(0);
+            const netLabel = net < 0
+                ? 'Refund to Customer: ₹' + Math.abs(net).toFixed(0) + ' (old jewellery exceeds item value)'
+                : 'Net Payable: ₹' + net.toFixed(0);
+            document.getElementById('pay-net-label').textContent = netLabel;
             document.getElementById('pay-partial-section').style.display = 'none';
             document.getElementById('pay-cash-amt').value  = '';
             document.getElementById('pay-upi-amt').value   = '';
@@ -4546,6 +4558,12 @@
             document.getElementById('pay-partial-status').textContent = '';
             document.querySelectorAll('.pay-mode-btn').forEach(b => b.classList.remove('selected'));
             window._selectedPayMode = '';
+            // For negative net, auto-select 'cash' (we hand cash to customer) and skip modal
+            if (net <= 0) {
+                window._selectedPayMode = 'cash';
+                confirmPayment();
+                return;
+            }
             document.getElementById('payment-modal').style.display = 'flex';
         }
 
@@ -4560,7 +4578,7 @@
                 let total = 0; cart.forEach(i => total += i.finalPrice);
                 let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
                 const net = total - oldGoldTotal - cartAdjustment;
-                document.getElementById('pay-cash-amt').value = net.toFixed(0);
+                document.getElementById('pay-cash-amt').value = Math.max(0, net).toFixed(0);
                 document.getElementById('pay-upi-amt').value  = '';
                 document.getElementById('pay-card-amt').value = '';
                 syncPartialPayment('cash');
@@ -4631,7 +4649,7 @@
             let total = 0; cart.forEach(i => total += i.finalPrice);
             let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
             const netPayable = total - oldGoldTotal - cartAdjustment;
-            if (mode === 'cash') cashPortion = Math.round(netPayable);
+            if (mode === 'cash') cashPortion = netPayable > 0 ? Math.round(netPayable) : 0;
 
             const bill = {
                 id: Date.now(),
@@ -4648,12 +4666,26 @@
 
             // --- Record in ledger ---
             if (netPayable > 0) {
+                // Normal sale: customer pays us
                 ledgerEntries.push({
                     id: Date.now() + Math.floor(Math.random() * 1000),
                     type: 'sale',
                     amount: Math.round(netPayable),
                     cashPortion,
                     note: saleNote,
+                    timestamp: new Date().toISOString(),
+                    source: 'checkout'
+                });
+                saveLedger();
+                renderLedger();
+            } else if (netPayable < 0) {
+                // Old jewellery value exceeds item price: we pay the customer
+                ledgerEntries.push({
+                    id: Date.now() + Math.floor(Math.random() * 1000),
+                    type: 'out',
+                    amount: Math.round(Math.abs(netPayable)),
+                    cashPortion: Math.round(Math.abs(netPayable)),
+                    note: 'Refund to customer (old jewellery > item price)',
                     timestamp: new Date().toISOString(),
                     source: 'checkout'
                 });
@@ -5114,7 +5146,7 @@
             if (!amt || amt <= 0) { showCustomAlert('Please enter a valid amount.'); return; }
             const note = document.getElementById('ledger-entry-note').value.trim();
             ledgerEntries.push({
-                id: Date.now(),
+                id: Date.now() + Math.floor(Math.random() * 1000),
                 type: _ledgerEntryType,
                 amount: amt,
                 note,
@@ -5176,7 +5208,6 @@
         window.loadExcel = loadExcel;
         window.clearAllDataWrapper = clearAllDataWrapper;
         window.openCart = openCart;
-        window.closeCart = closeCart;
         window.addToCart = addToCart;
         window.removeFromCart = removeFromCart;
         window.viewItemFromCart = viewItemFromCart;
@@ -5227,7 +5258,6 @@
         window.deleteBill = deleteBill;
         window.clearBillHistory = clearBillHistory;
         // Bulk Price Check
-        window.bulkLookupDebounce = bulkLookupDebounce;
         window.removeBulkItem = removeBulkItem;
         window.clearBulkList = clearBulkList;
         window.bulkViewOnMain = bulkViewOnMain;
@@ -5270,7 +5300,7 @@
             <div class="ledger-summary-card" id="ledger-summary-cards"></div>
             <div id="ledger-all-list"></div>
             <div style="display:flex; gap:8px; margin-top:8px;">
-                <button onclick="if(checkPin()) { if(confirm('Clear entire ledger? Cannot undo.')) { ledgerEntries=[]; saveLedger(); renderLedger(); } }"
+                <button onclick="if(checkPin()) { showCustomConfirm('Clear entire ledger? Cannot undo.', 'Confirm Clear', () => { ledgerEntries=[]; saveLedger(); renderLedger(); }); }"
                     style="flex:1; background:#f44336; color:white; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none;">
                     🗑 Clear Entries
                 </button>
