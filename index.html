@@ -970,9 +970,9 @@
         }
         .ledger-action-btn:active { transform: translateY(1px); }
         .ledger-action-btn .btn-icon { font-size: 20px; }
-        .ledger-action-btn.cash-in  { background: #e8f5e9; color: #2e7d32; }
-        .ledger-action-btn.cash-out { background: #ffebee; color: #c62828; }
-        .ledger-action-btn.expense  { background: #f3e5f5; color: #6a1b9a; }
+        .ledger-action-btn.cash-in  { background: #e8f5e9 !important; color: #2e7d32 !important; }
+        .ledger-action-btn.cash-out { background: #ffebee !important; color: #c62828 !important; }
+        .ledger-action-btn.expense  { background: #f3e5f5 !important; color: #6a1b9a !important; }
 
         .ledger-tabs {
             display: flex;
@@ -4870,6 +4870,7 @@
                 const saved = localStorage.getItem('suhagLedger');
                 if (saved) ledgerEntries = JSON.parse(saved);
             } catch(e) { ledgerEntries = []; }
+            console.log('[Ledger] loaded from local cache:', ledgerEntries.length, 'entries');
             syncLedgerFromCloud();
         }
 
@@ -4879,22 +4880,39 @@
         function syncLedgerFromCloud() {
             if (_ledgerSyncStarted) return;
             if (!window.dbOnValue || !window.firebaseDB) {
+                console.log('[Ledger] Firebase not ready, retry', _ledgerSyncRetries);
                 if (_ledgerSyncRetries++ < 20) setTimeout(syncLedgerFromCloud, 500);
                 return;
             }
             _ledgerSyncStarted = true;
+            console.log('[Ledger] attaching Firebase listener on jewelryData/ledgerEntries');
             const ledgerRef = window.dbRef(window.firebaseDB, 'jewelryData/ledgerEntries');
             window.dbOnValue(ledgerRef, (snapshot) => {
-                const cloudEntries = snapshot.val();
+                let cloudEntries = snapshot.val();
+                console.log('[Ledger] cloud snapshot received:', cloudEntries);
+                if (cloudEntries && !Array.isArray(cloudEntries) && typeof cloudEntries === 'object') {
+                    // Firebase sometimes returns objects with numeric-string keys instead of arrays
+                    cloudEntries = Object.values(cloudEntries);
+                }
                 if (Array.isArray(cloudEntries)) {
-                    const seen = new Set(cloudEntries.map(e => e.id));
-                    const localOnly = ledgerEntries.filter(e => !seen.has(e.id));
+                    const seen = new Set(cloudEntries.map(e => String(e.id)));
+                    const localOnly = ledgerEntries.filter(e => !seen.has(String(e.id)));
                     ledgerEntries = [...cloudEntries, ...localOnly];
                     localStorage.setItem('suhagLedger', JSON.stringify(ledgerEntries));
+                    console.log('[Ledger] merged total entries:', ledgerEntries.length, '(local-only pushed up:', localOnly.length, ')');
                     if (localOnly.length) saveLedger();
                     const el = document.getElementById('ledger');
                     if (el && el.style.display !== 'none') renderLedger();
+                } else if (cloudEntries === null && ledgerEntries.length > 0) {
+                    // Cloud empty but we have local entries — push them up
+                    console.log('[Ledger] cloud empty, pushing local entries up:', ledgerEntries.length);
+                    saveLedger();
+                } else {
+                    console.log('[Ledger] cloud empty and no local entries to push');
                 }
+            }, (error) => {
+                console.error('[Ledger] Firebase read error:', error);
+                showCustomAlert('Ledger cloud sync error: ' + error.message);
             });
         }
 
@@ -4903,8 +4921,15 @@
                 localStorage.setItem('suhagLedger', JSON.stringify(ledgerEntries));
             } catch(e) {}
             if (window.dbSet && window.firebaseDB) {
+                console.log('[Ledger] writing', ledgerEntries.length, 'entries to Firebase');
                 window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData/ledgerEntries'), ledgerEntries)
-                    .catch((e) => console.error("Ledger Firebase write failed:", e));
+                    .then(() => console.log('[Ledger] write succeeded'))
+                    .catch((e) => {
+                        console.error("[Ledger] Firebase write failed:", e);
+                        showCustomAlert('Ledger cloud save failed: ' + e.message);
+                    });
+            } else {
+                console.log('[Ledger] dbSet or firebaseDB not available, skipping cloud write');
             }
         }
 
