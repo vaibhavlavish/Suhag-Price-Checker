@@ -169,8 +169,6 @@
             padding: 20px 15px;
             background-color: #f5f5f5;
             overflow-y: auto;
-            min-height: calc(100vh - 60px);
-            /* Center the content block */
             width: 100%;
             max-width: 480px; /* Max width for content */
             margin: 0 auto;
@@ -179,12 +177,11 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            justify-content: flex-start; /* Changed from center to accommodate top button */
+            justify-content: flex-start;
             align-items: center;
             padding: 20px 15px;
             background-color: #f5f5f5;
             overflow-y: auto;
-            min-height: calc(100vh - 60px);
             width: 100%;
             max-width: 420px;
             margin: 0 auto;
@@ -902,7 +899,6 @@
             flex-direction: column;
             background: #f5f5f5;
             overflow-y: auto;
-            min-height: calc(100vh - 60px);
             width: 100%;
             max-width: 480px;
             margin: 0 auto;
@@ -986,7 +982,7 @@
             color: #1565C0;
             border-bottom-color: #1565C0;
         }
-        .ledger-tab-content { display: none; padding: 10px 14px 80px; }
+        .ledger-tab-content { display: none; padding: 10px 14px 16px; }
         .ledger-tab-content.active { display: block; }
 
         .ledger-entry {
@@ -1567,7 +1563,7 @@
       
         <button onclick="showSection('main')">Back to Main</button>
     </div>
-    <div id="stock-view" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; min-height:calc(100vh - 60px); width:100%; max-width:480px; margin:0 auto;">
+    <div id="stock-view" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; width:100%; max-width:480px; margin:0 auto;">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
             <h2 style="margin:0; font-size:20px;">📦 Stock</h2>
             <input type="text" id="stock-search" placeholder="Search..." oninput="renderStockView()" 
@@ -4721,17 +4717,19 @@
         }
 
         function deleteBill(id) {
+            if (!checkPin()) return;
             billHistory = billHistory.filter(b => b.id !== id);
             saveAllDataToCloud();
-            renderBillHistory();
+            _renderBillHistoryInLedger();
         }
 
         function clearBillHistory() {
             if (billHistory.length === 0) { showCustomAlert('No history to clear.'); return; }
+            if (!checkPin()) return;
             showCustomConfirm('Delete all bill history? This cannot be undone.', 'Clear History', () => {
                 billHistory = [];
                 saveAllDataToCloud();
-                renderBillHistory();
+                _renderBillHistoryInLedger();
             });
         }
 
@@ -4922,19 +4920,16 @@
             const totalSales    = ledgerEntries.filter(e => e.type === 'sale').reduce((s,e) => s + e.amount, 0);
             const totalIn       = ledgerEntries.filter(e => e.type === 'in').reduce((s,e) => s + e.amount, 0);
             const totalExpense  = ledgerEntries.filter(e => e.type === 'expense').reduce((s,e) => s + e.amount, 0);
-            const totalOut      = ledgerEntries.filter(e => e.type === 'out').reduce((s,e) => s + e.amount, 0);
 
             document.getElementById('ledger-summary-cards').innerHTML = `
                 <div><div class="sc-val" style="color:#1565C0;">₹${_fmt(totalSales)}</div><div class="sc-lbl">Sales</div></div>
                 <div><div class="sc-val" style="color:#2e7d32;">₹${_fmt(totalIn)}</div><div class="sc-lbl">Cash In</div></div>
                 <div><div class="sc-val" style="color:#e65100;">₹${_fmt(totalExpense)}</div><div class="sc-lbl">Expenses</div></div>
-                <div><div class="sc-val" style="color:#c62828;">₹${_fmt(totalOut)}</div><div class="sc-lbl">Cash Out</div></div>
             `;
 
             _renderLedgerList('ledger-all-list',       ledgerEntries);
             _renderLedgerList('ledger-sales-list',     ledgerEntries.filter(e => e.type === 'sale'));
             _renderLedgerList('ledger-expenses-list',  ledgerEntries.filter(e => e.type === 'expense'));
-            _renderLedgerList('ledger-manual-list',    ledgerEntries.filter(e => e.source === 'manual'));
         }
 
         function _fmt(n) {
@@ -5067,16 +5062,16 @@
 
         function setLedgerEntryType(type) {
             _ledgerEntryType = type;
-            const colors = { in: '#2e7d32', expense: '#e65100', out: '#c62828' };
-            const labels = { in: '💵 Add Cash In Entry', expense: '🧾 Add Expense', out: '📤 Add Cash Out Entry' };
-            ['in','expense','out'].forEach(t => {
+            const colors = { in: '#2e7d32', expense: '#e65100' };
+            const labels = { in: '💵 Add Cash In Entry', expense: '🧾 Add Expense' };
+            ['in','expense'].forEach(t => {
                 const btn = document.getElementById('ltype-' + t);
                 if (!btn) return;
                 btn.style.border = t === type ? `2.5px solid ${colors[t]}` : '2px solid #e0e0e0';
-                btn.style.background = t === type ? (t === 'in' ? '#e8f5e9' : t === 'expense' ? '#fff3e0' : '#ffebee') : 'white';
+                btn.style.background = t === type ? (t === 'in' ? '#e8f5e9' : '#fff3e0') : 'white';
             });
             const saveBtn = document.getElementById('ledger-save-btn');
-            saveBtn.style.background = type === 'in' ? '#4CAF50' : type === 'expense' ? '#FF9800' : '#f44336';
+            saveBtn.style.background = type === 'in' ? '#4CAF50' : '#FF9800';
             document.getElementById('ledger-modal-title').textContent = labels[type] || 'Add Entry';
         }
 
@@ -5099,6 +5094,7 @@
         }
 
         function deleteLedgerEntry(id) {
+            if (!checkPin()) return;
             ledgerEntries = ledgerEntries.filter(e => e.id !== id);
             saveLedger();
             renderLedger();
@@ -5227,9 +5223,6 @@
             <button class="ledger-action-btn expense"  onclick="openLedgerEntryModal('expense')">
                 <span class="btn-icon">🧾</span> Expense
             </button>
-            <button class="ledger-action-btn cash-out" onclick="openLedgerEntryModal('out')">
-                <span class="btn-icon">📤</span> Cash Out
-            </button>
         </div>
 
         <!-- Tabs -->
@@ -5237,7 +5230,6 @@
             <button class="ledger-tab active" onclick="switchLedgerTab('all')"       id="ltab-all">All Entries</button>
             <button class="ledger-tab"        onclick="switchLedgerTab('sales')"     id="ltab-sales">Sales</button>
             <button class="ledger-tab"        onclick="switchLedgerTab('expenses')"  id="ltab-expenses">Expenses</button>
-            <button class="ledger-tab"        onclick="switchLedgerTab('manual')"    id="ltab-manual">Manual</button>
             <button class="ledger-tab"        onclick="switchLedgerTab('bills')"     id="ltab-bills">Bills</button>
         </div>
 
@@ -5245,36 +5237,43 @@
         <div id="lcontents-all" class="ledger-tab-content active">
             <div class="ledger-summary-card" id="ledger-summary-cards"></div>
             <div id="ledger-all-list"></div>
-            <button onclick="if(confirm('Clear entire ledger? Cannot undo.')) { ledgerEntries=[]; saveLedger(); renderLedger(); }"
-                style="background:#f44336; color:white; border:none; border-radius:10px; padding:10px 18px; font-size:13px; font-weight:700; cursor:pointer; margin-top:8px; width:100%; box-shadow:none;">
-                🗑 Clear All Ledger Entries
-            </button>
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <button onclick="if(checkPin()) { if(confirm('Clear entire ledger? Cannot undo.')) { ledgerEntries=[]; saveLedger(); renderLedger(); } }"
+                    style="flex:1; background:#f44336; color:white; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none;">
+                    🗑 Clear Entries
+                </button>
+                <button onclick="showSection('main')"
+                    style="flex:1; background:#555; color:white; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none;">
+                    ← Back
+                </button>
+            </div>
         </div>
 
         <!-- Tab: Sales -->
         <div id="lcontents-sales" class="ledger-tab-content">
             <div id="ledger-sales-list"></div>
+            <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:10px; padding:10px 18px; font-size:13px; font-weight:700; cursor:pointer; margin-top:8px; width:100%; box-shadow:none;">← Back to Main</button>
         </div>
 
         <!-- Tab: Expenses -->
         <div id="lcontents-expenses" class="ledger-tab-content">
             <div id="ledger-expenses-list"></div>
-        </div>
-
-        <!-- Tab: Manual Entries -->
-        <div id="lcontents-manual" class="ledger-tab-content">
-            <div id="ledger-manual-list"></div>
+            <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:10px; padding:10px 18px; font-size:13px; font-weight:700; cursor:pointer; margin-top:8px; width:100%; box-shadow:none;">← Back to Main</button>
         </div>
 
         <!-- Tab: Bill History (inside Ledger) -->
         <div id="lcontents-bills" class="ledger-tab-content">
             <div id="ledger-bill-history-list"></div>
-            <button onclick="clearBillHistory()" style="background:#f44336; color:white; border:none; border-radius:10px; padding:10px 18px; font-size:13px; font-weight:700; cursor:pointer; margin-top:8px; width:100%; box-shadow:none;">🗑 Clear All Bills</button>
-        </div>
-
-        <!-- Back button -->
-        <div style="padding: 0 14px;">
-            <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:10px; padding:10px 18px; font-size:14px; font-weight:700; cursor:pointer; width:100%; margin-bottom:20px;">← Back to Main</button>
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <button onclick="clearBillHistory()"
+                    style="flex:1; background:#f44336; color:white; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none;">
+                    🗑 Clear Bills
+                </button>
+                <button onclick="showSection('main')"
+                    style="flex:1; background:#555; color:white; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none;">
+                    ← Back
+                </button>
+            </div>
         </div>
     </div>
 
@@ -5286,11 +5285,10 @@
                 <button onclick="closeLedgerEntryModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
             </div>
 
-            <!-- Type selector (shown only if opening without preset type) -->
+            <!-- Type selector -->
             <div id="ledger-type-row" style="display:flex; gap:8px; margin-bottom:16px;">
                 <button onclick="setLedgerEntryType('in')"      id="ltype-in"      style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#2e7d32; cursor:pointer;">💵 Cash In</button>
                 <button onclick="setLedgerEntryType('expense')" id="ltype-expense" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#e65100; cursor:pointer;">🧾 Expense</button>
-                <button onclick="setLedgerEntryType('out')"     id="ltype-out"     style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#c62828; cursor:pointer;">📤 Cash Out</button>
             </div>
 
             <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">AMOUNT (₹)</label>
