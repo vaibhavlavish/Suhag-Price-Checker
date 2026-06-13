@@ -39,7 +39,7 @@
         window.dbSet = set;
         window.dbOnValue = onValue;
     </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <style>
         * {
             box-sizing: border-box;
@@ -926,7 +926,6 @@
             box-shadow: 0 1px 4px;
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js"></script>
 </head>
 <body>
     <div id="taskbar">
@@ -1800,9 +1799,11 @@
 
         window.addEventListener('online', attemptPendingSync);
 
+        // Accepts either a flat snapshot (old single-key format) or the merged
+        // object produced by readSplitKeys() below.
         function applyDataSnapshot(cloudData) {
             rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
-            taxRate = cloudData.taxRate || 0;
+            taxRate = cloudData.taxRate ?? 3;
             productData = cloudData.products || {};
             looseDefaultsCloud = cloudData.looseDefaults || null;
             baseCalcDefaults = cloudData.baseCalcDefaults || {};
@@ -1810,11 +1811,46 @@
             makingProfiles = cloudData.makingProfiles || [];
             billHistory = cloudData.billHistory || [];
             activeProfileId = localStorage.getItem('activeProfileId') || 'default';
-            // Fill any missing fields with factory defaults
             applyFactoryDefaults();
         }
 
+        // Read the Firebase snapshot and normalise it into one flat object that
+        // applyDataSnapshot() understands.  Handles two formats:
+        //   • OLD (flat):  { rates, taxRate, products, billHistory, makingProfiles, ... }
+        //   • NEW (split): { config:{rates,taxRate,...}, products:{...}, billHistory:[...], profiles:{...} }
+        function readSplitKeys(snapshot) {
+            const val = snapshot.val();
+            if (!val) return null;
+
+            // Detect old flat format: if val.rates exists directly it's the old shape
+            if (val.rates) {
+                // Old flat format — return as-is so applyDataSnapshot works unchanged
+                return val;
+            }
+
+            // New split-key format
+            const config   = val.config   || {};
+            const profiles = val.profiles || {};
+            return {
+                rates:           config.rates           || null,
+                taxRate:         config.taxRate         ?? 3,
+                looseDefaults:   config.looseDefaults   || null,
+                baseCalcDefaults: config.baseCalcDefaults || {},
+                products:        val.products           || {},
+                billHistory:     Array.isArray(val.billHistory) ? val.billHistory : [],
+                makingProfiles:  profiles.makingProfiles || [],
+                presets:         profiles.presets        || []
+            };
+        }
+
+        // Debounce refreshUI so rapid Firebase onValue callbacks don't
+        // flicker the UI while the user is mid-action (e.g. typing in barcode).
+        let _refreshUITimer = null;
         function refreshUI() {
+            clearTimeout(_refreshUITimer);
+            _refreshUITimer = setTimeout(_doRefreshUI, 150);
+        }
+        function _doRefreshUI() {
             renderRatesTable();
             if (currentBarcode) {
                 runPriceCalculation();
@@ -1827,7 +1863,7 @@
             setLooseDefaults();
             calculateLoosePrice();
             updateProfileBadge();
-        }
+        } // end _doRefreshUI
 
         // === FIREBASE SYNC FUNCTIONS ===
         function syncData() {
@@ -1861,14 +1897,35 @@
 
             const dataRef = window.dbRef(window.firebaseDB, 'jewelryData');
             window.dbOnValue(dataRef, (snapshot) => {
-                const cloudData = snapshot.val();
+                // Try to read split-key format; fall back to flat (backward compat)
+                const cloudData = readSplitKeys(snapshot) || snapshot.val();
 
                 if (cloudData) {
                     if (hasPendingSync()) {
                         // We have offline edits in local cache — merge them on top of
                         // the cloud snapshot we just read, then push the merged result.
                         // (cachedData holds our offline-edited state)
-                        const merged = Object.assign({}, cloudData, cachedData ? stripCacheMeta(cachedData) : {});
+                        // Deep-merge arrays by ID so offline edits don't silently
+                    // overwrite items added on another device.
+                    const localData = cachedData ? stripCacheMeta(cachedData) : {};
+                    const merged = Object.assign({}, cloudData, localData);
+
+                    // billHistory: union of both arrays, keyed by id
+                    if (Array.isArray(cloudData.billHistory) && Array.isArray(localData.billHistory)) {
+                        const seen = new Set(localData.billHistory.map(b => b.id));
+                        merged.billHistory = [
+                            ...localData.billHistory,
+                            ...cloudData.billHistory.filter(b => !seen.has(b.id))
+                        ];
+                    }
+                    // makingProfiles: union keyed by id
+                    if (Array.isArray(cloudData.makingProfiles) && Array.isArray(localData.makingProfiles)) {
+                        const seenP = new Set(localData.makingProfiles.map(p => p.id));
+                        merged.makingProfiles = [
+                            ...localData.makingProfiles,
+                            ...cloudData.makingProfiles.filter(p => !seenP.has(p.id))
+                        ];
+                    }
                         applyDataSnapshot(merged);
                         saveDataToLocalCache(merged);
                         setDataSourceBadge('syncing');
@@ -1915,7 +1972,7 @@
                 products: productData,
                 looseDefaults: looseDefaultsCloud,
                 baseCalcDefaults: baseCalcDefaults,
-                presets: loosePresets, // Save presets to cloud
+                presets: loosePresets,
                 makingProfiles: makingProfiles,
                 billHistory: billHistory
             };
@@ -1924,14 +1981,37 @@
             saveDataToLocalCache(dataToSave);
 
             if (!window.dbSet || !window.firebaseDB || !navigator.onLine) {
-                // Can't reach Firebase right now — remember to push later
                 markPendingSync();
                 return;
             }
 
-            window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToSave)
+            // Write to split sub-keys so a large billHistory doesn't block a
+            // small rate update, and vice-versa.
+            const db   = window.firebaseDB;
+            const rRef = window.dbRef;
+            const rSet = window.dbSet;
+            Promise.all([
+                rSet(rRef(db, 'jewelryData/config'),  {
+                    rates, taxRate,
+                    looseDefaults: looseDefaultsCloud,
+                    baseCalcDefaults
+                }),
+                rSet(rRef(db, 'jewelryData/products'),     productData   || {}),
+                rSet(rRef(db, 'jewelryData/billHistory'),  billHistory   || []),
+                rSet(rRef(db, 'jewelryData/profiles'),     {
+                    makingProfiles: makingProfiles || [],
+                    presets: loosePresets || []
+                }),
+                // Tombstone old flat-key fields so they don't confuse future reads
+                rSet(rRef(db, 'jewelryData/rates'),          null),
+                rSet(rRef(db, 'jewelryData/taxRate'),        null),
+                rSet(rRef(db, 'jewelryData/looseDefaults'),  null),
+                rSet(rRef(db, 'jewelryData/baseCalcDefaults'), null),
+                rSet(rRef(db, 'jewelryData/makingProfiles'), null),
+                rSet(rRef(db, 'jewelryData/presets'),        null)
+            ])
             .then(() => {
-                console.log("Data saved to Firebase successfully.");
+                console.log("Data saved to Firebase (split keys).");
                 clearPendingSync();
                 setDataSourceBadge('live');
             })
@@ -1944,8 +2024,18 @@
 
         function clearAllData() {
             if (!window.dbSet) return;
+            if (!navigator.onLine) {
+                showCustomAlert('Cannot clear data while offline. Please reconnect and try again.');
+                return;
+            }
             showCustomConfirm('Clear ALL synced data (rates, tax, products, presets)? This can be undone.', 'Confirm Clear', () => {
-                window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), null)
+                // Clear all four sub-keys
+                Promise.all([
+                    window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData/config'),      null),
+                    window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData/products'),    null),
+                    window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData/billHistory'), null),
+                    window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData/profiles'),    null)
+                ])
                 .then(() => {
                     showCustomAlert('All cloud data cleared. Reloading page.');
                     setTimeout(() => location.reload(), 1500);
@@ -3597,13 +3687,13 @@
                     `This will REPLACE your entire product list (${currentCount} items) with ${count} new items from Excel. Proceed?`, 
                     'Confirm Replacement', 
                     () => {
-                        productData = newProductData; // Replaces everything as requested
-                        saveAllDataToCloud(); 
+                        productData = newProductData;
+                        saveAllDataToCloud();
                         document.getElementById('excel-info').innerHTML = `<p>Successfully loaded ${count} products.</p>`;
+                        fileInput.value = ''; // Reset after confirm so same file can be re-selected
                     }
                 );
-                // Clear input if canceled or done so onchange fires again if same file selected
-                if (!confirmCallback) fileInput.value = '';
+                fileInput.value = ''; // Also reset on cancel so same file can be re-selected
             };
             reader.readAsArrayBuffer(file);
         }
@@ -3978,6 +4068,15 @@
 
         function openCamera(target) {
             cameraTarget      = target || 'barcode';
+            // Lazy-load ZXing only when camera is first needed
+            if (typeof ZXing === 'undefined' && !window._zxingLoading) {
+                window._zxingLoading = true;
+                const s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js';
+                s.onload  = () => { window._zxingLoading = false; };
+                s.onerror = () => { window._zxingLoading = false; };
+                document.head.appendChild(s);
+            }
             camLastValue      = '';
             camStableStart    = 0;
             camConfirmedValue = '';
@@ -4275,6 +4374,16 @@
                 const upi  = parseFloat(document.getElementById('pay-upi-amt').value)  || 0;
                 const card = parseFloat(document.getElementById('pay-card-amt').value) || 0;
                 if (cash + upi + card === 0) { showCustomAlert('Enter at least one amount.'); return; }
+
+                // Validate that split amounts equal net payable (allow ±1 rounding)
+                let totalForValidation = 0; cart.forEach(i => totalForValidation += i.finalPrice);
+                let oldGoldForValidation = 0; oldGoldItems.forEach(i => oldGoldForValidation += i.value);
+                const netForValidation = Math.round(totalForValidation - oldGoldForValidation - cartAdjustment);
+                if (Math.abs(cash + upi + card - netForValidation) > 1) {
+                    showCustomAlert('Payment amounts don\'t add up to ₹' + netForValidation + '. Please balance the split before confirming.');
+                    return;
+                }
+
                 payment = { mode: 'partial', cash, upi, card };
             } else {
                 payment = { mode };
@@ -4295,17 +4404,25 @@
             };
             billHistory.unshift(bill);
             if (billHistory.length > 500) billHistory = billHistory.slice(0, 500);
+
+            // saveAllDataToCloud always writes local cache first, then attempts Firebase.
+            // We clear the cart after the local write is guaranteed (synchronous), then
+            // show a message that tells the user whether it also hit the cloud.
             saveAllDataToCloud();
+
+            // At this point local cache is up to date — safe to clear session state.
             cart = []; oldGoldItems = []; cartAdjustment = 0;
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
             localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
             updateCartIcon();
             closeModal('payment-modal');
             closeModal('cart-modal');
-            const msg = billHistory.length >= 100
-                ? 'Bill saved!\n\n⚠️ ' + billHistory.length + ' bills saved — consider clearing old ones.'
-                : 'Bill saved!';
-            showCustomAlert(msg);
+
+            const syncBadge = navigator.onLine ? '☁️ Saved to cloud.' : '📦 Saved locally — will sync when online.';
+            const warningNote = billHistory.length >= 100
+                ? '\n\n⚠️ ' + billHistory.length + ' bills saved — consider clearing old ones.'
+                : '';
+            showCustomAlert('Bill saved! ' + syncBadge + warningNote);
         }
 
 
