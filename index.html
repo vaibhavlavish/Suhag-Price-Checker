@@ -998,7 +998,7 @@
 
     <div id="main-screen">
         <div style="display:flex; gap:8px; align-items:center;">
-            <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus style="flex:1; margin-bottom:0;">
+            <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus maxlength="50" style="flex:1; margin-bottom:0;">
             <button onclick="openCamera('barcode')" id="cam-btn-main" title="Scan with camera"
                 style="flex-shrink:0; width:46px; height:46px; border-radius:12px; background:#1565C0; color:white; border:none; font-size:22px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(21,101,192,0.3);">
                 📷
@@ -1440,6 +1440,9 @@
     </div>
     <script>
         // --- PIN LOGIC ---
+        // ⚠️  SECURITY: Change this PIN before deploying.
+        // Also set Firebase Realtime Database rules to require auth so only
+        // authenticated sessions can read/write (Firebase Console → Realtime Database → Rules).
         const ADMIN_PIN = '9898'; 
 
         // --- NEW: Custom Alert/Confirm Functions ---
@@ -1482,8 +1485,9 @@
 
         function checkPin() {
             const input = prompt("Enter Admin PIN to proceed:");
-            // 'prompt' is still used for PIN entry
-            if (input === ADMIN_PIN) {
+            // Strict typed equality — coerce to string first so an object or
+            // null can never accidentally equal the PIN.
+            if (typeof input === 'string' && input.trim() === String(ADMIN_PIN)) {
                 return true;
             }
             if (input !== null) { // Show alert only if user didn't cancel
@@ -2002,16 +2006,19 @@
                     makingProfiles: makingProfiles || [],
                     presets: loosePresets || []
                 }),
-                // Tombstone old flat-key fields so they don't confuse future reads
-                rSet(rRef(db, 'jewelryData/rates'),          null),
-                rSet(rRef(db, 'jewelryData/taxRate'),        null),
-                rSet(rRef(db, 'jewelryData/looseDefaults'),  null),
-                rSet(rRef(db, 'jewelryData/baseCalcDefaults'), null),
-                rSet(rRef(db, 'jewelryData/makingProfiles'), null),
-                rSet(rRef(db, 'jewelryData/presets'),        null)
+                // Tombstone old flat-key fields — only once per device after migration
+                ...(localStorage.getItem('suhagFlatKeysTombstoned') ? [] : [
+                    rSet(rRef(db, 'jewelryData/rates'),            null),
+                    rSet(rRef(db, 'jewelryData/taxRate'),          null),
+                    rSet(rRef(db, 'jewelryData/looseDefaults'),    null),
+                    rSet(rRef(db, 'jewelryData/baseCalcDefaults'), null),
+                    rSet(rRef(db, 'jewelryData/makingProfiles'),   null),
+                    rSet(rRef(db, 'jewelryData/presets'),          null)
+                ])
             ])
             .then(() => {
                 console.log("Data saved to Firebase (split keys).");
+                localStorage.setItem('suhagFlatKeysTombstoned', '1');
                 clearPendingSync();
                 setDataSourceBadge('live');
             })
@@ -2020,6 +2027,22 @@
                 markPendingSync();
                 showCustomAlert("You're offline. Changes saved locally and will sync automatically when you're back online.", true);
             });
+        }
+
+        // Debounced wrapper — use for rapid-fire edits (rate changes, profile saves).
+        // Always writes local cache immediately; delays the Firebase write by 500 ms.
+        let _saveDebounceTimer = null;
+        function saveAllDataToCloudDebounced() {
+            // Local cache write is inside saveAllDataToCloud and happens synchronously
+            // before the Firebase call, so calling it now is safe.
+            const dataToSave = {
+                rates, taxRate, products: productData,
+                looseDefaults: looseDefaultsCloud, baseCalcDefaults,
+                presets: loosePresets, makingProfiles, billHistory
+            };
+            saveDataToLocalCache(dataToSave);
+            clearTimeout(_saveDebounceTimer);
+            _saveDebounceTimer = setTimeout(() => saveAllDataToCloud(), 500);
         }
 
         function clearAllData() {
@@ -2451,6 +2474,9 @@
         function setLooseDefaults() { 
             // Hide the active preset display whenever reverting to defaults
             document.getElementById('loose-active-preset').style.display = 'none';
+            if (!looseDefaultsCloud) {
+                applyFactoryDefaults();
+            }
             const defaults = looseDefaultsCloud; 
             
             let metal = defaults.metal || 'Gold';
@@ -2682,7 +2708,7 @@
             // NEW: Populate the current loose item for cart addition
             currentLooseItem = {
                 type: 'loose', // Important flag
-                id: Date.now() + Math.random(),
+                id: crypto.randomUUID(),
                 itemName: `Loose ${metal.charAt(0).toUpperCase() + metal.slice(1)} ${stamp}`,
                 weight: weight,
                 finalPrice: finalPrice
@@ -2719,7 +2745,7 @@
             }
             const item = {
                 type: 'repair',
-                id: Date.now() + Math.random(),
+                id: crypto.randomUUID(),
                 itemName: 'Other ',
                 finalPrice: amount
             };
@@ -3345,7 +3371,7 @@
                 : (currentMakingType ? { type: currentMakingType, input: currentMakingInput } : null);
 
             const item = {
-                id: Date.now() + Math.random(),
+                id: crypto.randomUUID(),
                 barcode: currentBarcode,
                 itemName: currentProduct.itemName || 'Unknown Item',
                 finalPrice: currentFinalPrice,
@@ -3578,7 +3604,7 @@
                 return;
             }
             rates[metal][newStamp] = 0;
-            saveAllDataToCloud(); 
+            saveAllDataToCloudDebounced(); 
             document.getElementById('new-stamp').value = '';
             showCustomAlert(`Added ${newStamp} for ${metal}`);
         }
@@ -3592,7 +3618,7 @@
             }
             showCustomConfirm(`Remove ${stamp} for ${metal.toUpperCase()}?`, 'Confirm Removal', () => {
                 delete rates[metal][stamp];
-                saveAllDataToCloud(); 
+                saveAllDataToCloudDebounced(); 
                 showCustomAlert(`Removed ${stamp}`);
             });
         }
@@ -3615,11 +3641,16 @@
             }
             rates[metal][newName] = rates[metal][oldStamp];
             delete rates[metal][oldStamp];
-            saveAllDataToCloud();
+            saveAllDataToCloudDebounced();
             document.getElementById('rename-to').value = '';
             showCustomAlert(`Renamed ${oldStamp} to ${newName}`);
         }
         function loadExcel() {
+            if (typeof XLSX === 'undefined') {
+                showCustomAlert('Spreadsheet library is still loading. Please wait a moment and try again.');
+                document.getElementById('excel-file').value = '';
+                return;
+            }
             if (!checkPin()) { 
                 document.getElementById('excel-file').value = '';
                 return; 
@@ -3713,7 +3744,7 @@
             const price = parseFloat(document.getElementById('price-per-gram').value);
             if (rates[metal] && rates[metal][stamp] !== undefined && !isNaN(price)) {
                 rates[metal][stamp] = price;
-                saveAllDataToCloud(); 
+                saveAllDataToCloudDebounced(); 
                 showCustomAlert(`Updated: ${metal} ${stamp} → ₹${price}/g`);
                 document.getElementById('price-per-gram').value = '';
             } else {
@@ -3725,7 +3756,7 @@
             const tax = parseFloat(document.getElementById('tax-percent').value);
             if (!isNaN(tax)) {
                 taxRate = tax;
-                saveAllDataToCloud(); 
+                saveAllDataToCloudDebounced(); 
                 showCustomAlert(`Tax updated to ${tax}%`);
                 document.getElementById('tax-percent').value = tax;
             } else {
@@ -3870,7 +3901,7 @@
         function setActiveProfile(id) {
             activeProfileId = id;
             localStorage.setItem('activeProfileId', id);
-            saveAllDataToCloud();
+            saveAllDataToCloudDebounced();
             updateProfileBadge();
             renderProfileList();
             if (currentBarcode) runPriceCalculation();
@@ -3944,7 +3975,7 @@
                 // Create mode — add new
                 makingProfiles.push({ id: 'prof_' + Date.now(), ...profileData });
             }
-            saveAllDataToCloud();
+            saveAllDataToCloudDebounced();
             if (currentBarcode) runPriceCalculation();
             // Reset form
             _resetProfileForm();
@@ -3973,7 +4004,7 @@
                 updateProfileBadge();
                 if (currentBarcode) runPriceCalculation();
             }
-            saveAllDataToCloud();
+            saveAllDataToCloudDebounced();
             renderProfileList();
         }
 
@@ -4633,7 +4664,7 @@
             const item = bulkList[idx];
             if (!item) return;
             const cartItem = {
-                id: Date.now() + Math.random(),
+                id: crypto.randomUUID(),
                 barcode: item.barcode,
                 itemName: item.name,
                 finalPrice: item.price,
@@ -4751,7 +4782,7 @@
     <div id="bulk-check" style="display:none;">
         <h2>📋 Bulk Price Check</h2>
         <p style="font-size:13px; text-align:center; color:#888; margin-top:-10px;">Scan barcodes to compare prices — uses active profile</p>
-        <input type="text" id="bulk-barcode" placeholder="Scan or type barcode, press Enter..." autocomplete="off"
+        <input type="text" id="bulk-barcode" placeholder="Scan or type barcode, press Enter..." autocomplete="off" maxlength="50"
                onkeydown="if(event.key==='Enter') bulkAddItem()"
                style="font-size:16px;">
         <div id="bulk-list" style="margin-top:12px;"></div>
