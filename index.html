@@ -51,10 +51,12 @@
             padding: 0;
             background-color: #f5f5f5;
             height: 100vh;
-            overflow: hidden;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
             display: flex;
             flex-direction: column;
             touch-action: manipulation;
+            overscroll-behavior-y: contain;
         }
         #taskbar {
             background-color: #1a1a1a;
@@ -970,7 +972,7 @@
         .ledger-action-btn .btn-icon { font-size: 20px; }
         .ledger-action-btn.cash-in  { background: #e8f5e9; color: #2e7d32; }
         .ledger-action-btn.cash-out { background: #ffebee; color: #c62828; }
-        .ledger-action-btn.expense  { background: #fff3e0; color: #e65100; }
+        .ledger-action-btn.expense  { background: #f3e5f5; color: #6a1b9a; }
 
         .ledger-tabs {
             display: flex;
@@ -1583,20 +1585,26 @@
                 style="flex:1; padding:9px 13px; border:1px solid #ddd; border-radius:20px; font-size:14px; background:white; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
             <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:20px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap;">← Back</button>
         </div>
-        <!-- Sort Bar -->
-        <div style="display:flex; gap:6px; margin-bottom:10px; overflow-x:auto; padding-bottom:2px; -webkit-overflow-scrolling:touch;">
-            <span style="font-size:12px; color:#888; align-self:center; white-space:nowrap; padding-right:2px;">Sort:</span>
-            <button id="sort-btn-default" onclick="setStockSort('default')" style="background:#1a1a1a; color:white; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">A–Z</button>
-            <button id="sort-btn-price-asc" onclick="setStockSort('price-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Price ↑</button>
-            <button id="sort-btn-price-desc" onclick="setStockSort('price-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Price ↓</button>
-            <button id="sort-btn-weight-asc" onclick="setStockSort('weight-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Weight ↑</button>
-            <button id="sort-btn-weight-desc" onclick="setStockSort('weight-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Weight ↓</button>
-            <button id="sort-btn-making-asc" onclick="setStockSort('making-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Making ↑</button>
-            <button id="sort-btn-making-desc" onclick="setStockSort('making-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Making ↓</button>
-            <button id="sort-btn-size-asc" onclick="setStockSort('size-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Size ↑</button>
-            <button id="sort-btn-size-desc" onclick="setStockSort('size-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Size ↓</button>
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px; position:relative;">
+            <div id="stock-summary" style="flex:1; background:white; border-radius:10px; padding:10px 16px; font-size:14px; color:#555; box-shadow:0 1px 4px rgba(0,0,0,0.08);"></div>
+            <button id="sort-toggle-btn" onclick="toggleStockSortMenu()" style="background:white; border:1px solid #ddd; border-radius:10px; padding:10px 14px; font-size:13px; font-weight:700; color:#333; cursor:pointer; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,0.08);">⇕ Sort</button>
+
+            <!-- Sort Dropdown -->
+            <div id="stock-sort-menu" style="display:none; position:absolute; top:calc(100% + 6px); right:0; background:white; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.15); z-index:50; padding:10px; width:220px;">
+                <div style="font-size:11px; font-weight:700; color:#999; text-transform:uppercase; letter-spacing:0.06em; padding:4px 6px 8px;">Sort By</div>
+                <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                    <button id="sort-btn-default" onclick="setStockSort('default')" style="background:#1a1a1a; color:white; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">A–Z</button>
+                    <button id="sort-btn-price-asc" onclick="setStockSort('price-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Price ↑</button>
+                    <button id="sort-btn-price-desc" onclick="setStockSort('price-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Price ↓</button>
+                    <button id="sort-btn-weight-asc" onclick="setStockSort('weight-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Weight ↑</button>
+                    <button id="sort-btn-weight-desc" onclick="setStockSort('weight-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Weight ↓</button>
+                    <button id="sort-btn-making-asc" onclick="setStockSort('making-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Making ↑</button>
+                    <button id="sort-btn-making-desc" onclick="setStockSort('making-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Making ↓</button>
+                    <button id="sort-btn-size-asc" onclick="setStockSort('size-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Size ↑</button>
+                    <button id="sort-btn-size-desc" onclick="setStockSort('size-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Size ↓</button>
+                </div>
+            </div>
         </div>
-        <div id="stock-summary" style="background:white; border-radius:10px; padding:10px 16px; margin-bottom:12px; font-size:14px; color:#555; box-shadow:0 1px 4px rgba(0,0,0,0.08);"></div>
         <div id="stock-body"></div>
     </div>
 
@@ -2368,6 +2376,11 @@
 
         let currentStockSort = 'default';
 
+        function toggleStockSortMenu() {
+            const menu = document.getElementById('stock-sort-menu');
+            menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+        }
+
         function setStockSort(sortKey) {
             currentStockSort = sortKey;
             // Update button styles
@@ -2377,6 +2390,7 @@
             });
             const active = document.getElementById('sort-btn-' + sortKey);
             if (active) { active.style.background = '#1a1a1a'; active.style.color = 'white'; }
+            document.getElementById('stock-sort-menu').style.display = 'none';
             renderStockView();
         }
 
@@ -2527,6 +2541,11 @@
             const btn = document.getElementById('options-btn');
             if (btn && !btn.contains(e.target) && !menu.contains(e.target)) {
                 closeOptions();
+            }
+            const sortMenu = document.getElementById('stock-sort-menu');
+            const sortBtn = document.getElementById('sort-toggle-btn');
+            if (sortMenu && sortBtn && !sortBtn.contains(e.target) && !sortMenu.contains(e.target)) {
+                sortMenu.style.display = 'none';
             }
         });
 
@@ -3603,7 +3622,7 @@
                                 <div class="cart-item-barcode">${details}</div>
                             </div>
                             <span class="cart-item-price">₹${item.finalPrice.toFixed(2)}</span>
-                            <button class="remove-item-btn" onclick="removeFromCart(${item.id})">&times;</button>
+                            <button class="remove-item-btn" onclick="removeFromCart('${item.id}')">&times;</button>
                         </div>
                     `;
                 });
@@ -4851,12 +4870,42 @@
                 const saved = localStorage.getItem('suhagLedger');
                 if (saved) ledgerEntries = JSON.parse(saved);
             } catch(e) { ledgerEntries = []; }
+            syncLedgerFromCloud();
+        }
+
+        // One-time Firebase listener so ledger entries sync across devices.
+        let _ledgerSyncStarted = false;
+        let _ledgerSyncRetries = 0;
+        function syncLedgerFromCloud() {
+            if (_ledgerSyncStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB) {
+                if (_ledgerSyncRetries++ < 20) setTimeout(syncLedgerFromCloud, 500);
+                return;
+            }
+            _ledgerSyncStarted = true;
+            const ledgerRef = window.dbRef(window.firebaseDB, 'jewelryData/ledgerEntries');
+            window.dbOnValue(ledgerRef, (snapshot) => {
+                const cloudEntries = snapshot.val();
+                if (Array.isArray(cloudEntries)) {
+                    const seen = new Set(cloudEntries.map(e => e.id));
+                    const localOnly = ledgerEntries.filter(e => !seen.has(e.id));
+                    ledgerEntries = [...cloudEntries, ...localOnly];
+                    localStorage.setItem('suhagLedger', JSON.stringify(ledgerEntries));
+                    if (localOnly.length) saveLedger();
+                    const el = document.getElementById('ledger');
+                    if (el && el.style.display !== 'none') renderLedger();
+                }
+            });
         }
 
         function saveLedger() {
             try {
                 localStorage.setItem('suhagLedger', JSON.stringify(ledgerEntries));
             } catch(e) {}
+            if (window.dbSet && window.firebaseDB) {
+                window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData/ledgerEntries'), ledgerEntries)
+                    .catch((e) => console.error("Ledger Firebase write failed:", e));
+            }
         }
 
         function ledgerCashTotal() {
