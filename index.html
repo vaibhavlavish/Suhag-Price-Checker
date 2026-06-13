@@ -4663,59 +4663,6 @@
             return payment.mode;
         }
 
-        function renderBillHistory() {
-            const container = document.getElementById('bill-history-list');
-            if (!billHistory || billHistory.length === 0) {
-                container.innerHTML = '<p style="color:#aaa; text-align:center; font-size:14px; padding:20px 0;">No bills yet.</p>';
-                return;
-            }
-            const warningHtml = billHistory.length >= 100
-                ? `<div style="background:#fff3e0; border:1.5px solid #FF9800; border-radius:10px; padding:10px 14px; margin-bottom:12px; font-size:13px; color:#e65100; font-weight:600;">
-                    ⚠️ You have ${billHistory.length} bills saved. Clear old bills to keep things running smoothly.
-                   </div>` : '';
-            container.innerHTML = warningHtml + billHistory.map((bill, idx) => {
-                const d = new Date(bill.timestamp);
-                const dateStr = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
-                const timeStr = d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
-                const itemsHtml = bill.items.map(it =>
-                    `<div style="display:flex; justify-content:space-between; font-size:12px; padding:3px 0; border-bottom:1px dotted #eee;">
-                        <span style="color:#444;">${it.itemName}${it.barcode ? ' <span style="color:#aaa;">('+it.barcode+')</span>' : ''}</span>
-                        <span style="font-weight:600;">₹${it.finalPrice.toFixed(0)}</span>
-                    </div>`
-                ).join('');
-                return `
-                <div style="background:white; border-radius:12px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,0.08); overflow:hidden;">
-                    <div onclick="toggleBillDetail(${idx})" style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; cursor:pointer; background:#f9f9f9;">
-                        <div>
-                            <div style="font-size:14px; font-weight:700; color:#222;">${dateStr} &nbsp; <span style="color:#888; font-weight:400; font-size:12px;">${timeStr}</span></div>
-                            <div style="font-size:12px; color:#888; margin-top:2px;">${bill.items.length} item${bill.items.length !== 1 ? 's' : ''}${bill.payment ? ' · <span style="font-weight:600; color:#1565C0;">' + _payLabel(bill.payment) + '</span>' : ''}</div>
-                        </div>
-                        <div style="text-align:right;">
-                            <div style="font-size:16px; font-weight:800; color:#1565C0;">₹${bill.netPayable.toFixed(0)}</div>
-                            ${bill.oldGoldTotal > 0 ? `<div style="font-size:11px; color:#f44336;">-₹${bill.oldGoldTotal.toFixed(0)} old gold</div>` : ''}
-                        </div>
-                    </div>
-                    <div id="bill-detail-${idx}" style="display:none; padding:10px 14px 12px; border-top:1px solid #eee;">
-                        ${itemsHtml}
-                        <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:13px; font-weight:700; color:#333;">
-                            <span>Total</span><span>₹${bill.total.toFixed(0)}</span>
-                        </div>
-                        ${bill.oldGoldTotal > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12px; color:#f44336;"><span>Less Old Gold</span><span>-₹${bill.oldGoldTotal.toFixed(0)}</span></div>` : ''}
-                        ${bill.discount > 0 ? `<div style="display:flex; justify-content:space-between; font-size:12px; color:#6a1b9a;"><span>Discount</span><span>-₹${bill.discount.toFixed(0)}</span></div>` : ''}
-                        ${(bill.oldGoldTotal > 0 || bill.discount > 0) ? `<div style="display:flex; justify-content:space-between; font-size:14px; font-weight:800; color:#1565C0; border-top:1px dashed #ccc; padding-top:6px; margin-top:4px;"><span>Net Payable</span><span>₹${bill.netPayable.toFixed(0)}</span></div>` : ''}
-                        ${bill.payment ? `<div style="margin-top:8px; padding:8px 10px; background:#e3f2fd; border-radius:8px; font-size:12px; color:#1565C0; font-weight:600;">💳 ${_payLabel(bill.payment)}</div>` : ''}
-                        <button onclick="deleteBill(${bill.id})" style="margin-top:10px; background:#f44336; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer; float:right;">Delete Bill</button>
-                        <div style="clear:both;"></div>
-                    </div>
-                </div>`;
-            }).join('');
-        }
-
-        function toggleBillDetail(idx) {
-            const el = document.getElementById('bill-detail-' + idx);
-            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
-        }
-
         function deleteBill(id) {
             if (!checkPin()) return;
             billHistory = billHistory.filter(b => b.id !== id);
@@ -5034,7 +4981,7 @@
                         ${bill.discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;color:#6a1b9a;"><span>Discount</span><span>-₹${bill.discount.toFixed(0)}</span></div>` : ''}
                         ${(bill.oldGoldTotal > 0 || bill.discount > 0) ? `<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;color:#1565C0;border-top:1px dashed #ccc;padding-top:6px;margin-top:4px;"><span>Net Payable</span><span>₹${bill.netPayable.toFixed(0)}</span></div>` : ''}
                         ${bill.payment ? `<div style="margin-top:8px;padding:8px 10px;background:#e3f2fd;border-radius:8px;font-size:12px;color:#1565C0;font-weight:600;">💳 ${_payLabel(bill.payment)}</div>` : ''}
-                        <button onclick="deleteBill(${bill.id}); _renderBillHistoryInLedger();" style="margin-top:10px;background:#f44336;color:white;border:none;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;float:right;width:auto;box-shadow:none;">Delete Bill</button>
+                        <button onclick="deleteBill(${bill.id})" style="margin-top:10px;background:#f44336;color:white;border:none;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;float:right;width:auto;box-shadow:none;">Delete Bill</button>
                         <div style="clear:both;"></div>
                     </div>
                 </div>`;
@@ -5190,8 +5137,6 @@
         window.syncAdjustFromFinal = syncAdjustFromFinal;
         window.applyAdjust = applyAdjust;
         window.clearAdjust = clearAdjust;
-        window.renderBillHistory = renderBillHistory;
-        window.toggleBillDetail = toggleBillDetail;
         window.deleteBill = deleteBill;
         window.clearBillHistory = clearBillHistory;
         // Bulk Price Check
