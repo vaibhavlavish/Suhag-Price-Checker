@@ -4567,6 +4567,9 @@
             if (!mode) { showCustomAlert('Please select a payment method.'); return; }
 
             let payment = {};
+            let cashPortion = 0;
+            let saleNote = '';
+
             if (mode === 'partial') {
                 const cash = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
                 const upi  = parseFloat(document.getElementById('pay-upi-amt').value)  || 0;
@@ -4583,13 +4586,25 @@
                 }
 
                 payment = { mode: 'partial', cash, upi, card };
+                cashPortion = cash;
+                const parts = [];
+                if (cash > 0) parts.push(`Cash ₹${cash.toFixed(0)}`);
+                if (upi  > 0) parts.push(`UPI ₹${upi.toFixed(0)}`);
+                if (card > 0) parts.push(`Card ₹${card.toFixed(0)}`);
+                saleNote = 'Split — ' + parts.join(' + ');
             } else {
                 payment = { mode };
+                if (mode === 'cash')  { saleNote = 'Cash sale'; }
+                else if (mode === 'upi')  { saleNote = 'UPI sale';  cashPortion = 0; }
+                else if (mode === 'card') { saleNote = 'Card sale'; cashPortion = 0; }
             }
 
             // Build and save bill
             let total = 0; cart.forEach(i => total += i.finalPrice);
             let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
+            const netPayable = total - oldGoldTotal - cartAdjustment;
+            if (mode === 'cash') cashPortion = Math.round(netPayable);
+
             const bill = {
                 id: Date.now(),
                 timestamp: new Date().toISOString(),
@@ -4597,15 +4612,28 @@
                 total,
                 oldGoldTotal,
                 discount: cartAdjustment,
-                netPayable: total - oldGoldTotal - cartAdjustment,
+                netPayable,
                 payment
             };
             billHistory.unshift(bill);
             if (billHistory.length > 500) billHistory = billHistory.slice(0, 500);
 
+            // --- Record in ledger ---
+            if (netPayable > 0) {
+                ledgerEntries.push({
+                    id: Date.now() + Math.floor(Math.random() * 1000),
+                    type: 'sale',
+                    amount: Math.round(netPayable),
+                    cashPortion,
+                    note: saleNote,
+                    timestamp: new Date().toISOString(),
+                    source: 'checkout'
+                });
+                saveLedger();
+                renderLedger();
+            }
+
             // saveAllDataToCloud always writes local cache first, then attempts Firebase.
-            // We clear the cart after the local write is guaranteed (synchronous), then
-            // show a message that tells the user whether it also hit the cloud.
             saveAllDataToCloud();
 
             // At this point local cache is up to date — safe to clear session state.
@@ -5076,62 +5104,6 @@
             renderLedger();
         }
 
-        // Hook into checkout to auto-record cash sales in ledger
-        // This runs after the original confirmPayment is exposed on window
-        function _hookLedgerIntoCheckout() {
-            const orig = window.confirmPayment;
-            window.confirmPayment = function() {
-                // Capture values BEFORE original clears the cart
-                const mode = window._selectedPayMode;
-                if (!mode) { orig && orig(); return; }
-
-                let total = 0; cart.forEach(i => total += i.finalPrice);
-                let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
-                const net = Math.round(total - oldGoldTotal - cartAdjustment);
-
-                // Build payment note for ledger
-                let saleNote = '';
-                let cashAmount = 0;
-                if (mode === 'cash') {
-                    cashAmount = net;
-                    saleNote = 'Cash sale';
-                } else if (mode === 'upi') {
-                    cashAmount = 0; // UPI doesn't add to physical cash
-                    saleNote = 'UPI sale';
-                } else if (mode === 'card') {
-                    cashAmount = 0;
-                    saleNote = 'Card sale';
-                } else if (mode === 'partial') {
-                    cashAmount = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
-                    const upi  = parseFloat(document.getElementById('pay-upi-amt').value) || 0;
-                    const card = parseFloat(document.getElementById('pay-card-amt').value) || 0;
-                    const parts = [];
-                    if (cashAmount > 0) parts.push(`Cash ₹${cashAmount.toFixed(0)}`);
-                    if (upi  > 0) parts.push(`UPI ₹${upi.toFixed(0)}`);
-                    if (card > 0) parts.push(`Card ₹${card.toFixed(0)}`);
-                    saleNote = 'Split — ' + parts.join(' + ');
-                }
-
-                // Call original checkout (clears cart, saves bill, shows alert)
-                orig && orig();
-
-                // Record sale in ledger (all payment types; cash portion affects balance)
-                if (net > 0) {
-                    const entry = {
-                        id: Date.now() + Math.floor(Math.random()*1000),
-                        type: 'sale',
-                        amount: net,
-                        cashPortion: cashAmount, // how much of net was physical cash
-                        note: saleNote,
-                        timestamp: new Date().toISOString(),
-                        source: 'checkout'
-                    };
-                    ledgerEntries.push(entry);
-                    saveLedger();
-                    renderLedger();
-                }
-            };
-        }
 
         // Expose ledger functions
         window.openLedgerEntryModal  = openLedgerEntryModal;
@@ -5234,7 +5206,7 @@
         window.bulkAddToCart = bulkAddToCart;
 
         // Hook ledger into checkout (must run after ALL window.* assignments above)
-        _hookLedgerIntoCheckout();
+        // (Ledger recording is now integrated directly into confirmPayment — no hook needed)
 
     </script>
 
