@@ -40,6 +40,47 @@
         window.dbOnValue = onValue;
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        /* ============================================================
+           SUHAG DESIGN SYSTEM — Jewelry-grade UI
+           Palette:
+             --bg:        #F4F3F0  (warm off-white)
+             --surface:   #FFFFFF
+             --charcoal:  #1C1C1E  (taskbar / dark)
+             --gold:      #B8922E  (accent — warm gold)
+             --gold-lite: #F5EDD6  (gold tint bg)
+             --green:     #1E7A3E  (positive/price)
+             --green-lt:  #E8F5EE
+             --blue:      #1252A3  (action / detail)
+             --blue-lt:   #E8EFFC
+             --red:       #C0392B
+             --red-lt:    #FDEDEB
+             --text:      #1C1C1E
+             --text2:     #6B6B6B
+             --border:    #E2E0DB
+        ============================================================ */
+        :root {
+            --bg:       #F4F3F0;
+            --surface:  #FFFFFF;
+            --charcoal: #1C1C1E;
+            --gold:     #B8922E;
+            --gold-dk:  #8A6B1E;
+            --gold-lt:  #F5EDD6;
+            --green:    #1E7A3E;
+            --green-lt: #E8F5EE;
+            --blue:     #1252A3;
+            --blue-lt:  #E8EFFC;
+            --red:      #C0392B;
+            --red-lt:   #FDEDEB;
+            --text:     #1C1C1E;
+            --text2:    #6B6B6B;
+            --border:   #E2E0DB;
+            --radius:   12px;
+            --radius-sm:8px;
+        }
+    </style>
     <style>
         * {
             box-sizing: border-box;
@@ -52,68 +93,77 @@
             overflow: hidden;
         }
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background-color: #f5f5f5;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background-color: var(--bg);
             display: flex;
             flex-direction: column;
             touch-action: manipulation;
             overscroll-behavior-y: contain;
         }
         #taskbar {
-            background-color: #1a1a1a;
+            background: var(--charcoal);
             color: white;
-            padding: 8px 12px;
+            padding: 10px 10px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: nowrap;
-            gap: 4px;
+            gap: 5px;
             -webkit-overflow-scrolling: touch;
             position: relative;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
         }
         #taskbar button {
-            background-color: #333;
-            color: white;
+            background: rgba(255,255,255,0.08);
+            color: rgba(255,255,255,0.75);
             border: none;
-            padding: 10px 10px;
+            padding: 9px 10px;
             margin: 0;
-            border-radius: 6px;
+            border-radius: 9px;
             cursor: pointer;
             font-size: 13px;
             font-weight: 600;
             white-space: nowrap;
             flex: 1;
             max-width: 100px;
+            letter-spacing: 0.01em;
+            transition: all 0.15s;
         }
         #taskbar button:hover {
-            background-color: #555;
+            background: rgba(255,255,255,0.14);
+            color: white;
         }
         #taskbar button.active {
-            background-color: #4CAF50;
+            background: var(--gold);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(184,146,46,0.45);
         }
         #options-btn {
-            background: none;
+            background: rgba(255,255,255,0.08) !important;
             border: none;
-            color: white;
-            font-size: 24px;
-            padding: 8px 12px;
+            color: rgba(255,255,255,0.85);
+            font-size: 13px;
+            font-weight: 600;
+            padding: 9px 10px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
+            border-radius: 9px;
         }
         #options-menu {
             display: none;
             position: absolute;
-            top: calc(100% + 6px);
+            top: calc(100% + 8px);
             right: 8px;
-            background: #ffffff;
-            border-radius: 16px;
-            box-shadow: 0 12px 40px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08);
+            background: #fff;
+            border-radius: 18px;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.07);
             z-index: 1000;
-            width: 240px;
+            width: 248px;
             padding: 8px 0;
             overflow: hidden;
+            border: 1px solid var(--border);
         }
         #options-menu.show {
             display: block;
@@ -126,14 +176,15 @@
         .menu-section-label {
             font-size: 10px;
             font-weight: 700;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.1em;
             color: #aaa;
             text-transform: uppercase;
             padding: 10px 16px 4px;
+            font-family: 'Inter', sans-serif;
         }
         .menu-divider {
             height: 1px;
-            background: #f0f0f0;
+            background: var(--border);
             margin: 6px 12px;
         }
         #options-menu button {
@@ -147,13 +198,14 @@
             text-align: left;
             font-size: 14px;
             font-weight: 500;
-            color: #222;
+            color: var(--text);
             cursor: pointer;
             transition: background 0.12s;
             border-radius: 0;
             box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
         }
-        #options-menu button:hover { background: #f5f5f5; }
+        #options-menu button:hover { background: var(--bg); }
         #options-menu button .menu-icon {
             width: 28px; height: 28px;
             border-radius: 7px;
@@ -170,8 +222,8 @@
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            padding: 20px 15px;
-            background-color: #f5f5f5;
+            padding: 20px 16px;
+            background-color: var(--bg);
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
             width: 100%;
@@ -185,8 +237,8 @@
             flex-direction: column;
             justify-content: flex-start;
             align-items: center;
-            padding: 20px 15px;
-            background-color: #f5f5f5;
+            padding: 20px 16px;
+            background-color: var(--bg);
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
             width: 100%;
@@ -195,21 +247,24 @@
             min-height: 0;
         }
         #barcode, #loose-weight { /* Added loose-weight here for styling */
-            font-size: 20px;
-            padding: 16px;
+            font-size: 18px;
+            padding: 14px 16px;
             width: 100%;
             max-width: 100%;
             text-align: center;
-            border: 2px solid #ddd;
-            border-radius: 10px;
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius);
             margin-bottom: 16px;
-            background: white;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            background: var(--surface);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            color: var(--text);
         }
         #barcode:focus, #loose-weight:focus {
-            border-color: #4CAF50;
+            border-color: var(--gold);
             outline: none;
-            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+            box-shadow: 0 0 0 3px rgba(184,146,46,0.18);
         }
         #product-code {
             font-size: 16px;
@@ -228,21 +283,23 @@
             transform: scale(0.99);
         }
         #price-display {
-            font-size: 48px;
-            font-weight: 700;
-            color: #4CAF50;
-            margin: 8px 0;
+            font-size: 52px;
+            font-weight: 800;
+            color: var(--green);
+            margin: 4px 0;
             opacity: 0;
-            transition: opacity 0.4s ease;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: opacity 0.35s ease;
+            letter-spacing: -1.5px;
+            font-family: 'Inter', sans-serif;
         }
         #loose-price-display { /* Style for loose calculator display */
-            font-size: 48px;
-            font-weight: 700;
-            color: #4CAF50;
-            margin: 20px 0;
+            font-size: 52px;
+            font-weight: 800;
+            color: var(--green);
+            margin: 16px 0;
             text-align: center;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            letter-spacing: -1.5px;
+            font-family: 'Inter', sans-serif;
         }
         #price-display.show {
             opacity: 1;
@@ -272,18 +329,18 @@
         #detail-btn, #add-to-cart-btn, #alter-btn, .clear-btn, #cart-btn, #loose-add-to-cart-btn, #loose-alter-btn, #preset-btn {
             margin: 0;
             /* Reset margins */
-            padding: 12px 20px;
-            font-size: 16px;
-            font-weight: 600;
+            padding: 13px 20px;
+            font-size: 15px;
+            font-weight: 700;
             color: white;
             border: none;
-            border-radius: 25px;
+            border-radius: 14px;
             cursor: pointer;
-            /* display: none;
-            Hide all by default */
-            box-shadow: 0 3px 8px rgba(0,0,0,0.2);
-            transition: all 0.2s;
-            text-align: center; /* Ensure text is centered */
+            box-shadow: 0 2px 8px rgba(0,0,0,0.13);
+            transition: all 0.18s;
+            text-align: center;
+            font-family: 'Inter', sans-serif;
+            letter-spacing: 0.01em;
         }
         
         /* Specific display logic fixes */
@@ -297,21 +354,20 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.2);
         }
         #detail-btn {
-            background-color: #2196F3;
+            background-color: var(--blue);
         }
         #add-to-cart-btn, #loose-add-to-cart-btn {
-            background-color: #4CAF50;
-            /* Green for add to cart */
+            background-color: var(--green);
         }
         #alter-btn, #loose-alter-btn {
-            background-color: #FF9800;
+            background-color: #C07422;
         }
         .clear-btn {
-            background-color: #f44336;
+            background-color: var(--red);
         }
         #cart-btn {
-            background-color: #555;
-            position: relative; /* For the counter */
+            background-color: var(--charcoal);
+            position: relative;
         }
         #cart-counter {
             position: absolute;
@@ -345,23 +401,25 @@
             animation: fadeIn 0.2s ease;
         }
         #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content, #old-gold-content, #preset-content { /* Added preset-content */
-            background: white;
-            padding: 20px;
-            border-radius: 16px;
-            max-width: 420px; /* Consistent width */
+            background: var(--surface);
+            padding: 22px 20px;
+            border-radius: 20px;
+            max-width: 420px;
             width: 100%;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            box-shadow: 0 16px 48px rgba(0,0,0,0.22);
             max-height: 90vh;
-            display: flex; /* Use flex for easier content management */
+            display: flex;
             flex-direction: column;
         }
         #detail-content h3, #alter-content h3, #loose-alter-content h3, #cart-content h3, #custom-modal-content h3, #old-gold-content h3, #preset-content h3 {
             margin: 0 0 16px 0;
-            color: #333;
-            font-size: 20px;
+            color: var(--text);
+            font-size: 18px;
+            font-weight: 700;
             text-align: center;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border);
             padding-bottom: 12px;
+            letter-spacing: -0.3px;
         }
         #detail-content p {
             margin: 10px 0;
@@ -374,26 +432,27 @@
         }
         #detail-content p:last-of-type {
             border-bottom: none;
-            font-weight: 600;
+            font-weight: 700;
             font-size: 16px;
-            color: #4CAF50;
+            color: var(--green);
         }
         #detail-content p strong {
-            color: #333;
+            color: var(--text);
             min-width: 120px;
         }
         #close-modal {
-            background-color: #f44336;
+            background-color: var(--red);
             color: white;
             border: none;
-            padding: 10px 20px;
+            padding: 12px 20px;
             margin-top: 16px;
-            border-radius: 25px;
+            border-radius: 14px;
             cursor: pointer;
             width: 100%;
-            font-size: 16px;
-            font-weight: 600;
-            box-shadow: 0 3px 8px rgba(244, 67, 54, 0.3);
+            font-size: 15px;
+            font-weight: 700;
+            box-shadow: 0 2px 8px rgba(192,57,43,0.3);
+            font-family: 'Inter', sans-serif;
         }
         #close-modal:active {
             transform: translateY(1px);
@@ -472,21 +531,22 @@
             flex: 1;
             padding: 12px;
             border: none;
-            border-radius: 25px;
-            font-size: 16px;
-            font-weight: 600;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: 700;
             cursor: pointer;
             color: white;
-            box-shadow: 0 3px 8px;
+            box-shadow: 0 2px 8px;
             transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
         }
         #update-making-btn {
-            background-color: #4CAF50;
-            box-shadow: 0 3px 8px rgba(76, 175, 80, 0.3);
+            background-color: var(--green);
+            box-shadow: 0 2px 8px rgba(30,122,62,0.3);
         }
         #cancel-making-btn {
-            background-color: #f44336;
-            box-shadow: 0 3px 8px rgba(244, 67, 54, 0.3);
+            background-color: var(--red);
+            box-shadow: 0 2px 8px rgba(192,57,43,0.3);
         }
         #alter-buttons button:active {
             transform: translateY(1px);
@@ -497,10 +557,10 @@
             display: none;
             max-width: 480px;
             margin: 0 auto;
-            background: white;
-            padding: 20px 15px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            background: var(--surface);
+            padding: 20px 16px;
+            border-radius: var(--radius);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
             flex: 1;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
@@ -515,26 +575,29 @@
         input, select, button, #excel-file {
             margin: 8px 0;
             padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
+            border: 1.5px solid var(--border);
+            border-radius: var(--radius-sm);
             width: 100%;
-            font-size: 16px;
+            font-size: 15px;
+            font-family: 'Inter', sans-serif;
         }
         input:focus, select:focus {
-            border-color: #4CAF50;
+            border-color: var(--gold);
             outline: none;
-            box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+            box-shadow: 0 0 0 3px rgba(184,146,46,0.15);
         }
         /* Updated button selector to exclude new cart buttons and old gold */
         button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#close-cart-modal):not(#clear-cart-btn):not(#clear-screen-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(.remove-item-btn):not(#preset-btn):not(.preset-item-btn):not(.preset-del-btn):not(.preset-edit-btn) {
-            background-color: #4CAF50;
+            background-color: var(--green);
             color: white;
             cursor: pointer;
-            font-weight: 600;
-            box-shadow: 0 3px 8px rgba(76, 175, 80, 0.3);
+            font-weight: 700;
+            box-shadow: 0 2px 8px rgba(30,122,62,0.22);
             margin: 4px 0;
             width: auto;
             padding: 10px 16px;
+            border-radius: var(--radius-sm);
+            font-family: 'Inter', sans-serif;
         }
         button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(#preset-btn):active {
             transform: translateY(1px);
@@ -674,14 +737,14 @@
         }
         .cart-item-price {
             font-weight: 700;
-            color: #4CAF50;
+            color: var(--green);
             font-size: 1.1em;
             flex-shrink: 0;
             text-align: right;
             min-width: 90px;
         }
         .remove-item-btn {
-            background: #f44336;
+            background: var(--red);
             color: white;
             border: none;
             border-radius: 50%;
@@ -689,21 +752,19 @@
             height: 28px;
             padding: 0;
             font-size: 20px;
-            /* Larger 'x' */
             font-weight: bold;
             cursor: pointer;
             margin-left: 10px;
             flex-shrink: 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15);
             transition: all 0.1s;
-            /* FIXED: Flexbox centering */
             display: flex;
             align-items: center;
             justify-content: center;
-            line-height: 1; /* Reset line-height */
+            line-height: 1;
         }
         .remove-item-btn:hover {
-            background: #d32f2f;
+            background: #a93226;
         }
         #cart-total-summary {
             padding-top: 15px;
@@ -740,19 +801,18 @@
             flex: 1;
         }
 
-        /* --- OLD GOLD BUTTON & MODAL --- */
         #add-old-gold-btn {
             position: fixed;
             bottom: 20px;
             right: 20px;
-            width: 60px;
-            height: 60px;
+            width: 56px;
+            height: 56px;
             border-radius: 50%;
-            background-color: #4CAF50;
+            background-color: var(--gold);
             color: white;
-            font-size: 30px;
+            font-size: 28px;
             border: none;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 16px rgba(184,146,46,0.45);
             z-index: 999;
             display: flex;
             align-items: center;
@@ -905,8 +965,8 @@
             flex: 1;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
-            padding: 20px 15px;
-            background: #f5f5f5;
+            padding: 20px 16px;
+            background: var(--bg);
             width: 100%;
             max-width: 480px;
             margin: 0 auto;
@@ -919,7 +979,7 @@
             flex: 1;
             display: flex;
             flex-direction: column;
-            background: #f5f5f5;
+            background: var(--bg);
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
             width: 100%;
@@ -929,7 +989,7 @@
             min-height: 0;
         }
         #ledger-cash-banner {
-            background: linear-gradient(135deg, #1a1a1a 0%, #2e7d32 100%);
+            background: linear-gradient(135deg, #1C1C1E 0%, #1E7A3E 100%);
             color: white;
             padding: 22px 20px 18px;
             text-align: center;
@@ -1003,7 +1063,7 @@
             letter-spacing: 0.03em;
         }
         .ledger-tab.active {
-            background: #1565C0 !important;
+            background: var(--charcoal) !important;
             color: white !important;
         }
         .ledger-tab-content { display: none; padding: 10px 14px 16px; }
@@ -1013,11 +1073,11 @@
             display: flex;
             align-items: flex-start;
             gap: 10px;
-            background: white;
-            border-radius: 12px;
+            background: var(--surface);
+            border-radius: 14px;
             padding: 12px 13px;
             margin-bottom: 8px;
-            box-shadow: 0 1px 5px rgba(0,0,0,0.07);
+            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
         }
         .ledger-entry-icon {
             width: 36px; height: 36px; border-radius: 50%;
@@ -1036,8 +1096,8 @@
             font-size: 16px; font-weight: 800;
             flex-shrink: 0; text-align: right; margin-top: 2px;
         }
-        .ledger-entry-amount.positive { color: #2e7d32; }
-        .ledger-entry-amount.negative { color: #c62828; }
+        .ledger-entry-amount.positive { color: var(--green); }
+        .ledger-entry-amount.negative { color: var(--red); }
         .ledger-entry-del {
             background: none; border: none; color: #ddd;
             font-size: 16px; cursor: pointer; padding: 0 0 0 4px;
@@ -1089,26 +1149,132 @@
             flex: 1;
             padding: 12px;
             border: none;
-            border-radius: 25px;
-            font-size: 16px;
-            font-weight: 600;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: 700;
             cursor: pointer;
             color: white;
-            box-shadow: 0 3px 8px;
+            box-shadow: 0 2px 8px;
             transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
         }
         #close-cart-modal {
             background-color: #555;
-            box-shadow: 0 3px 8px rgba(85, 85, 85, 0.3);
+            box-shadow: 0 2px 8px rgba(85, 85, 85, 0.3);
         }
         #clear-cart-btn {
-            background-color: #f44336;
-            box-shadow: 0 3px 8px rgba(244, 67, 54, 0.3);
+            background-color: var(--red);
+            box-shadow: 0 2px 8px rgba(192,57,43,0.3);
         }
         #cart-modal-buttons button:active {
             transform: translateY(1px);
             box-shadow: 0 1px 4px;
         }
+    </style>
+    <!-- Final UI polish overrides -->
+    <style>
+        /* Stepper buttons */
+        .stepper-btn {
+            background: var(--bg) !important;
+            color: var(--text) !important;
+            border: 1.5px solid var(--border) !important;
+        }
+        .stepper-btn:hover { background: var(--border) !important; }
+
+        /* Labels */
+        label {
+            color: var(--text2);
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.01em;
+        }
+
+        /* Table */
+        th { background: var(--bg); color: var(--text); font-weight: 700; }
+        td { color: var(--text); }
+
+        /* Active profile badge */
+        #active-profile-badge {
+            background: var(--gold-lt) !important;
+            color: var(--gold-dk) !important;
+            border: 1px solid rgba(184,146,46,0.25) !important;
+        }
+
+        /* Product code */
+        #product-code {
+            font-size: 15px;
+            color: var(--text2);
+            font-weight: 500;
+        }
+
+        /* Cart summary */
+        #cart-total-summary {
+            border-top: 2px solid var(--border);
+        }
+
+        /* Preset button */
+        #preset-btn {
+            background-color: var(--charcoal) !important;
+            border-radius: 10px !important;
+            font-size: 13px !important;
+            padding: 8px 14px !important;
+        }
+
+        /* Danger buttons in options menu */
+        #options-menu button.danger { color: var(--red); }
+        #options-menu button.danger:hover { background: var(--red-lt); }
+        #options-menu button.backup { color: var(--blue); }
+        #options-menu button.restore { color: #B8520A; }
+
+        /* HR */
+        hr { border-color: var(--border); }
+
+        /* Manage stamps panel */
+        #manage-stamps {
+            background: var(--bg);
+            border-color: var(--border);
+        }
+
+        /* Excel info box */
+        #excel-info {
+            background-color: var(--gold-lt);
+            border-color: rgba(184,146,46,0.35);
+            color: #5C3E10;
+        }
+
+        /* Section headings */
+        #update-rates h2, #excel-upload h2, #loose-calculator h2 {
+            color: var(--text);
+            font-weight: 800;
+            letter-spacing: -0.4px;
+        }
+
+        /* Ledger summary card */
+        .ledger-summary-card > div {
+            background: var(--surface);
+            border-radius: 14px;
+        }
+
+        /* Checkout button via cam-confirm and ledger-save */
+        #cam-confirm-btn, #ledger-save-btn {
+            border-radius: 14px !important;
+            font-family: 'Inter', sans-serif !important;
+            font-weight: 800 !important;
+        }
+
+        /* Payment panel modal */
+        #payment-modal > div {
+            border-radius: 22px 22px 0 0 !important;
+        }
+
+        /* Lose calculator Final Price label */
+        #loose-calculator p {
+            color: var(--text2);
+            font-weight: 600;
+        }
+
+        /* Bulk check area */
+        #bulk-check h2 { color: var(--text); font-weight: 800; }
     </style>
 </head>
 <body>
@@ -1168,13 +1334,15 @@
     </div>
 
     <div id="data-source-bar" style="
-        background:#222;
-        color: rgba(255,255,255,0.75);
-        font-size: 11px;
+        background: var(--charcoal);
+        color: rgba(255,255,255,0.55);
+        font-size: 10px;
         font-weight: 600;
         text-align: center;
-        padding: 4px 8px;
+        padding: 3px 8px;
         white-space: nowrap;
+        letter-spacing: 0.04em;
+        font-family: 'Inter', sans-serif;
     ">
         <span id="data-source-badge">⏳ Loading</span>
     </div>
@@ -1185,7 +1353,7 @@
         <div style="display:flex; gap:8px; align-items:center;">
             <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus maxlength="50" style="flex:1; margin-bottom:0;">
             <button onclick="openCamera('barcode')" id="cam-btn-main" title="Scan with camera"
-                style="flex-shrink:0; width:46px; height:46px; border-radius:12px; background:#1565C0; color:white; border:none; font-size:22px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(21,101,192,0.3);">
+                style="flex-shrink:0; width:46px; height:46px; border-radius:12px; background:var(--blue); color:white; border:none; font-size:22px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(18,82,163,0.3);">
                 📷
             </button>
         </div>
@@ -5500,7 +5668,7 @@
             </div>
 
             <button onclick="confirmPayment()" id="pay-confirm-btn"
-                style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer; letter-spacing:0.02em;">
+                style="width:100%; padding:14px; background:var(--green); color:white; border:none; border-radius:14px; font-size:16px; font-weight:800; cursor:pointer; letter-spacing:0.02em; font-family:'Inter',sans-serif;">
                 ✓ Confirm &amp; Save Bill
             </button>
         </div>
@@ -5509,19 +5677,20 @@
     <style>
         .pay-mode-btn {
             padding: 14px 10px;
-            border: 2px solid #e0e0e0;
-            background: white;
-            border-radius: 12px;
+            border: 1.5px solid var(--border);
+            background: var(--surface);
+            border-radius: var(--radius);
             font-size: 15px;
             font-weight: 600;
-            color: #333;
+            color: var(--text);
             cursor: pointer;
             transition: all 0.15s;
+            font-family: 'Inter', sans-serif;
         }
         .pay-mode-btn.selected {
-            border-color: #1565C0;
-            background: #e3f2fd;
-            color: #1565C0;
+            border-color: var(--gold);
+            background: var(--gold-lt);
+            color: var(--gold-dk);
         }
     </style>
 
