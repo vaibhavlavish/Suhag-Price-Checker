@@ -972,7 +972,7 @@
         .ledger-action-btn .btn-icon { font-size: 20px; }
         .ledger-action-btn.cash-in  { background: #e8f5e9 !important; color: #2e7d32 !important; }
         .ledger-action-btn.cash-out { background: #ffebee !important; color: #c62828 !important; }
-        .ledger-action-btn.expense  { background: #f3e5f5 !important; color: #6a1b9a !important; }
+        .ledger-action-btn.expense  { background: #fbe9e7 !important; color: #d84315 !important; }
 
         .ledger-tabs {
             display: flex;
@@ -982,20 +982,20 @@
         .ledger-tab {
             flex: 1;
             padding: 9px 4px;
-            border: none;
-            background: none;
+            border: none !important;
+            background: #eee !important;
+            color: #777 !important;
             font-size: 12px;
             font-weight: 700;
-            color: #999;
-            border-bottom: 2.5px solid transparent;
+            border-bottom: none !important;
             cursor: pointer;
             text-align: center;
             transition: all 0.15s;
             letter-spacing: 0.03em;
         }
         .ledger-tab.active {
-            color: #1565C0;
-            border-bottom-color: #1565C0;
+            background: #1565C0 !important;
+            color: white !important;
         }
         .ledger-tab-content { display: none; padding: 10px 14px 16px; }
         .ledger-tab-content.active { display: block; }
