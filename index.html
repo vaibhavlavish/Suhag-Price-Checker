@@ -1593,14 +1593,72 @@
 
         // Default rates structure - UPDATED PER REQUEST
         const defaultRates = {
-            gold: { '22K': 0, '18K': 0, '9K': 0 },        // Removed '999'
-            silver: { 'S92': 0, 'S8': 0 },      // Removed '999'
-            pc: { '900': 0 }                     // Removed '950' (and 999)
+            gold:   { '22K': 0, '18K': 0, '9K': 0 },
+            silver: { 'S92': 0, 'S7': 0 },
+            pc:     { '900': 0 }
         };
+
+        // ============================================================
+        // FACTORY DEFAULTS — baked into HTML so data wipe doesn't hurt
+        // Edit these when your real defaults change.
+        // ============================================================
+        const FACTORY_LOOSE_DEFAULTS = {
+            metal: 'Gold',
+            stamp: '18K',
+            making: 35,
+            makingType: '%'
+        };
+
+        const FACTORY_BASE_CALC_DEFAULTS = {
+            gold:   { baseRate: 0, percentages: { '22K': 92, '18K': 76, '9K': 40.5 } },
+            silver: { baseRate: 0, percentages: { 'S92': 100, 'S7': 77 } }
+        };
+
+        const FACTORY_PRESETS = [
+            { id: 'preset_veetla', name: 'Veetla', metal: 'Silver', stamp: 'S7', makingType: '%', makingValue: 50 }
+        ];
+
+        const FACTORY_PROFILES = [
+            { id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 },
+            {
+                id: 'prof_1', name: '1',
+                gold:   { wastage: 2,  perGram: 0,  percent: 2,  perPc: 50  },
+                silver: { wastage: 5,  perGram: 20, percent: 5,  perPc: 50  }
+            },
+            {
+                id: 'prof_2', name: '2',
+                gold:   { wastage: 3,  perGram: 0,  percent: 3,  perPc: 100 },
+                silver: { wastage: 7,  perGram: 30, percent: 7,  perPc: 70  }
+            },
+            {
+                id: 'prof_3', name: '3',
+                gold:   { wastage: 5,  perGram: 0,  percent: 5,  perPc: 150 },
+                silver: { wastage: 10, perGram: 40, percent: 10, perPc: 100 }
+            }
+        ];
+
+        function applyFactoryDefaults() {
+            // Only fill fields that are empty/missing — never overwrite real data
+            if (!looseDefaultsCloud || !looseDefaultsCloud.metal) {
+                looseDefaultsCloud = JSON.parse(JSON.stringify(FACTORY_LOOSE_DEFAULTS));
+            }
+            if (!baseCalcDefaults || Object.keys(baseCalcDefaults).length === 0) {
+                baseCalcDefaults = JSON.parse(JSON.stringify(FACTORY_BASE_CALC_DEFAULTS));
+            }
+            if (!loosePresets || loosePresets.length === 0) {
+                loosePresets = JSON.parse(JSON.stringify(FACTORY_PRESETS));
+            }
+            if (!makingProfiles || makingProfiles.length === 0) {
+                makingProfiles = JSON.parse(JSON.stringify(FACTORY_PROFILES));
+            } else if (!makingProfiles.find(p => p.id === 'default')) {
+                makingProfiles.unshift({ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 });
+            }
+        }
+        // ============================================================
         
         // Data variables now initialized to empty/default, filled by Firebase
         let rates = JSON.parse(JSON.stringify(defaultRates));
-        let taxRate = 0;
+        let taxRate = 3; // factory default — overwritten by Firebase on load
         let productData = {};
         
         let currentProduct = null;
@@ -1610,7 +1668,7 @@
         let currentMakingType = '';
         let currentMakingInput = 0;
         let makingOverride = null;
-        let looseDefaultsCloud = { metal: 'Gold', stamp: '18K', making: 35 }; 
+        let looseDefaultsCloud = null; // filled by applyDataSnapshot → applyFactoryDefaults
         let baseCalcDefaults = {}; 
         let currentBarcode = '';
         let showWeightOnMain = false; // State for toggling weight display
@@ -1648,14 +1706,7 @@
         }
 
         function updateProfileBadge() {
-            const badge = document.getElementById('active-profile-badge');
-            if (!badge) return;
-            const profile = getActiveProfile();
-            if (!profile || profile.id === 'default') {
-                badge.textContent = '';
-            } else {
-                badge.textContent = '⚙ ' + profile.name;
-            }
+            // implemented below in Making Profiles section
         }
 
         // === OFFLINE CACHE HELPERS ===
@@ -1753,15 +1804,14 @@
             rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
             taxRate = cloudData.taxRate || 0;
             productData = cloudData.products || {};
-            looseDefaultsCloud = cloudData.looseDefaults || { metal: 'Gold', stamp: '18K', making: 35 };
+            looseDefaultsCloud = cloudData.looseDefaults || null;
             baseCalcDefaults = cloudData.baseCalcDefaults || {};
             loosePresets = cloudData.presets || [];
             makingProfiles = cloudData.makingProfiles || [];
-            if (!makingProfiles.find(p => p.id === 'default')) {
-                makingProfiles.unshift({ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 });
-            }
             billHistory = cloudData.billHistory || [];
             activeProfileId = localStorage.getItem('activeProfileId') || 'default';
+            // Fill any missing fields with factory defaults
+            applyFactoryDefaults();
         }
 
         function refreshUI() {
@@ -1798,10 +1848,11 @@
                     // No cache and no Firebase — use hardcoded defaults silently
                     rates = JSON.parse(JSON.stringify(defaultRates));
                     taxRate = 0; productData = {};
-                    looseDefaultsCloud = { metal: 'Gold', stamp: '18K', making: 35 };
+                    looseDefaultsCloud = null;
                     baseCalcDefaults = {}; loosePresets = [];
-                    makingProfiles = [{ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 }];
+                    makingProfiles = [];
                     activeProfileId = 'default';
+                    applyFactoryDefaults();
                     setDataSourceBadge('cached', null);
                     refreshUI();
                 }
@@ -1834,10 +1885,11 @@
                     if (!cachedData) {
                         rates = JSON.parse(JSON.stringify(defaultRates));
                         taxRate = 0; productData = {};
-                        looseDefaultsCloud = { metal: 'Gold', stamp: '18K', making: 35 };
+                        looseDefaultsCloud = null;
                         baseCalcDefaults = {}; loosePresets = [];
-                        makingProfiles = [{ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 }];
+                        makingProfiles = [];
                         activeProfileId = localStorage.getItem('activeProfileId') || 'default';
+                        applyFactoryDefaults();
                     }
                     setDataSourceBadge('cached', cachedData ? cachedData._cachedAt : null);
                 }
@@ -2314,8 +2366,7 @@
             let metal = defaults.metal || 'Gold';
             let stamp = defaults.stamp || '18K';
             let making = defaults.making || 35; 
-            // Note: defaults from cloud only support %, keeping type as % for compatibility with existing data
-            let makingType = '%';
+            let makingType = defaults.makingType || '%';
             const metalKey = metal.toLowerCase();
             if (!rates[metalKey] || !rates[metalKey][stamp]) {
                 if (rates[metalKey]) {
@@ -2440,6 +2491,7 @@
             const newStamp = document.getElementById('modal-loose-stamp-select').value;
             const newMakingRaw = document.getElementById('modal-loose-making-percent').value;
             const newMaking = parseFloat(newMakingRaw);
+            const newMakingType = document.getElementById('modal-loose-making-type').value;
             if (!newStamp) {
                 showCustomAlert('Please select a Stamp/Purity.');
                 return;
@@ -2451,7 +2503,7 @@
             
             const metalKey = newMetal.toLowerCase();
             if (!rates[metalKey] || !rates[metalKey][newStamp]) {
-                showCustomAlert(`Can save. The rate for ${newMetal} ${newStamp} is  set in Update Rates.`);
+                showCustomAlert(`Cannot save. The rate for ${newMetal} ${newStamp} is not set in Update Rates.`);
                 return;
             }
 
@@ -2459,7 +2511,8 @@
                 looseDefaultsCloud = {
                     metal: newMetal,
                     stamp: newStamp,
-                    making: newMaking
+                    making: newMaking,
+                    makingType: newMakingType
                 };
                 saveAllDataToCloud(); 
                 
