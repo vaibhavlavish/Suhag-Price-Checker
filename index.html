@@ -71,15 +71,15 @@
             background-color: #333;
             color: white;
             border: none;
-            padding: 10px 16px;
+            padding: 10px 10px;
             margin: 0;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             white-space: nowrap;
             flex: 1;
-            max-width: 120px;
+            max-width: 100px;
         }
         #taskbar button:hover {
             background-color: #555;
@@ -895,6 +895,170 @@
             }
         }
 
+        /* --- Ledger Styles --- */
+        #ledger {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #f5f5f5;
+            overflow-y: auto;
+            min-height: calc(100vh - 60px);
+            width: 100%;
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 0;
+        }
+        #ledger-cash-banner {
+            background: linear-gradient(135deg, #1a1a1a 0%, #2e7d32 100%);
+            color: white;
+            padding: 22px 20px 18px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+        }
+        #ledger-cash-banner .banner-label {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            opacity: 0.75;
+            margin-bottom: 4px;
+        }
+        #ledger-cash-banner .banner-amount {
+            font-size: 42px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            line-height: 1;
+        }
+        #ledger-cash-banner .banner-sub {
+            font-size: 12px;
+            opacity: 0.65;
+            margin-top: 6px;
+        }
+        .ledger-action-row {
+            display: flex;
+            gap: 10px;
+            padding: 14px 14px 4px;
+        }
+        .ledger-action-btn {
+            flex: 1;
+            padding: 11px 6px;
+            border: none;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+            transition: all 0.15s;
+        }
+        .ledger-action-btn:active { transform: translateY(1px); }
+        .ledger-action-btn .btn-icon { font-size: 20px; }
+        .ledger-action-btn.cash-in  { background: #e8f5e9; color: #2e7d32; }
+        .ledger-action-btn.cash-out { background: #ffebee; color: #c62828; }
+        .ledger-action-btn.expense  { background: #fff3e0; color: #e65100; }
+
+        .ledger-tabs {
+            display: flex;
+            gap: 0;
+            padding: 12px 14px 0;
+        }
+        .ledger-tab {
+            flex: 1;
+            padding: 9px 4px;
+            border: none;
+            background: none;
+            font-size: 12px;
+            font-weight: 700;
+            color: #999;
+            border-bottom: 2.5px solid transparent;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.15s;
+            letter-spacing: 0.03em;
+        }
+        .ledger-tab.active {
+            color: #1565C0;
+            border-bottom-color: #1565C0;
+        }
+        .ledger-tab-content { display: none; padding: 10px 14px 80px; }
+        .ledger-tab-content.active { display: block; }
+
+        .ledger-entry {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            background: white;
+            border-radius: 12px;
+            padding: 12px 13px;
+            margin-bottom: 8px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.07);
+        }
+        .ledger-entry-icon {
+            width: 36px; height: 36px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; flex-shrink: 0; margin-top: 2px;
+        }
+        .ledger-entry-icon.sale   { background: #e3f2fd; }
+        .ledger-entry-icon.in     { background: #e8f5e9; }
+        .ledger-entry-icon.out    { background: #ffebee; }
+        .ledger-entry-icon.expense{ background: #fff3e0; }
+        .ledger-entry-body { flex: 1; min-width: 0; }
+        .ledger-entry-title { font-size: 14px; font-weight: 700; color: #222; }
+        .ledger-entry-meta  { font-size: 11px; color: #888; margin-top: 2px; }
+        .ledger-entry-note  { font-size: 12px; color: #555; margin-top: 3px; font-style: italic; }
+        .ledger-entry-amount {
+            font-size: 16px; font-weight: 800;
+            flex-shrink: 0; text-align: right; margin-top: 2px;
+        }
+        .ledger-entry-amount.positive { color: #2e7d32; }
+        .ledger-entry-amount.negative { color: #c62828; }
+        .ledger-entry-del {
+            background: none; border: none; color: #ddd;
+            font-size: 16px; cursor: pointer; padding: 0 0 0 4px;
+            margin: 0; width: auto; box-shadow: none;
+            flex-shrink: 0; align-self: center;
+        }
+        .ledger-entry-del:hover { color: #f44336; }
+
+        .ledger-day-header {
+            font-size: 11px; font-weight: 700; color: #aaa;
+            text-transform: uppercase; letter-spacing: 0.08em;
+            padding: 10px 2px 5px;
+        }
+        .ledger-summary-card {
+            display: flex; gap: 8px; margin-bottom: 12px;
+        }
+        .ledger-summary-card > div {
+            flex: 1; background: white; border-radius: 12px;
+            padding: 12px 10px; text-align: center;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.07);
+        }
+        .ledger-summary-card .sc-val { font-size: 17px; font-weight: 800; }
+        .ledger-summary-card .sc-lbl { font-size: 10px; color: #888; margin-top: 3px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+        .ledger-empty { text-align: center; color: #bbb; font-size: 14px; padding: 30px 0; }
+
+        /* Ledger entry modal */
+        #ledger-entry-modal {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55); z-index: 1100;
+            align-items: flex-end; justify-content: center;
+        }
+        #ledger-entry-modal.show { display: flex; }
+        #ledger-entry-panel {
+            background: white; border-radius: 20px 20px 0 0;
+            width: 100%; max-width: 480px;
+            padding: 22px 20px 36px;
+            box-shadow: 0 -8px 32px rgba(0,0,0,0.15);
+            max-height: 85vh; overflow-y: auto;
+        }
+        /* --- End Ledger Styles --- */
+
         /* --- Cart Modal Button Row Styles --- */
         #cart-modal-buttons {
             display: flex;
@@ -932,6 +1096,7 @@
         <button onclick="showSection('main')" class="active">Main</button>
         <button onclick="showSection('loose-calculator')">Loose</button>
         
+        <button onclick="showSection('ledger')" id="ledger-nav-btn">Ledger</button>
         <button id="cart-btn-nav" class="taskbar-btn" onclick="openCart()" style="max-width: 60px;">
             🛒
             <span id="cart-counter-nav" class="badge" style="display: none;">0</span>
@@ -952,8 +1117,8 @@
             <button onclick="openProfileModal()">
                 <span class="menu-icon" style="background:#e3f2fd;">⚙️</span> Making Profiles
             </button>
-            <button onclick="showSection('bill-history')">
-                <span class="menu-icon" style="background:#f3e5f5;">🧾</span> Bill History
+            <button onclick="showSection('ledger'); closeOptions();">
+                <span class="menu-icon" style="background:#e8f5e9;">💰</span> Cash Ledger
             </button>
             <button onclick="showSection('bulk-check')">
                 <span class="menu-icon" style="background:#f3e5f5;">📋</span> Bulk Price Check
@@ -2087,8 +2252,8 @@
             document.getElementById('loose-calculator').style.display = 'none';
             document.getElementById('stock-view').style.display = 'none';
             document.getElementById('profiles-section').style.display = 'none';
-            document.getElementById('bill-history').style.display = 'none';
             document.getElementById('bulk-check').style.display = 'none';
+            document.getElementById('ledger').style.display = 'none';
 
             document.querySelectorAll('#taskbar button').forEach(btn => {
                 btn.classList.remove('active');
@@ -2113,8 +2278,10 @@
                 document.getElementById(section).style.display = section === 'stock-view' ? 'flex' : 'block';
             }
 
-            if (section === 'bill-history') {
-                renderBillHistory();
+            if (section === 'ledger') {
+                loadLedger();
+                renderLedger();
+                document.getElementById('ledger-nav-btn').classList.add('active');
             }
             if (section === 'bulk-check') {
                 document.getElementById('bulk-barcode').value = '';
@@ -4681,7 +4848,307 @@
             renderBulkList();
         }
 
-        // --- Expose functions to global scope for HTML onclick ---
+        // =============================================
+        // === LEDGER FUNCTIONS ========================
+        // =============================================
+
+        // ledgerEntries: array of {id, type, amount, note, timestamp, source}
+        // type: 'sale' | 'in' | 'out' | 'expense'
+        // source: 'checkout' | 'manual'
+
+        let ledgerEntries = [];
+        let _ledgerEntryType = 'in';
+        let _currentLedgerTab = 'all';
+
+        function loadLedger() {
+            try {
+                const saved = localStorage.getItem('suhagLedger');
+                if (saved) ledgerEntries = JSON.parse(saved);
+            } catch(e) { ledgerEntries = []; }
+        }
+
+        function saveLedger() {
+            try {
+                localStorage.setItem('suhagLedger', JSON.stringify(ledgerEntries));
+            } catch(e) {}
+        }
+
+        function ledgerCashTotal() {
+            return ledgerEntries.reduce((sum, e) => {
+                if (e.type === 'sale') {
+                    // For sales, only the cash portion affects physical cash balance
+                    return sum + (e.cashPortion !== undefined ? e.cashPortion : e.amount);
+                }
+                if (e.type === 'in')  return sum + (e.amount || 0);
+                if (e.type === 'out' || e.type === 'expense') return sum - (e.amount || 0);
+                return sum;
+            }, 0);
+        }
+
+        function renderLedger() {
+            const total = ledgerCashTotal();
+            document.getElementById('ledger-banner-amount').textContent = '₹' + Math.abs(total).toLocaleString('en-IN', {maximumFractionDigits:0}) + (total < 0 ? ' (deficit)' : '');
+            document.getElementById('ledger-banner-amount').style.color = total < 0 ? '#ef9a9a' : 'white';
+
+            // Summary cards
+            const totalSales    = ledgerEntries.filter(e => e.type === 'sale').reduce((s,e) => s + e.amount, 0);
+            const totalIn       = ledgerEntries.filter(e => e.type === 'in').reduce((s,e) => s + e.amount, 0);
+            const totalExpense  = ledgerEntries.filter(e => e.type === 'expense').reduce((s,e) => s + e.amount, 0);
+            const totalOut      = ledgerEntries.filter(e => e.type === 'out').reduce((s,e) => s + e.amount, 0);
+
+            document.getElementById('ledger-summary-cards').innerHTML = `
+                <div><div class="sc-val" style="color:#1565C0;">₹${_fmt(totalSales)}</div><div class="sc-lbl">Sales</div></div>
+                <div><div class="sc-val" style="color:#2e7d32;">₹${_fmt(totalIn)}</div><div class="sc-lbl">Cash In</div></div>
+                <div><div class="sc-val" style="color:#e65100;">₹${_fmt(totalExpense)}</div><div class="sc-lbl">Expenses</div></div>
+                <div><div class="sc-val" style="color:#c62828;">₹${_fmt(totalOut)}</div><div class="sc-lbl">Cash Out</div></div>
+            `;
+
+            _renderLedgerList('ledger-all-list',       ledgerEntries);
+            _renderLedgerList('ledger-sales-list',     ledgerEntries.filter(e => e.type === 'sale'));
+            _renderLedgerList('ledger-expenses-list',  ledgerEntries.filter(e => e.type === 'expense'));
+            _renderLedgerList('ledger-manual-list',    ledgerEntries.filter(e => e.source === 'manual'));
+        }
+
+        function _fmt(n) {
+            return (n||0).toLocaleString('en-IN', {maximumFractionDigits:0});
+        }
+
+        function _renderLedgerList(containerId, entries) {
+            const el = document.getElementById(containerId);
+            if (!el) return;
+            if (!entries || entries.length === 0) {
+                el.innerHTML = '<div class="ledger-empty">No entries yet.</div>';
+                return;
+            }
+            // Sort newest first
+            const sorted = [...entries].sort((a,b) => b.id - a.id);
+
+            // Group by date
+            const groups = {};
+            sorted.forEach(e => {
+                const d = new Date(e.timestamp);
+                const key = d.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+                if (!groups[key]) groups[key] = [];
+                groups[key].push(e);
+            });
+
+            let html = '';
+            Object.entries(groups).forEach(([date, items]) => {
+                // Day total
+                const dayNet = items.reduce((s,e) => {
+                    if (e.type === 'sale' || e.type === 'in') return s + e.amount;
+                    return s - e.amount;
+                }, 0);
+                html += `<div class="ledger-day-header">${date} <span style="float:right; color:${dayNet>=0?'#2e7d32':'#c62828'};">${dayNet>=0?'+':'-'}₹${_fmt(Math.abs(dayNet))}</span></div>`;
+                items.forEach(e => {
+                    const isPos = e.type === 'sale' || e.type === 'in';
+                    const icons = { sale:'🛒', in:'💵', out:'📤', expense:'🧾' };
+                    const iconClass = e.type === 'sale' ? 'sale' : e.type === 'in' ? 'in' : e.type === 'out' ? 'out' : 'expense';
+                    const labels = { sale:'Sale', in:'Cash Received', out:'Cash Out', expense:'Expense' };
+                    const time = new Date(e.timestamp).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'});
+                    html += `
+                    <div class="ledger-entry">
+                        <div class="ledger-entry-icon ${iconClass}">${icons[e.type]||'📝'}</div>
+                        <div class="ledger-entry-body">
+                            <div class="ledger-entry-title">${labels[e.type]||e.type}</div>
+                            <div class="ledger-entry-meta">${time}${e.source === 'checkout' ? ' · Auto from checkout' : ' · Manual'}</div>
+                            ${e.note ? `<div class="ledger-entry-note">${e.note}</div>` : ''}
+                        </div>
+                        <div class="ledger-entry-amount ${isPos ? 'positive' : 'negative'}">${isPos?'+':'-'}₹${_fmt(e.amount)}</div>
+                        <button class="ledger-entry-del" onclick="deleteLedgerEntry(${e.id})">✕</button>
+                    </div>`;
+                });
+            });
+            el.innerHTML = html;
+        }
+
+        function switchLedgerTab(tab) {
+            _currentLedgerTab = tab;
+            document.querySelectorAll('.ledger-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.ledger-tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById('ltab-' + tab).classList.add('active');
+            document.getElementById('lcontents-' + tab).classList.add('active');
+            if (tab === 'bills') {
+                _renderBillHistoryInLedger();
+            }
+        }
+
+        function _renderBillHistoryInLedger() {
+            const container = document.getElementById('ledger-bill-history-list');
+            if (!container) return;
+            if (!billHistory || billHistory.length === 0) {
+                container.innerHTML = '<div class="ledger-empty">No bills yet.</div>';
+                return;
+            }
+            const warningHtml = billHistory.length >= 100
+                ? `<div style="background:#fff3e0; border:1.5px solid #FF9800; border-radius:10px; padding:10px 14px; margin-bottom:12px; font-size:13px; color:#e65100; font-weight:600;">⚠️ ${billHistory.length} bills saved. Consider clearing old ones.</div>` : '';
+            container.innerHTML = warningHtml + billHistory.map((bill, idx) => {
+                const d = new Date(bill.timestamp);
+                const dateStr = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+                const timeStr = d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
+                const itemsHtml = bill.items.map(it =>
+                    `<div style="display:flex; justify-content:space-between; font-size:12px; padding:3px 0; border-bottom:1px dotted #eee;">
+                        <span style="color:#444;">${it.itemName}${it.barcode ? ' <span style="color:#aaa;">('+it.barcode+')</span>' : ''}</span>
+                        <span style="font-weight:600;">₹${it.finalPrice.toFixed(0)}</span>
+                    </div>`
+                ).join('');
+                return `
+                <div style="background:white; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 6px rgba(0,0,0,0.08); overflow:hidden;">
+                    <div onclick="toggleLedgerBillDetail(${idx})" style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; cursor:pointer; background:#f9f9f9;">
+                        <div>
+                            <div style="font-size:14px; font-weight:700; color:#222;">${dateStr} &nbsp;<span style="color:#888; font-weight:400; font-size:12px;">${timeStr}</span></div>
+                            <div style="font-size:12px; color:#888; margin-top:2px;">${bill.items.length} item${bill.items.length!==1?'s':''}${bill.payment ? ' · <span style="font-weight:600;color:#1565C0;">'+_payLabel(bill.payment)+'</span>' : ''}</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <div style="font-size:16px; font-weight:800; color:#1565C0;">₹${bill.netPayable.toFixed(0)}</div>
+                            ${bill.oldGoldTotal > 0 ? `<div style="font-size:11px;color:#f44336;">-₹${bill.oldGoldTotal.toFixed(0)} old gold</div>` : ''}
+                        </div>
+                    </div>
+                    <div id="lbill-detail-${idx}" style="display:none; padding:10px 14px 12px; border-top:1px solid #eee;">
+                        ${itemsHtml}
+                        <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:13px; font-weight:700; color:#333;"><span>Total</span><span>₹${bill.total.toFixed(0)}</span></div>
+                        ${bill.oldGoldTotal > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;color:#f44336;"><span>Less Old Gold</span><span>-₹${bill.oldGoldTotal.toFixed(0)}</span></div>` : ''}
+                        ${bill.discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;color:#6a1b9a;"><span>Discount</span><span>-₹${bill.discount.toFixed(0)}</span></div>` : ''}
+                        ${(bill.oldGoldTotal > 0 || bill.discount > 0) ? `<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;color:#1565C0;border-top:1px dashed #ccc;padding-top:6px;margin-top:4px;"><span>Net Payable</span><span>₹${bill.netPayable.toFixed(0)}</span></div>` : ''}
+                        ${bill.payment ? `<div style="margin-top:8px;padding:8px 10px;background:#e3f2fd;border-radius:8px;font-size:12px;color:#1565C0;font-weight:600;">💳 ${_payLabel(bill.payment)}</div>` : ''}
+                        <button onclick="deleteBill(${bill.id}); _renderBillHistoryInLedger();" style="margin-top:10px;background:#f44336;color:white;border:none;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;float:right;width:auto;box-shadow:none;">Delete Bill</button>
+                        <div style="clear:both;"></div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function toggleLedgerBillDetail(idx) {
+            const el = document.getElementById('lbill-detail-' + idx);
+            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+        window.toggleLedgerBillDetail = toggleLedgerBillDetail;
+        window._renderBillHistoryInLedger = _renderBillHistoryInLedger;
+
+        function openLedgerEntryModal(type) {
+            setLedgerEntryType(type || 'in');
+            document.getElementById('ledger-entry-amount').value = '';
+            document.getElementById('ledger-entry-note').value = '';
+            document.getElementById('ledger-entry-modal').classList.add('show');
+            setTimeout(() => document.getElementById('ledger-entry-amount').focus(), 80);
+        }
+
+        function closeLedgerEntryModal() {
+            document.getElementById('ledger-entry-modal').classList.remove('show');
+        }
+
+        function setLedgerEntryType(type) {
+            _ledgerEntryType = type;
+            const colors = { in: '#2e7d32', expense: '#e65100', out: '#c62828' };
+            const labels = { in: '💵 Add Cash In Entry', expense: '🧾 Add Expense', out: '📤 Add Cash Out Entry' };
+            ['in','expense','out'].forEach(t => {
+                const btn = document.getElementById('ltype-' + t);
+                if (!btn) return;
+                btn.style.border = t === type ? `2.5px solid ${colors[t]}` : '2px solid #e0e0e0';
+                btn.style.background = t === type ? (t === 'in' ? '#e8f5e9' : t === 'expense' ? '#fff3e0' : '#ffebee') : 'white';
+            });
+            const saveBtn = document.getElementById('ledger-save-btn');
+            saveBtn.style.background = type === 'in' ? '#4CAF50' : type === 'expense' ? '#FF9800' : '#f44336';
+            document.getElementById('ledger-modal-title').textContent = labels[type] || 'Add Entry';
+        }
+
+        function saveLedgerEntry() {
+            const amt = parseFloat(document.getElementById('ledger-entry-amount').value);
+            if (!amt || amt <= 0) { showCustomAlert('Please enter a valid amount.'); return; }
+            const note = document.getElementById('ledger-entry-note').value.trim();
+            ledgerEntries.push({
+                id: Date.now(),
+                type: _ledgerEntryType,
+                amount: amt,
+                note,
+                timestamp: new Date().toISOString(),
+                source: 'manual'
+            });
+            saveLedger();
+            renderLedger();
+            closeLedgerEntryModal();
+            showCustomAlert('Entry saved!');
+        }
+
+        function deleteLedgerEntry(id) {
+            ledgerEntries = ledgerEntries.filter(e => e.id !== id);
+            saveLedger();
+            renderLedger();
+        }
+
+        // Hook into checkout to auto-record cash sales in ledger
+        // This runs after the original confirmPayment is exposed on window
+        function _hookLedgerIntoCheckout() {
+            const orig = window.confirmPayment;
+            window.confirmPayment = function() {
+                // Capture values BEFORE original clears the cart
+                const mode = window._selectedPayMode;
+                if (!mode) { orig && orig(); return; }
+
+                let total = 0; cart.forEach(i => total += i.finalPrice);
+                let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
+                const net = Math.round(total - oldGoldTotal - cartAdjustment);
+
+                // Build payment note for ledger
+                let saleNote = '';
+                let cashAmount = 0;
+                if (mode === 'cash') {
+                    cashAmount = net;
+                    saleNote = 'Cash sale';
+                } else if (mode === 'upi') {
+                    cashAmount = 0; // UPI doesn't add to physical cash
+                    saleNote = 'UPI sale';
+                } else if (mode === 'card') {
+                    cashAmount = 0;
+                    saleNote = 'Card sale';
+                } else if (mode === 'partial') {
+                    cashAmount = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
+                    const upi  = parseFloat(document.getElementById('pay-upi-amt').value) || 0;
+                    const card = parseFloat(document.getElementById('pay-card-amt').value) || 0;
+                    const parts = [];
+                    if (cashAmount > 0) parts.push(`Cash ₹${cashAmount.toFixed(0)}`);
+                    if (upi  > 0) parts.push(`UPI ₹${upi.toFixed(0)}`);
+                    if (card > 0) parts.push(`Card ₹${card.toFixed(0)}`);
+                    saleNote = 'Split — ' + parts.join(' + ');
+                }
+
+                // Call original checkout (clears cart, saves bill, shows alert)
+                orig && orig();
+
+                // Record sale in ledger (all payment types; cash portion affects balance)
+                if (net > 0) {
+                    const entry = {
+                        id: Date.now() + Math.floor(Math.random()*1000),
+                        type: 'sale',
+                        amount: net,
+                        cashPortion: cashAmount, // how much of net was physical cash
+                        note: saleNote,
+                        timestamp: new Date().toISOString(),
+                        source: 'checkout'
+                    };
+                    ledgerEntries.push(entry);
+                    saveLedger();
+                    renderLedger();
+                }
+            };
+        }
+
+        // Expose ledger functions
+        window.openLedgerEntryModal  = openLedgerEntryModal;
+        window.closeLedgerEntryModal = closeLedgerEntryModal;
+        window.setLedgerEntryType    = setLedgerEntryType;
+        window.saveLedgerEntry       = saveLedgerEntry;
+        window.deleteLedgerEntry     = deleteLedgerEntry;
+        window.switchLedgerTab       = switchLedgerTab;
+        window.renderLedger          = renderLedger;
+
+        // Load ledger on init (will be called after DOMContentLoaded)
+        document.addEventListener('DOMContentLoaded', function() {
+            loadLedger();
+            renderLedger();
+        });
+
+        // === END LEDGER FUNCTIONS ===
 
         window.showSection = showSection;
         window.toggleOptions = toggleOptions;
@@ -4766,25 +5233,119 @@
         window.bulkViewOnMain = bulkViewOnMain;
         window.bulkAddToCart = bulkAddToCart;
 
+        // Hook ledger into checkout (must run after ALL window.* assignments above)
+        _hookLedgerIntoCheckout();
+
     </script>
 
-    <!-- Bill History Section -->
-    <div id="bill-history" style="display:none;">
-        <h2>🧾 Bill History</h2>
-        <p style="font-size:13px; text-align:center; color:#888; margin-top:-10px;">Past checkouts saved on this device</p>
-        <div id="bill-history-list"></div>
-        <hr>
-        <button onclick="clearBillHistory()" class="danger" style="margin-bottom:8px;">🗑 Clear All History</button>
-        <button onclick="showSection('main')">← Back to Main</button>
+    <!-- Ledger Section -->
+    <div id="ledger" style="display:none;">
+        <!-- Cash Banner -->
+        <div id="ledger-cash-banner">
+            <div class="banner-label">Cash in Shop</div>
+            <div class="banner-amount" id="ledger-banner-amount">₹0</div>
+            <div class="banner-sub" id="ledger-banner-sub">Opening balance + receipts − expenses</div>
+        </div>
+
+        <!-- Quick Action Buttons -->
+        <div class="ledger-action-row">
+            <button class="ledger-action-btn cash-in"  onclick="openLedgerEntryModal('in')">
+                <span class="btn-icon">💵</span> Cash In
+            </button>
+            <button class="ledger-action-btn expense"  onclick="openLedgerEntryModal('expense')">
+                <span class="btn-icon">🧾</span> Expense
+            </button>
+            <button class="ledger-action-btn cash-out" onclick="openLedgerEntryModal('out')">
+                <span class="btn-icon">📤</span> Cash Out
+            </button>
+        </div>
+
+        <!-- Tabs -->
+        <div class="ledger-tabs">
+            <button class="ledger-tab active" onclick="switchLedgerTab('all')"       id="ltab-all">All Entries</button>
+            <button class="ledger-tab"        onclick="switchLedgerTab('sales')"     id="ltab-sales">Sales</button>
+            <button class="ledger-tab"        onclick="switchLedgerTab('expenses')"  id="ltab-expenses">Expenses</button>
+            <button class="ledger-tab"        onclick="switchLedgerTab('manual')"    id="ltab-manual">Manual</button>
+            <button class="ledger-tab"        onclick="switchLedgerTab('bills')"     id="ltab-bills">Bills</button>
+        </div>
+
+        <!-- Tab: All Entries -->
+        <div id="lcontents-all" class="ledger-tab-content active">
+            <div class="ledger-summary-card" id="ledger-summary-cards"></div>
+            <div id="ledger-all-list"></div>
+            <button onclick="if(confirm('Clear entire ledger? Cannot undo.')) { ledgerEntries=[]; saveLedger(); renderLedger(); }"
+                style="background:#f44336; color:white; border:none; border-radius:10px; padding:10px 18px; font-size:13px; font-weight:700; cursor:pointer; margin-top:8px; width:100%; box-shadow:none;">
+                🗑 Clear All Ledger Entries
+            </button>
+        </div>
+
+        <!-- Tab: Sales -->
+        <div id="lcontents-sales" class="ledger-tab-content">
+            <div id="ledger-sales-list"></div>
+        </div>
+
+        <!-- Tab: Expenses -->
+        <div id="lcontents-expenses" class="ledger-tab-content">
+            <div id="ledger-expenses-list"></div>
+        </div>
+
+        <!-- Tab: Manual Entries -->
+        <div id="lcontents-manual" class="ledger-tab-content">
+            <div id="ledger-manual-list"></div>
+        </div>
+
+        <!-- Tab: Bill History (inside Ledger) -->
+        <div id="lcontents-bills" class="ledger-tab-content">
+            <div id="ledger-bill-history-list"></div>
+            <button onclick="clearBillHistory()" style="background:#f44336; color:white; border:none; border-radius:10px; padding:10px 18px; font-size:13px; font-weight:700; cursor:pointer; margin-top:8px; width:100%; box-shadow:none;">🗑 Clear All Bills</button>
+        </div>
+
+        <!-- Back button -->
+        <div style="padding: 0 14px;">
+            <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:10px; padding:10px 18px; font-size:14px; font-weight:700; cursor:pointer; width:100%; margin-bottom:20px;">← Back to Main</button>
+        </div>
+    </div>
+
+    <!-- Ledger Entry Modal -->
+    <div id="ledger-entry-modal">
+        <div id="ledger-entry-panel">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 id="ledger-modal-title" style="margin:0; font-size:18px; color:#1a1a1a;">Add Entry</h3>
+                <button onclick="closeLedgerEntryModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
+            </div>
+
+            <!-- Type selector (shown only if opening without preset type) -->
+            <div id="ledger-type-row" style="display:flex; gap:8px; margin-bottom:16px;">
+                <button onclick="setLedgerEntryType('in')"      id="ltype-in"      style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#2e7d32; cursor:pointer;">💵 Cash In</button>
+                <button onclick="setLedgerEntryType('expense')" id="ltype-expense" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#e65100; cursor:pointer;">🧾 Expense</button>
+                <button onclick="setLedgerEntryType('out')"     id="ltype-out"     style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#c62828; cursor:pointer;">📤 Cash Out</button>
+            </div>
+
+            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">AMOUNT (₹)</label>
+            <input type="number" id="ledger-entry-amount" placeholder="0" min="0" step="1"
+                   style="font-size:24px; font-weight:800; text-align:center; padding:12px; border:2px solid #e0e0e0; border-radius:10px; width:100%; margin-bottom:12px; box-sizing:border-box;">
+
+            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">DESCRIPTION / NOTE (optional)</label>
+            <input type="text" id="ledger-entry-note" placeholder="e.g. Purchased packaging, Received from owner…"
+                   style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:16px; box-sizing:border-box;">
+
+            <button onclick="saveLedgerEntry()" id="ledger-save-btn"
+                style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">
+                ✓ Save Entry
+            </button>
+        </div>
     </div>
 
     <!-- Bulk Price Check Section -->
     <div id="bulk-check" style="display:none;">
         <h2>📋 Bulk Price Check</h2>
         <p style="font-size:13px; text-align:center; color:#888; margin-top:-10px;">Scan barcodes to compare prices — uses active profile</p>
-        <input type="text" id="bulk-barcode" placeholder="Scan or type barcode, press Enter..." autocomplete="off" maxlength="50"
-               onkeydown="if(event.key==='Enter') bulkAddItem()"
-               style="font-size:16px;">
+        <div style="display:flex; gap:8px; align-items:center;">
+            <input type="text" id="bulk-barcode" placeholder="Scan or type barcode, press Enter..." autocomplete="off" maxlength="50"
+                   onkeydown="if(event.key==='Enter') bulkAddItem()"
+                   style="font-size:16px; flex:1; margin:0;">
+            <button onclick="openCamera('bulk')" style="background:#1565C0; color:white; border:none; border-radius:10px; padding:12px 14px; font-size:20px; cursor:pointer; flex-shrink:0; width:auto; margin:0; box-shadow:none;">📷</button>
+        </div>
         <div id="bulk-list" style="margin-top:12px;"></div>
         <div id="bulk-total" style="text-align:right; font-size:17px; font-weight:700; color:#1565C0; padding:10px 0; display:none;"></div>
         <hr>
