@@ -62,7 +62,7 @@
              --border:    #E2E0DB
         ============================================================ */
         :root {
-            --bg:       #F4F3F0;
+            --bg:       #F7F7F8;
             --surface:  #FFFFFF;
             --charcoal: #1C1C1E;
             --gold:     #B8922E;
@@ -223,7 +223,7 @@
             justify-content: center;
             align-items: center;
             padding: 20px 16px;
-            background-color: var(--bg);
+            background-color: #FFFFFF;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
             width: 100%;
@@ -252,19 +252,19 @@
             width: 100%;
             max-width: 100%;
             text-align: center;
-            border: 1.5px solid var(--border);
+            border: 1.5px solid #D8D8DC;
             border-radius: var(--radius);
             margin-bottom: 16px;
-            background: var(--surface);
-            box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+            background: #F7F7F8;
+            box-shadow: none;
             font-family: 'Inter', sans-serif;
             font-weight: 500;
             color: var(--text);
         }
         #barcode:focus, #loose-weight:focus {
-            border-color: var(--gold);
+            border-color: var(--blue);
             outline: none;
-            box-shadow: 0 0 0 3px rgba(184,146,46,0.18);
+            box-shadow: 0 0 0 3px rgba(18,82,163,0.15);
         }
         #product-code {
             font-size: 16px;
@@ -283,14 +283,15 @@
             transform: scale(0.99);
         }
         #price-display {
-            font-size: 52px;
-            font-weight: 800;
-            color: var(--green);
-            margin: 4px 0;
+            font-size: 56px;
+            font-weight: 900;
+            color: #1B6B37;
+            margin: 8px 0 4px;
             opacity: 0;
             transition: opacity 0.35s ease;
-            letter-spacing: -1.5px;
+            letter-spacing: -2px;
             font-family: 'Inter', sans-serif;
+            line-height: 1;
         }
         #loose-price-display { /* Style for loose calculator display */
             font-size: 52px;
@@ -308,11 +309,11 @@
         /* --- NEW BUTTON LAYOUT STYLES --- */
         #main-buttons-container {
             width: 100%;
-            max-width: 420px; /* Match the modal width */
+            max-width: 420px;
             display: flex;
             flex-direction: column;
-            gap: 8px; /* Space between button rows */
-            margin-top: 16px;
+            gap: 10px;
+            margin-top: 20px;
         }
         .button-row {
             display: flex;
@@ -360,7 +361,7 @@
             background-color: var(--green);
         }
         #alter-btn, #loose-alter-btn {
-            background-color: #C07422;
+            background-color: #E67E22;
         }
         .clear-btn {
             background-color: var(--red);
@@ -582,9 +583,9 @@
             font-family: 'Inter', sans-serif;
         }
         input:focus, select:focus {
-            border-color: var(--gold);
+            border-color: var(--blue);
             outline: none;
-            box-shadow: 0 0 0 3px rgba(184,146,46,0.15);
+            box-shadow: 0 0 0 3px rgba(18,82,163,0.12);
         }
         /* Updated button selector to exclude new cart buttons and old gold */
         button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#close-cart-modal):not(#clear-cart-btn):not(#clear-screen-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(.remove-item-btn):not(#preset-btn):not(.preset-item-btn):not(.preset-del-btn):not(.preset-edit-btn) {
@@ -1202,9 +1203,10 @@
 
         /* Product code */
         #product-code {
-            font-size: 15px;
-            color: var(--text2);
+            font-size: 13px;
+            color: #888;
             font-weight: 500;
+            letter-spacing: 0.01em;
         }
 
         /* Cart summary */
@@ -2172,7 +2174,21 @@
             baseCalcDefaults = cloudData.baseCalcDefaults || {};
             loosePresets = cloudData.presets || [];
             makingProfiles = cloudData.makingProfiles || [];
-            billHistory = cloudData.billHistory || [];
+            // Merge incoming billHistory with in-memory so a live Firebase onValue
+            // callback never drops a bill that was just saved but not yet acknowledged.
+            const _incoming = cloudData.billHistory || [];
+            if (_incoming.length > 0 && billHistory.length > 0) {
+                const _cloudIds = new Set(_incoming.map(b => String(b.id)));
+                const _localOnly = billHistory.filter(b => !_cloudIds.has(String(b.id)));
+                billHistory = [..._localOnly, ..._incoming];
+                billHistory.sort((a, b) => b.id - a.id);
+            } else if (_incoming.length > 0) {
+                billHistory = _incoming;
+            }
+            // Re-render the bills tab if it is currently visible
+            if (typeof _renderBillHistoryInLedger === 'function') {
+                _renderBillHistoryInLedger();
+            }
             activeProfileId = localStorage.getItem('activeProfileId') || 'default';
             applyFactoryDefaults();
         }
