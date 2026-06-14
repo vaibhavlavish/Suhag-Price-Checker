@@ -68,23 +68,15 @@
 
         // ── SINGLE WRITE GATEWAY ──────────────────────────────────────
         // Every Firebase write in the entire app goes through dbSafeUpdate.
-        // Nothing calls dbUpdate / dbSet directly.
+        // Blocked when not running from the official GitHub Pages origin.
         window.dbSafeUpdate = function(obj) {
             if (!window._writeAllowed) {
-                const reason = window._writeBlockReason === 'schema'
-                    ? '[BLOCKED] Write rejected — app is outdated (schema mismatch). Open the latest version.'
-                    : '[BLOCKED] Write rejected — not running from the official GitHub Pages URL.';
-                console.warn(reason, obj);
-                return Promise.resolve();   // silently no-op; never throws
+                console.warn('[BLOCKED] Write rejected — not running from the official GitHub Pages URL.');
+                return Promise.resolve();
             }
             if (!window.dbUpdate || !window.firebaseDB) return Promise.resolve();
             if (!obj || Object.keys(obj).length === 0) return Promise.resolve();
-            // Extra sanity: never write undefined values accidentally
-            const safe = {};
-            for (const [k, v] of Object.entries(obj)) {
-                safe[k] = (v === undefined) ? null : v;
-            }
-            return window.dbUpdate(window.dbRef(window.firebaseDB, '/'), safe);
+            return window.dbUpdate(window.dbRef(window.firebaseDB, '/'), obj);
         };
 
         // ── SCHEMA VERSION CHECK ──────────────────────────────────────
@@ -2026,8 +2018,7 @@
                                 restoreUpdate['jewelryData/config/looseDefaults']    = dataToRestore.looseDefaults;
                                 restoreUpdate['jewelryData/config/baseCalcDefaults'] = dataToRestore.baseCalcDefaults;
                                 restoreUpdate['jewelryData/products']                = dataToRestore.products || {};
-                                restoreUpdate['suhagMeta/schemaVersion']             = window.SCHEMA_VERSION;
-                                // Bills
+                                                // Bills
                                 (dataToRestore.billHistory || []).forEach(b => {
                                     if (b.id) restoreUpdate[`jewelryData/billHistory/${b.id}`] = b;
                                 });
@@ -2647,8 +2638,6 @@
             update['jewelryData/config/looseDefaults']    = looseDefaultsCloud || null;
             update['jewelryData/config/baseCalcDefaults'] = baseCalcDefaults || {};
             update['jewelryData/products']                = productData || {};
-            // Stamp the schema version so old files can detect they're stale
-            update['suhagMeta/schemaVersion']             = window.SCHEMA_VERSION;
             window.dbSafeUpdate(update)
                 .then(() => { clearPendingSync(); setDataSourceBadge('live'); })
                 .catch(() => markPendingSync());
