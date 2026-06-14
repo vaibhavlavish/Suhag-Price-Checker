@@ -44,7 +44,7 @@
         // If the cloud reports a higher schemaVersion than this build,
         // this (old) HTML file silently stops ALL writes so it cannot
         // corrupt data written by a newer version.
-        window.SCHEMA_VERSION = 10;  // bump this when making breaking sync changes
+        window.SCHEMA_VERSION = 11;  // bumped to override any stale cloud value from old HTML
 
         // ── ORIGIN GUARD ──────────────────────────────────────────────
         // Writes are ONLY allowed when the app is served from the official
