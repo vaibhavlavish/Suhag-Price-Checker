@@ -36,7 +36,6 @@
         // Expose Firebase functions to the global scope for the main script
         window.firebaseDB = db;
         window.dbRef = ref;
-        window.dbSet = set;
         window.dbUpdate = update;
         window.dbOnValue = onValue;
 
@@ -1337,9 +1336,7 @@
 </head>
 <body>
 <!-- Schema version warning banner — hidden by default, shown if this HTML is outdated -->
-<div id="schema-warn-banner" style="display:none;position:fixed;top:0;left:0;right:0;background:#b71c1c;color:#fff;text-align:center;padding:10px 14px;font-size:14px;font-weight:700;z-index:99999;line-height:1.4;">
-  ⚠️ This file is outdated. Data writes are disabled to protect your records. <br>Please reload the latest version of the app.
-</div>
+
     <div id="taskbar">
         <button onclick="showSection('main')" class="active">Main</button>
         <button onclick="showSection('loose-calculator')">Loose</button>
@@ -1867,7 +1864,7 @@
         // ⚠️  SECURITY: Change this PIN before deploying.
         // Also set Firebase Realtime Database rules to require auth so only
         // authenticated sessions can read/write (Firebase Console → Realtime Database → Rules).
-        const ADMIN_PIN = '9898';
+        const ADMIN_PIN = '9898'; // change this to update the admin PIN
 
         // --- NEW: Custom Alert/Confirm Functions ---
         const customModal = document.getElementById('custom-modal');
@@ -1909,12 +1906,10 @@
 
         function checkPin() {
             const input = prompt("Enter Admin PIN to proceed:");
-            // Strict typed equality — coerce to string first so an object or
-            // null can never accidentally equal the PIN.
             if (typeof input === 'string' && input.trim() === String(ADMIN_PIN)) {
                 return true;
             }
-            if (input !== null) { // Show alert only if user didn't cancel
+            if (input !== null) {
                 showCustomAlert("Incorrect PIN. Access denied.");
             }
             return false;
@@ -2296,10 +2291,13 @@
         
 
         window.addEventListener('online', () => {
-            // When coming back online, re-run syncData to pull latest from Firebase.
-            // Individual records written while offline are queued by Firebase SDK automatically.
             console.log('[Sync] back online — re-syncing');
             setDataSourceBadge('live');
+            // If there were pending writes while offline, flush them now
+            if (hasPendingSync()) {
+                console.log('[Sync] flushing pending writes...');
+                saveConfig();
+            }
         });
 
         // Accepts either a flat snapshot (old single-key format) or the merged
