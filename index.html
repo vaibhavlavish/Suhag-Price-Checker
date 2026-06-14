@@ -351,7 +351,7 @@
             font-family: 'Inter', sans-serif;
             letter-spacing: 0.01em;
         }
-        
+
         /* Specific display logic fixes */
         #detail-btn, #add-to-cart-btn, #alter-btn, .clear-btn, #cart-btn {
             display: none;
@@ -398,7 +398,7 @@
             font-weight: bold;
         }
         /* --- END NEW BUTTON LAYOUT STYLES --- */
-        
+
         /* Reused Modal Styles */
         #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal, #old-gold-modal, #preset-modal, #payment-modal {
             display: none;
@@ -567,7 +567,7 @@
             box-shadow: 0 1px 4px;
         }
         /* Hidden sections - includes the new loose calculator */
-        #update-rates, #excel-upload { 
+        #update-rates, #excel-upload {
             display: none;
             max-width: 480px;
             margin: 0 auto;
@@ -601,7 +601,7 @@
             box-shadow: 0 0 0 3px rgba(18,82,163,0.12);
         }
         /* Updated button selector to exclude new cart buttons and old gold */
-        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#close-cart-modal):not(#clear-cart-btn):not(#clear-screen-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(.remove-item-btn):not(#preset-btn):not(.preset-item-btn):not(.preset-del-btn):not(.preset-edit-btn) {
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#close-cart-modal):not(#clear-cart-btn):not(#clear-screen-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(.remove-item-btn):not(#preset-btn):not(.preset-item-btn):not(.preset-del-btn):not(.preset-edit-btn):not(.stock-sort-btn) {
             background-color: var(--green);
             color: white;
             cursor: pointer;
@@ -613,7 +613,7 @@
             border-radius: var(--radius-sm);
             font-family: 'Inter', sans-serif;
         }
-        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(#preset-btn):active {
+        button:not(#taskbar button):not(#detail-btn):not(#alter-btn):not(#close-modal):not(#options-btn):not(#add-to-cart-btn):not(#cart-btn):not(.stepper-btn):not(#loose-add-to-cart-btn):not(#loose-alter-btn):not(#add-old-gold-btn):not(.remove-old-gold-btn):not(#preset-btn):not(.stock-sort-btn):active {
             transform: translateY(1px);
         }
         button:disabled {
@@ -694,7 +694,7 @@
             border-top: 1px solid #eee;
             margin: 20px 0;
         }
-        
+
         /* --- Badge for Taskbar Cart Button --- */
         #cart-btn-nav {
             position: relative;
@@ -796,7 +796,7 @@
             color: #999;
             padding: 20px;
         }
-        
+
         /* Custom Modal for Alerts/Confirms */
         #custom-modal-content {
             text-align: center;
@@ -870,7 +870,7 @@
             margin: 0;
             box-shadow: none;
         }
-        
+
         /* Auto Calc Styles */
         .base-calc-row {
             display: flex;
@@ -949,7 +949,15 @@
             justify-content: center;
             cursor: pointer;
         }
-        
+
+        /* Stock sort pills */
+        .stock-sort-btn {
+            background: #eee; color: #333; border: none; border-radius: 20px;
+            padding: 6px 14px; font-size: 12px; font-weight: 600;
+            cursor: pointer; white-space: nowrap;
+        }
+        .stock-sort-btn.active { background: #1a1a1a; color: white; }
+
         /* Responsive adjustments */
         @media (min-width: 480px) {
             #taskbar {
@@ -1241,12 +1249,6 @@
             padding: 8px 14px !important;
         }
 
-        /* Danger buttons in options menu */
-        #options-menu button.danger { color: var(--red); }
-        #options-menu button.danger:hover { background: var(--red-lt); }
-        #options-menu button.backup { color: var(--blue); }
-        #options-menu button.restore { color: #B8520A; }
-
         /* HR */
         hr { border-color: var(--border); }
 
@@ -1302,7 +1304,7 @@
     <div id="taskbar">
         <button onclick="showSection('main')" class="active">Main</button>
         <button onclick="showSection('loose-calculator')">Loose</button>
-        
+
         <button onclick="showSection('ledger')" id="ledger-nav-btn">Ledger</button>
         <button id="cart-btn-nav" class="taskbar-btn" onclick="openCart()" style="max-width: 60px;">
             🛒
@@ -1382,27 +1384,27 @@
             </button>
         </div>
         <div id="product-code" onclick="toggleProductInfo()"></div> <h1 id="price-display">0.00</h1>
-        
+
         <div id="main-buttons-container">
             <button onclick="clearAll()" class="clear-btn full-width-btn" id="clear-screen-btn">Clear Screen</button>
-            
+
             <div class="button-row">
-         
+
                 <button id="detail-btn" class="half-width-btn" onclick="showDetails()">View Details</button>
                 <button id="add-to-cart-btn" class="half-width-btn" onclick="addToCart()">Add to Cart</button>
             </div>
-            
+
             <button id="alter-btn" class="full-width-btn" onclick="openAlterDialog()">Alter</button>
-            
+
             <button id="cart-btn" class="full-width-btn" onclick="openCart()">
-  
+
                 🛒 View Cart
                 <span id="cart-counter" class="badge" style="display: none;">0</span>
             </button>
         </div>
         <div id="active-profile-badge" onclick="openProfileModal()" style="position:absolute; bottom:8px; left:10px; font-size:11px; color:#1565C0; font-weight:600; cursor:pointer; background:rgba(21,101,192,0.08); padding:3px 8px; border-radius:10px; display:none;"></div>
     </div>
-    
+
     <button id="add-old-gold-btn" onclick="openOldGoldModal()">+</button>
 
     <div id="loose-calculator">
@@ -1412,17 +1414,17 @@
         </div>
 
         <h2 style="display: none;">Loose Jewellery Price Calculator</h2>
-        
+
         <input type="hidden" id="loose-metal-select" value="Gold">
         <input type="hidden" id="loose-stamp-select" value="18K">
         <input type="hidden" id="loose-making-type" value="%">
         <input type="hidden" id="loose-making-percent" value="35">
-        
+
        <div id="loose-current-selection" style="display: none;">Selected: Gold 18K</div>
-     
+
         <label for="loose-weight">Weight (Grams):</label>
         <input type="number" id="loose-weight" placeholder="Enter weight in grams" step="0.01" oninput="calculateLoosePrice()">
-        
+
         <div id="loose-making-display" style="display: none;">
             Making: 35%
         </div>
@@ -1433,8 +1435,8 @@
         <h1 id="loose-price-display">0.00</h1>
 
         <div id="loose-details" style="display: none;"></div>
-        
-        <button id="loose-clear-btn" onclick="clearLooseScreen()" 
+
+        <button id="loose-clear-btn" onclick="clearLooseScreen()"
             style="margin-top: 20px; background-color: #f44336; color: white; padding: 10px 20px; border-radius: 25px; font-weight: 600; box-shadow: 0 3px 8px rgba(244, 67, 54, 0.3);">
             Clear Screen
         </button>
@@ -1454,7 +1456,7 @@
             <button id="close-modal" onclick="closeModal('detail-modal')">Close</button>
         </div>
     </div>
-    
+
     <div id="alter-modal">
         <div id="alter-content">
             <h3>Alter Making Charge</h3>
@@ -1478,16 +1480,16 @@
             </div>
         </div>
     </div>
-    
+
     <div id="loose-alter-modal">
-     
+
         <div id="loose-alter-content">
             <h3>Loose Calculation Settings</h3>
             <div id="loose-alter-body">
                 <label for="modal-loose-metal-select">Metal Type:</label>
                 <select id="modal-loose-metal-select" onchange="populateModalStamps(this.value)">
                     <option value="Gold">Gold</option>
-            
+
                     <option value="Silver">Silver</option>
                     <option value="PC">PC</option>
                 </select>
@@ -1496,25 +1498,25 @@
                 <select id="modal-loose-stamp-select"></select>
 
                 <label for="modal-loose-making-percent">Making Charge:</label>
-  
+
                 <div style="display:flex; gap:5px; margin-bottom:5px;">
                     <select id="modal-loose-making-type" style="flex:1; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
                         <option value="%">% (Percent)</option>
                         <option value="wastage">% (W)</option>
                         <option value="per_g">₹ Per Gram</option>
                         <option value="per_pc">₹ Fixed (Pc)</option>
-             
+
                     </select>
                 </div>
                 <div class="input-with-stepper">
                     <button class="stepper-btn" onclick="adjustMaking('modal-loose-making-percent', -0.25)">-</button>
                     <input type="number" id="modal-loose-making-percent" placeholder="Value" step="0.25">
-             
+
                     <button class="stepper-btn" onclick="adjustMaking('modal-loose-making-percent', 0.25)">+</button>
                 </div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 16px;">
-                <button id="save-loose-defaults-btn" onclick="saveLooseDefaultsToCloud()" 
+                <button id="save-loose-defaults-btn" onclick="saveLooseDefaultsToCloud()"
                     style="background-color: #2196F3; color: white; padding: 12px; border-radius: 25px; font-weight: 600; border: none; box-shadow: 0 3px 8px rgba(33, 150, 243, 0.3); width: 100%;">
                     Save Current As Default
                 </button>
@@ -1533,7 +1535,7 @@
         <div id="preset-content">
             <h3>Manage Presets</h3>
             <p style="font-size:12px; text-align:center; color:#666; margin-top:-10px;">(Admin PIN Required to Add/Edit/Delete)</p>
-            
+
             <div style="background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #eee;">
                 <h4 id="preset-form-title" style="margin: 0 0 8px 0; font-size: 14px;">Add New Preset:</h4>
                 <input type="text" id="new-preset-name" placeholder="Preset Name (e.g. Bangles)" style="margin-top:0;">
@@ -1556,10 +1558,10 @@
                 <input type="number" id="preset-modal-making-value" placeholder="e.g. 35" step="0.25" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%; box-sizing:border-box;">
                 <button id="preset-save-btn" onclick="addNewPreset()" style="background-color: #4CAF50; width: 100%; margin-top: 5px;">Save Preset</button>
             </div>
-            
+
             <h4 style="margin: 15px 0 5px 0; font-size: 14px;">Load Preset:</h4>
             <div id="preset-list"></div>
-            
+
             <button onclick="closeModal('preset-modal')" style="background-color: #555; margin-top: 15px;">Close</button>
         </div>
     </div>
@@ -1573,11 +1575,11 @@
                  <input type="number" id="old-gold-value" placeholder="Value (₹)" style="flex: 1;">
             </div>
             <button onclick="addOldGoldItem()" style="background-color: #4CAF50; margin-top: 10px;">Add Item</button>
-            
+
             <div style="margin-top: 20px; font-weight: bold; text-align: right; border-top: 1px solid #ccc; padding-top: 10px;">
                 Total Old Jewellery: <span id="old-gold-total-display" style="color: #f44336;">₹0.00</span>
             </div>
-            
+
             <button onclick="closeModal('old-gold-modal')" style="background-color: #555; margin-top: 10px;">Close</button>
         </div>
     </div>
@@ -1589,7 +1591,7 @@
                 </div>
             <div id="cart-total-summary">
                 </div>
- 
+
             <!-- Adjust Panel -->
             <div id="adjust-panel" style="display:none; background:#f3e5f5; border-radius:12px; padding:14px; margin-bottom:10px; border:1.5px solid #ce93d8;">
                 <div style="font-size:13px; font-weight:700; color:#6a1b9a; margin-bottom:10px;">⚙ Adjust Final Amount</div>
@@ -1709,27 +1711,27 @@
     <div id="update-rates">
         <h2>Update Stamp-Wise Rates</h2>
         <p style="font-size:14px; text-align:center; color:#666;"><em>Enter market rate per gram for purity</em></p>
-      
+
         <label for="metal-select">Metal Type:</label>
         <select id="metal-select">
             <option value="Gold">Gold</option>
             <option value="Silver">Silver</option>
             <option value="PC">PC</option>
         </select>
-      
+
         <label for="stamp-select">Stamp/Purity:</label>
-      
+
         <select id="stamp-select"></select>
-      
+
         <label for="price-per-gram">Price per Gram (₹):</label>
         <input type="number" id="price-per-gram" placeholder="e.g., 11185" step="0.25">
-      
+
         <button onclick="updateRate()">Update Rate</button>
-      
+
         <div id="rates-table"></div>
         <div id="manage-stamps">
             <h4>Manage Stamps for Selected Metal</h4>
-          
+
             <div class="manage-row">
                 <label for="new-stamp">Add New Stamp:</label>
                 <input type="text" id="new-stamp" placeholder="e.g., 20K">
@@ -1737,7 +1739,7 @@
             </div>
             <hr>
             <div class="manage-row">
-    
+
                 <label for="manage-stamp">Select Stamp to Remove/Rename:</label>
                 <select id="manage-stamp"></select>
                 <button id="remove-stamp-btn" onclick="removeStamp()" style="background-color: #f44336; color: white;">Remove</button>
@@ -1747,42 +1749,42 @@
                 <input type="text" id="rename-to" placeholder="New name">
                 <button onclick="renameStamp()">Rename</button>
             </div>
-       
+
         </div>
-      
+
         <hr>
-      
+
         <label for="tax-percent">Global Tax (%):</label>
         <input type="number" id="tax-percent" placeholder="e.g., 3" step="0.01">
         <button onclick="updateTax()">Update Tax</button>
-        
+
         <hr>
-        
+
         <h3 style="text-align: center; color: #333; font-size: 16px;">Auto-Calculate from Base Rate</h3>
         <p style="font-size:12px; text-align:center; color:#666; margin-top: -10px;"><em>Set Pure Rate (e.g. 24K) and % for stamps</em></p>
-        
+
         <label for="base-calc-metal">Metal:</label>
         <select id="base-calc-metal" onchange="renderBaseRateCalc()">
             <option value="Gold">Gold</option>
             <option value="Silver">Silver</option>
         </select>
-        
+
         <label for="base-pure-rate">Pure Metal Rate (e.g., 24K price):</label>
-        
+
         <input type="number" id="base-pure-rate" placeholder="e.g., 14300" step="0.01">
-        
+
         <div id="base-calc-container" style="margin-top: 15px;"></div>
-        
+
         <button onclick="applyBaseRates()" style="background-color: #2196F3; margin-top: 15px;">Apply & Update All Rates</button>
-        
+
         <hr>
-      
+
         <button onclick="showSection('main')">Back to Main</button>
     </div>
     <div id="stock-view" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:480px; margin:0 auto; min-height:0;">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
             <h2 style="margin:0; font-size:20px;">📦 Stock</h2>
-            <input type="text" id="stock-search" placeholder="Search..." oninput="renderStockView()" 
+            <input type="text" id="stock-search" placeholder="Search..." oninput="renderStockView()"
                 style="flex:1; padding:9px 13px; border:1px solid #ddd; border-radius:20px; font-size:14px; background:white; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
             <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:20px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap;">← Back</button>
         </div>
@@ -1794,15 +1796,15 @@
             <div id="stock-sort-menu" style="display:none; position:absolute; top:calc(100% + 6px); right:0; background:white; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.15); z-index:50; padding:10px; width:220px;">
                 <div style="font-size:11px; font-weight:700; color:#999; text-transform:uppercase; letter-spacing:0.06em; padding:4px 6px 8px;">Sort By</div>
                 <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                    <button id="sort-btn-default" onclick="setStockSort('default')" style="background:#1a1a1a; color:white; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">A–Z</button>
-                    <button id="sort-btn-price-asc" onclick="setStockSort('price-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Price ↑</button>
-                    <button id="sort-btn-price-desc" onclick="setStockSort('price-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Price ↓</button>
-                    <button id="sort-btn-weight-asc" onclick="setStockSort('weight-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Weight ↑</button>
-                    <button id="sort-btn-weight-desc" onclick="setStockSort('weight-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Weight ↓</button>
-                    <button id="sort-btn-making-asc" onclick="setStockSort('making-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Making ↑</button>
-                    <button id="sort-btn-making-desc" onclick="setStockSort('making-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Making ↓</button>
-                    <button id="sort-btn-size-asc" onclick="setStockSort('size-asc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Size ↑</button>
-                    <button id="sort-btn-size-desc" onclick="setStockSort('size-desc')" style="background:#eee; color:#333; border:none; border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Size ↓</button>
+                    <button id="sort-btn-default" class="stock-sort-btn active" onclick="setStockSort('default')">A–Z</button>
+                    <button id="sort-btn-price-asc" class="stock-sort-btn" onclick="setStockSort('price-asc')">Price ↑</button>
+                    <button id="sort-btn-price-desc" class="stock-sort-btn" onclick="setStockSort('price-desc')">Price ↓</button>
+                    <button id="sort-btn-weight-asc" class="stock-sort-btn" onclick="setStockSort('weight-asc')">Weight ↑</button>
+                    <button id="sort-btn-weight-desc" class="stock-sort-btn" onclick="setStockSort('weight-desc')">Weight ↓</button>
+                    <button id="sort-btn-making-asc" class="stock-sort-btn" onclick="setStockSort('making-asc')">Making ↑</button>
+                    <button id="sort-btn-making-desc" class="stock-sort-btn" onclick="setStockSort('making-desc')">Making ↓</button>
+                    <button id="sort-btn-size-asc" class="stock-sort-btn" onclick="setStockSort('size-asc')">Size ↑</button>
+                    <button id="sort-btn-size-desc" class="stock-sort-btn" onclick="setStockSort('size-desc')">Size ↓</button>
                 </div>
             </div>
         </div>
@@ -1826,7 +1828,7 @@
         // ⚠️  SECURITY: Change this PIN before deploying.
         // Also set Firebase Realtime Database rules to require auth so only
         // authenticated sessions can read/write (Firebase Console → Realtime Database → Rules).
-        const ADMIN_PIN = '9898'; 
+        const ADMIN_PIN = '9898';
 
         // --- NEW: Custom Alert/Confirm Functions ---
         const customModal = document.getElementById('custom-modal');
@@ -1885,7 +1887,7 @@
                 clearAllData();
             }
         }
-        
+
         // NEW: Backup Function
         function downloadBackup() {
             closeOptions();
@@ -1894,7 +1896,7 @@
                 taxRate: taxRate,
                 products: productData,
                 looseDefaults: looseDefaultsCloud,
-                baseCalcDefaults: baseCalcDefaults, 
+                baseCalcDefaults: baseCalcDefaults,
                 presets: loosePresets, // Include presets in backup
                 makingProfiles: makingProfiles,
                 activeProfileId: activeProfileId,
@@ -1923,7 +1925,7 @@
         function processRestoreFile() {
             const fileInput = document.getElementById('restore-file-input');
             const file = fileInput.files[0];
-            
+
             if (!file) return;
 
             const reader = new FileReader();
@@ -1936,8 +1938,8 @@
                     }
 
                     showCustomConfirm(
-                        "WARNING: This will overwrite ALL current cloud data (Rates, Products, Presets) with this backup. Are you sure?", 
-                        "Confirm Restore", 
+                        "WARNING: This will overwrite ALL current cloud data (Rates, Products, Presets) with this backup. Are you sure?",
+                        "Confirm Restore",
                         () => {
                             // Use provided values or fall back to defaults if missing in JSON
                             const dataToRestore = {
@@ -1956,8 +1958,36 @@
                             }
 
                             if (window.dbSet) {
-                                window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData'), dataToRestore)
+                                const db   = window.firebaseDB;
+                                const rRef = window.dbRef;
+                                const rSet = window.dbSet;
+                                // Write using the same split-key format as saveAllDataToCloud
+                                // so the tombstone logic never races against restored flat keys.
+                                Promise.all([
+                                    rSet(rRef(db, 'jewelryData/config'), {
+                                        rates:            dataToRestore.rates,
+                                        taxRate:          dataToRestore.taxRate,
+                                        looseDefaults:    dataToRestore.looseDefaults,
+                                        baseCalcDefaults: dataToRestore.baseCalcDefaults
+                                    }),
+                                    rSet(rRef(db, 'jewelryData/products'),    dataToRestore.products    || {}),
+                                    rSet(rRef(db, 'jewelryData/billHistory'), dataToRestore.billHistory || []),
+                                    rSet(rRef(db, 'jewelryData/profiles'), {
+                                        makingProfiles: dataToRestore.makingProfiles || [],
+                                        presets:        dataToRestore.presets        || []
+                                    }),
+                                    // Null out any leftover flat keys so readSplitKeys
+                                    // doesn't fall back to the old format next load.
+                                    rSet(rRef(db, 'jewelryData/rates'),            null),
+                                    rSet(rRef(db, 'jewelryData/taxRate'),          null),
+                                    rSet(rRef(db, 'jewelryData/looseDefaults'),    null),
+                                    rSet(rRef(db, 'jewelryData/baseCalcDefaults'), null),
+                                    rSet(rRef(db, 'jewelryData/makingProfiles'),   null),
+                                    rSet(rRef(db, 'jewelryData/presets'),          null)
+                                ])
                                 .then(() => {
+                                    // Mark tombstone done so saveAllDataToCloud skips null-writes
+                                    localStorage.setItem('suhagFlatKeysTombstoned', '1');
                                     showCustomAlert("Restore Successful! Reloading app...");
                                     setTimeout(() => location.reload(), 2000);
                                 })
@@ -2041,24 +2071,24 @@
             }
         }
         // ============================================================
-        
+
         // Data variables now initialized to empty/default, filled by Firebase
         let rates = JSON.parse(JSON.stringify(defaultRates));
         let taxRate = 3; // factory default — overwritten by Firebase on load
         let productData = {};
-        
+
         let currentProduct = null;
         let currentFinalPrice = 0;
         let currentTaxAmount = 0;
-        let currentMakingAmount = 0; 
+        let currentMakingAmount = 0;
         let currentMakingType = '';
         let currentMakingInput = 0;
         let makingOverride = null;
         let looseDefaultsCloud = null; // filled by applyDataSnapshot → applyFactoryDefaults
-        let baseCalcDefaults = {}; 
+        let baseCalcDefaults = {};
         let currentBarcode = '';
         let showWeightOnMain = false; // State for toggling weight display
-        
+
         // NEW: Global cart array
         let cart = [];
         // NEW: Global for current loose calculation
@@ -2367,9 +2397,9 @@
         }
 
         function saveAllDataToCloud() {
-            const dataToSave = { 
-                rates: rates, 
-                taxRate: taxRate, 
+            const dataToSave = {
+                rates: rates,
+                taxRate: taxRate,
                 products: productData,
                 looseDefaults: looseDefaultsCloud,
                 baseCalcDefaults: baseCalcDefaults,
@@ -2391,6 +2421,13 @@
             const db   = window.firebaseDB;
             const rRef = window.dbRef;
             const rSet = window.dbSet;
+
+            // For fresh devices that were never on the old flat-key format,
+            // mark the tombstone immediately so no null-writes are included below.
+            // (The flag is also set in .then() after a successful write — this
+            //  just ensures new installs skip the null-write array entirely.)
+            const _needsTombstone = !localStorage.getItem('suhagFlatKeysTombstoned');
+
             Promise.all([
                 rSet(rRef(db, 'jewelryData/config'),  {
                     rates, taxRate,
@@ -2403,15 +2440,17 @@
                     makingProfiles: makingProfiles || [],
                     presets: loosePresets || []
                 }),
-                // Tombstone old flat-key fields — only once per device after migration
-                ...(localStorage.getItem('suhagFlatKeysTombstoned') ? [] : [
+                // Tombstone old flat-key fields — only once per device after migration,
+                // and only if the old flat 'rates' key was present in the last cloud read.
+                // Fresh devices that never used the old format set the flag immediately.
+                ...(_needsTombstone ? [
                     rSet(rRef(db, 'jewelryData/rates'),            null),
                     rSet(rRef(db, 'jewelryData/taxRate'),          null),
                     rSet(rRef(db, 'jewelryData/looseDefaults'),    null),
                     rSet(rRef(db, 'jewelryData/baseCalcDefaults'), null),
                     rSet(rRef(db, 'jewelryData/makingProfiles'),   null),
                     rSet(rRef(db, 'jewelryData/presets'),          null)
-                ])
+                ] : [])
             ])
             .then(() => {
                 console.log("Data saved to Firebase (split keys).");
@@ -2503,8 +2542,8 @@
             } else if (section === 'loose-calculator') {
                 document.getElementById('loose-calculator').style.display = 'flex';
                 document.querySelector('#taskbar button[onclick="showSection(\'loose-calculator\')"]').classList.add('active');
-                setLooseDefaults(); 
-                calculateLoosePrice(); 
+                setLooseDefaults();
+                calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
                 document.getElementById(section).style.display = section === 'stock-view' ? 'flex' : 'block';
@@ -2540,7 +2579,7 @@
             const menu = document.getElementById('options-menu');
             menu.classList.toggle('show');
         }
-        
+
         function closeOptions() {
             document.getElementById('options-menu').classList.remove('show');
         }
@@ -2600,11 +2639,10 @@
             currentStockSort = sortKey;
             // Update button styles
             document.querySelectorAll('[id^="sort-btn-"]').forEach(btn => {
-                btn.style.background = '#eee';
-                btn.style.color = '#333';
+                btn.classList.remove('active');
             });
             const active = document.getElementById('sort-btn-' + sortKey);
-            if (active) { active.style.background = '#1a1a1a'; active.style.color = 'white'; }
+            if (active) active.classList.add('active');
             document.getElementById('stock-sort-menu').style.display = 'none';
             renderStockView();
         }
@@ -2750,7 +2788,7 @@
                 });
             }
         }
-        
+
         document.addEventListener('click', function(e) {
             const menu = document.getElementById('options-menu');
             const btn = document.getElementById('options-btn');
@@ -2781,20 +2819,20 @@
         function populateStamps(selectId, metal) {
             const select = document.getElementById(selectId);
             const lower = metal.toLowerCase();
-            select.innerHTML = ''; 
+            select.innerHTML = '';
             if (rates[lower]) {
                 for (let stamp in rates[lower]) {
                     let opt = document.createElement('option');
                     opt.value = stamp;
                     opt.textContent = stamp;
-                    
+
                     if (selectId.startsWith('modal-loose-stamp')) {
                         opt.dataset.rate = rates[lower][stamp];
                     }
                     select.add(opt);
                 }
             }
-            
+
             if (select.options.length === 0) {
                  select.innerHTML = '<option value="">-- No Stamps Defined --</option>';
             } else if (selectId === 'stamp-select') {
@@ -2802,13 +2840,13 @@
                 select.selectedIndex = 0;
             }
         }
-        
+
         // --- NEW: AUTO-CALCULATE BASE RATES FUNCTIONS (WITH DEFAULTS) ---
         function renderBaseRateCalc() {
             const metal = document.getElementById('base-calc-metal').value.toLowerCase();
             const container = document.getElementById('base-calc-container');
             const pureRateInput = document.getElementById('base-pure-rate');
-            
+
             container.innerHTML = '';
             if (!rates[metal]) {
                 container.innerHTML = '<p style="text-align:center; color:#999;">No stamps found for this metal.</p>';
@@ -2823,7 +2861,7 @@
             pureRateInput.value = savedBaseRate;
             for (let stamp in rates[metal]) {
                 const savedPct = savedPercentages[stamp] || '';
-                
+
                 const div = document.createElement('div');
                 div.className = 'base-calc-row';
                 div.innerHTML = `
@@ -2843,12 +2881,12 @@
                 showCustomAlert('Please enter a valid Pure Metal Rate.');
                 return;
             }
-            
+
             // Initialize defaults object for this metal if missing
             if (!baseCalcDefaults[metal]) {
                 baseCalcDefaults[metal] = { baseRate: 0, percentages: {} };
             }
-            
+
             // Save the base rate
             baseCalcDefaults[metal].baseRate = pureRate;
             let updatedCount = 0;
@@ -2863,7 +2901,7 @@
                         rates[metal][stamp] = parseFloat(newRate.toFixed(2)); // Round to 2 decimals
                         updatedCount++;
                     }
-                    
+
                     // Save Percentage Default
                     if (!baseCalcDefaults[metal].percentages) baseCalcDefaults[metal].percentages = {};
                     baseCalcDefaults[metal].percentages[stamp] = percentage;
@@ -2878,20 +2916,20 @@
             }
         }
         // ------------------------------------------------
-        
+
         // --- LOOSE CALCULATOR FUNCTIONS ---
 
-        function setLooseDefaults() { 
+        function setLooseDefaults() {
             // Hide the active preset display whenever reverting to defaults
             document.getElementById('loose-active-preset').style.display = 'none';
-            if (!looseDefaultsCloud) {
+            if (!looseDefaultsCloud?.metal) {
                 applyFactoryDefaults();
             }
-            const defaults = looseDefaultsCloud; 
-            
+            const defaults = looseDefaultsCloud;
+
             let metal = defaults.metal || 'Gold';
             let stamp = defaults.stamp || '18K';
-            let making = defaults.making || 35; 
+            let making = defaults.making || 35;
             let makingType = defaults.makingType || '%';
             const metalKey = metal.toLowerCase();
             if (!rates[metalKey] || !rates[metalKey][stamp]) {
@@ -2913,12 +2951,12 @@
                      }
                 }
             }
-            
+
             document.getElementById('loose-metal-select').value = metal;
-            document.getElementById('loose-stamp-select').value = stamp; 
+            document.getElementById('loose-stamp-select').value = stamp;
             document.getElementById('loose-making-percent').value = making;
             document.getElementById('loose-making-type').value = makingType;
-            
+
             // Update the display text
             document.getElementById('loose-current-selection').textContent = `Selected: ${metal} ${stamp}`;
         }
@@ -2935,10 +2973,10 @@
         function populateModalStamps(metal) {
             const select = document.getElementById('modal-loose-stamp-select');
             const currentStamp = document.getElementById('loose-stamp-select').value;
-            populateStamps('modal-loose-stamp-select', metal); 
-            
+            populateStamps('modal-loose-stamp-select', metal);
+
             select.value = currentStamp;
-            
+
             if(select.value !== currentStamp) {
                 select.selectedIndex = 0;
             }
@@ -2968,11 +3006,11 @@
             // Load making type into modal
             document.getElementById('modal-loose-making-type').value = makingType;
             populateModalStamps(metal);
-            
+
             document.getElementById('modal-loose-stamp-select').value = stamp;
-            
-            updateModalRateDisplay(); 
-            
+
+            updateModalRateDisplay();
+
             document.getElementById('modal-loose-stamp-select').onchange = updateModalRateDisplay;
 
             document.getElementById('loose-alter-modal').style.display = 'flex';
@@ -3002,7 +3040,7 @@
             document.getElementById('loose-stamp-select').value = newStamp;
             document.getElementById('loose-making-percent').value = newMaking;
             document.getElementById('loose-making-type').value = newMakingType;
-            
+
             // Update display text
             document.getElementById('loose-current-selection').textContent = `Selected: ${newMetal} ${newStamp}`;
             closeLooseAlter();
@@ -3026,7 +3064,7 @@
                 showCustomAlert('Please enter a valid Making Charge.');
                 return;
             }
-            
+
             const metalKey = newMetal.toLowerCase();
             if (!rates[metalKey] || !rates[metalKey][newStamp]) {
                 showCustomAlert(`Cannot save. The rate for ${newMetal} ${newStamp} is not set in Update Rates.`);
@@ -3040,12 +3078,12 @@
                     making: newMaking,
                     makingType: newMakingType
                 };
-                saveAllDataToCloud(); 
-                
+                saveAllDataToCloud();
+
                 document.getElementById('loose-metal-select').value = newMetal;
                 document.getElementById('loose-stamp-select').value = newStamp;
                 document.getElementById('loose-making-percent').value = newMaking;
-                
+
                 // Update display text
                 document.getElementById('loose-current-selection').textContent = `Selected: ${newMetal} ${newStamp}`;
 
@@ -3054,7 +3092,7 @@
                 calculateLoosePrice();
             });
         }
-        
+
         function calculateLoosePrice() {
             const weightInput = document.getElementById('loose-weight');
             const priceDisplay = document.getElementById('loose-price-display');
@@ -3065,7 +3103,7 @@
             // %, wastage, per_g, per_pc
             const makingValue = parseFloat(document.getElementById('loose-making-percent').value);
             // Reused ID for value
-            
+
             // Update the display text for making charge
             let makingDisplayStr = "";
             if(makingType === '%') makingDisplayStr = `${makingValue}%`;
@@ -3143,7 +3181,7 @@
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
             updateCartIcon();
             showCustomAlert(`${currentLooseItem.itemName} added to cart!`);
-            
+
             clearLooseScreen();
         }
 
@@ -3227,7 +3265,7 @@
                 showCustomAlert("Please enter a preset name.");
                 return;
             }
-            
+
             const metal = document.getElementById('preset-modal-metal').value;
             const stamp = document.getElementById('preset-modal-stamp').value;
             const makingType = document.getElementById('preset-modal-making-type').value;
@@ -3278,7 +3316,7 @@
                 document.getElementById('loose-stamp-select').value = preset.stamp;
                 document.getElementById('loose-making-type').value = preset.makingType;
                 document.getElementById('loose-making-percent').value = preset.makingValue;
-                
+
                 // Update display text
                 document.getElementById('loose-current-selection').textContent = `Selected: ${preset.metal} ${preset.stamp}`;
                 // --- UPDATE THE PRESET NAME UI ---
@@ -3295,14 +3333,14 @@
         function renderPresetList() {
             const list = document.getElementById('preset-list');
             list.innerHTML = '';
-            
+
             if (loosePresets.length === 0) {
                 list.innerHTML = '<p style="text-align:center; color:#999;">No presets saved.</p>';
             } else {
                 loosePresets.forEach(preset => {
                     const row = document.createElement('div');
                     row.className = 'preset-row';
-                    
+
                     let makingDisplay = '';
                     if(preset.makingType === '%') makingDisplay = `${preset.makingValue}%`;
                     else if(preset.makingType === 'wastage') makingDisplay = `${preset.makingValue}% Wastage`;
@@ -3322,7 +3360,7 @@
             }
         }
         // ------------------------------
-        
+
         // --- END LOOSE CALCULATION FUNCTIONS ---
 
         // --- PRODUCT PRICE CALCULATION AND ALTER FUNCTIONS ---
@@ -3342,7 +3380,7 @@
                  // Clear if no barcode
                  return;
             }
-            
+
             if (!productData[currentBarcode]) {
                 document.getElementById('product-code').textContent = `Barcode: ${currentBarcode} - Not found`;
                 document.getElementById('clear-screen-btn').style.display = 'block';
@@ -3354,7 +3392,7 @@
             let final = 0, making = 0, otherCharge = d.otherCharge || 0;
             currentTaxAmount = 0;
             const weight = d.netWeight;
-            
+
             // Initial update of product info display (Name/Barcode)
             updateMainDisplayInfo();
             if (d.mrp > 0) {
@@ -3371,7 +3409,7 @@
                 const rate = rates[mKey][stamp];
                 const metalVal = weight * rate;
                 const pureRate = getPureRate(mKey);
-                
+
                 if (makingOverride) {
                     if (makingOverride.type === '%') {
                         making = metalVal * (makingOverride.input / 100);
@@ -3440,7 +3478,7 @@
                         }
                     }
                 }
-                
+
                 let total = metalVal + making + otherCharge;
                 currentTaxAmount = total * (taxRate / 100);
                 final = total + currentTaxAmount;
@@ -3453,8 +3491,8 @@
             currentFinalPrice = final;
             document.getElementById('price-display').textContent = `${final.toFixed(2)}`;
             document.getElementById('price-display').classList.add('show');
-            document.getElementById('detail-btn').style.display = 'block'; 
-            document.getElementById('add-to-cart-btn').style.display = 'block'; 
+            document.getElementById('detail-btn').style.display = 'block';
+            document.getElementById('add-to-cart-btn').style.display = 'block';
             document.getElementById('clear-screen-btn').style.display = 'block';
         }
 
@@ -3494,17 +3532,17 @@
         function updateMaking() {
             const newInput = parseFloat(document.getElementById('new-making').value);
             const newType = document.getElementById('alter-making-type').value;
-            
+
             if (isNaN(newInput) || newInput < 0) {
                 showCustomAlert('Enter a valid positive number.');
                 return;
             }
-            makingOverride = { 
-                type: newType, 
-                input: newInput 
+            makingOverride = {
+                type: newType,
+                input: newInput
             };
-            runPriceCalculation(); 
-            
+            runPriceCalculation();
+
             closeModal('alter-modal');
         }
 
@@ -3521,11 +3559,11 @@
                 currentInput = makingOverride.input;
                 currentType = makingOverride.type;
             }
-            
+
             let displayType = currentType === 'wastage' ? '% (W)' : currentType;
             const html = `<p><strong>Current:</strong> ${currentInput.toFixed(2)} ${displayType}</p>`;
             document.getElementById('alter-body').innerHTML = html;
-            
+
             document.getElementById('alter-making-type').value = currentType;
             document.getElementById('new-making').placeholder = `Enter new value`;
             document.getElementById('new-making').value = currentInput;
@@ -3542,9 +3580,9 @@
             const metalVal = d.netWeight * rate;
             const otherCharge = d.otherCharge || 0;
             const subtotal = metalVal + currentMakingAmount + otherCharge;
-            
+
             let makingInput = currentMakingInput;
-            let activeMakingType = currentMakingType; 
+            let activeMakingType = currentMakingType;
             if (makingOverride) {
                 makingInput = makingOverride.input;
                 activeMakingType = makingOverride.type;
@@ -3643,7 +3681,7 @@
             }
 
             breakdownHtml += ``;
-            
+
             if (otherCharge > 0) {
                 breakdownHtml += `
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
@@ -3652,7 +3690,7 @@
                     </div>
                 `;
             }
-            
+
             breakdownHtml += `
                     <div style="display: flex; justify-content: space-between; margin-bottom: 8px; border-top: 1px dashed #ccc; padding-top: 10px;">
                         <span style="color: #333; font-weight: bold;">Subtotal:</span>
@@ -3668,7 +3706,7 @@
                     </div>
                 </div>
             `;
-            
+
             showCustomAlert(breakdownHtml, 'Complete Price Breakdown');
         }
 
@@ -3696,7 +3734,7 @@
                 const rate = rates[mKey] && rates[mKey][stamp] !== undefined ? rates[mKey][stamp] : 0;
                 let makingStr = '0';
                 let makingInput = currentMakingInput;
-                let activeMakingType = currentMakingType; 
+                let activeMakingType = currentMakingType;
 
                 if (makingOverride) {
                     makingInput = makingOverride.input;
@@ -3712,12 +3750,12 @@
                 } else if (activeMakingType === 'per pc') {
                     makingStr = `${makingInput.toFixed(2)} (per pc)`;
                 }
-                
-                // UPDATED: 'i' button now calls the detailed breakdown function 
+
+                // UPDATED: 'i' button now calls the detailed breakdown function
                 let infoButtonHtml = '';
                 if (currentMakingAmount > 0) {
                     infoButtonHtml = `
-                        <button onclick="showPriceBreakdown()" 
+                        <button onclick="showPriceBreakdown()"
                                 style="width: 22px; height: 22px; border-radius: 50%; border: none; background: #2196F3; color: white; font-size: 14px; font-weight: bold; font-style: normal; padding: 0; text-align: center; cursor: pointer; margin-right: 8px; vertical-align: middle; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
                             i
                         </button>
@@ -3727,7 +3765,7 @@
                 html += `
                     <p><strong>Metal:</strong> <span>${mKey.charAt(0).toUpperCase() + mKey.slice(1)}</span></p>
                     <p><strong>Stamp:</strong> <span>${stamp}</span></p>
-                    <p><strong>Making:</strong> 
+                    <p><strong>Making:</strong>
                         <span>
                             ${infoButtonHtml}
                             ${makingStr}
@@ -3746,9 +3784,9 @@
         function closeDetails() {
             document.getElementById('detail-modal').style.display = 'none';
         }
-        
+
         // --- CART FUNCTIONS ---
-        
+
         function updateCartIcon() {
             const count = cart.length;
             const counterNav = document.getElementById('cart-counter-nav');
@@ -3791,43 +3829,43 @@
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart)); // Save cart
             updateCartIcon();
             showCustomAlert(`${item.itemName} added to cart!`);
-            
-            clearAll(); 
+
+            clearAll();
         }
 
         function openCart() {
             // Add active class to make button green
             const btn = document.getElementById('cart-btn-nav');
             if(btn) btn.classList.add('active');
-            
+
             const modal = document.getElementById('cart-modal');
             const cartItemsDiv = document.getElementById('cart-items-container');
             const cartTotalSummaryDiv = document.getElementById('cart-total-summary');
             // --- REFACTORED CART LOGIC START ---
             let cartTotal = 0;
             let cartHtml = '';
-            
+
             if (cart.length === 0) {
                 cartItemsDiv.innerHTML = '<p class="empty-cart-message">Cart is empty.</p>';
             } else {
                 cart.forEach(item => {
                     cartTotal += item.finalPrice;
-                    
+
                     let details = '';
                     let clickAction = '';
-                    
+
                     // Loose Jewellery Logic
                     if (item.type === 'loose') {
                         details = `Weight: ${item.weight.toFixed(2)}g`;
-                        clickAction = ''; 
+                        clickAction = '';
                     } else if (item.type === 'repair') {
                         details = '';
                         clickAction = '';
                     } else {
-                        // Standard Logic
-                        const overrideData = JSON.stringify(item.makingOverride);
+                        // Standard Logic — use data-* attrs to avoid quote injection
+                        // from barcodes that might contain apostrophes.
                         details = `Barcode: ${item.barcode}`;
-                        clickAction = `onclick='viewItemFromCart("${item.barcode}", ${overrideData})'`;
+                        clickAction = `data-barcode="${item.barcode.replace(/"/g,'&quot;')}" data-override='${JSON.stringify(item.makingOverride).replace(/'/g,"&#39;")}'  onclick="viewItemFromCart(this.dataset.barcode, JSON.parse(this.dataset.override))"`;
                     }
 
                     cartHtml += `
@@ -3874,7 +3912,7 @@
                     <span>Net Payable:</span><span style="color:${cartAdjustment > 0 ? '#6a1b9a' : '#222'};">₹${netPayable.toFixed(2)}</span>
                 </div>
             `;
-            
+
             cartTotalSummaryDiv.innerHTML = summaryHtml;
             // --- REFACTORED CART LOGIC END ---
 
@@ -3914,29 +3952,29 @@
             });
         }
         // --- END CART FUNCTIONS ---
-        
+
         // --- OLD GOLD FUNCTIONS ---
         function openOldGoldModal() {
             renderOldGoldList();
             document.getElementById('old-gold-modal').style.display = 'flex';
         }
-        
+
         function addOldGoldItem() {
             const desc = document.getElementById('old-gold-desc').value.trim() || 'Old Jewellery';
             const val = parseFloat(document.getElementById('old-gold-value').value);
-            
+
             if(!val || val <= 0) {
                 showCustomAlert("Please enter a valid value.");
                 return;
             }
-            
+
             oldGoldItems.push({ desc: desc, value: val, id: Date.now() });
             localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
-            
+
             // Clear inputs
             document.getElementById('old-gold-desc').value = '';
             document.getElementById('old-gold-value').value = '';
-            
+
             renderOldGoldList();
             showCustomAlert("Item added successfully!");
         }
@@ -3951,7 +3989,7 @@
             const list = document.getElementById('old-gold-list');
             list.innerHTML = '';
             let total = 0;
-            
+
             if (oldGoldItems.length === 0) {
                 list.innerHTML = '<p style="text-align:center; color:#999;">No old jewellery added.</p>';
             } else {
@@ -3971,14 +4009,14 @@
         // --------------------------
 
         // --- UTILITY/SETUP FUNCTIONS ---
-        
+
         function clearAll() {
             document.getElementById('barcode').value = '';
             document.getElementById('product-code').textContent = '';
             document.getElementById('price-display').textContent = '0.00';
             document.getElementById('price-display').classList.remove('show');
             document.getElementById('detail-btn').style.display = 'none';
-            document.getElementById('add-to-cart-btn').style.display = 'none'; 
+            document.getElementById('add-to-cart-btn').style.display = 'none';
             document.getElementById('alter-btn').style.display = 'none';
             document.getElementById('clear-screen-btn').style.display = 'none';
             makingOverride = null;
@@ -4014,7 +4052,7 @@
                 return;
             }
             rates[metal][newStamp] = 0;
-            saveAllDataToCloudDebounced(); 
+            saveAllDataToCloudDebounced();
             document.getElementById('new-stamp').value = '';
             showCustomAlert(`Added ${newStamp} for ${metal}`);
         }
@@ -4028,7 +4066,7 @@
             }
             showCustomConfirm(`Remove ${stamp} for ${metal.toUpperCase()}?`, 'Confirm Removal', () => {
                 delete rates[metal][stamp];
-                saveAllDataToCloudDebounced(); 
+                saveAllDataToCloudDebounced();
                 showCustomAlert(`Removed ${stamp}`);
             });
         }
@@ -4061,9 +4099,9 @@
                 document.getElementById('excel-file').value = '';
                 return;
             }
-            if (!checkPin()) { 
+            if (!checkPin()) {
                 document.getElementById('excel-file').value = '';
-                return; 
+                return;
             }
             const fileInput = document.getElementById('excel-file');
             const file = fileInput.files[0];
@@ -4097,7 +4135,7 @@
                     return;
                 }
                 let count = 0;
-                let newProductData = {}; 
+                let newProductData = {};
                 for (let i = 1; i < json.length; i++) {
                     const row = json[i];
                     const tagNo = (row[cols.tagNo] || '').toString().trim().toUpperCase();
@@ -4121,12 +4159,12 @@
                     };
                     count++;
                 }
-                
+
                 // --- SAFETY CONFIRMATION BEFORE OVERWRITE ---
                 const currentCount = Object.keys(productData).length;
                 showCustomConfirm(
-                    `This will REPLACE your entire product list (${currentCount} items) with ${count} new items from Excel. Proceed?`, 
-                    'Confirm Replacement', 
+                    `This will REPLACE your entire product list (${currentCount} items) with ${count} new items from Excel. Proceed?`,
+                    'Confirm Replacement',
                     () => {
                         productData = newProductData;
                         saveAllDataToCloud();
@@ -4154,7 +4192,7 @@
             const price = parseFloat(document.getElementById('price-per-gram').value);
             if (rates[metal] && rates[metal][stamp] !== undefined && !isNaN(price)) {
                 rates[metal][stamp] = price;
-                saveAllDataToCloudDebounced(); 
+                saveAllDataToCloudDebounced();
                 showCustomAlert(`Updated: ${metal} ${stamp} → ₹${price}/g`);
                 document.getElementById('price-per-gram').value = '';
             } else {
@@ -4166,14 +4204,14 @@
             const tax = parseFloat(document.getElementById('tax-percent').value);
             if (!isNaN(tax)) {
                 taxRate = tax;
-                saveAllDataToCloudDebounced(); 
+                saveAllDataToCloudDebounced();
                 showCustomAlert(`Tax updated to ${tax}%`);
                 document.getElementById('tax-percent').value = tax;
             } else {
                 showCustomAlert('Invalid tax');
             }
         }
-        
+
         document.addEventListener('DOMContentLoaded', () => {
             const metalSelect = document.getElementById('metal-select');
             metalSelect.addEventListener('change', () => {
@@ -4191,7 +4229,7 @@
             showSection('main');
 
             const barcodeInput = document.getElementById('barcode');
-            
+
             // --- Global keydown listener for seamless scanning ---
             document.addEventListener('keydown', function(event) {
                 if (document.getElementById('main-screen').style.display !== 'flex') {
@@ -4210,12 +4248,12 @@
             });
             // --- "Enter" key listener ---
             barcodeInput.addEventListener('keydown', function(event) {
-                if (event.key === 'Enter') { 
+                if (event.key === 'Enter') {
                     event.preventDefault();
                     const barcode = barcodeInput.value.trim().toUpperCase();
-                    barcodeInput.value = ''; 
-                    barcodeInput.focus(); 
-                    lookupProduct(barcode); 
+                    barcodeInput.value = '';
+                    barcodeInput.focus();
+                    lookupProduct(barcode);
                 }
             });
             // --- Load Cart from Local Storage ---
@@ -4228,7 +4266,7 @@
                 console.error("Failed to load cart from localStorage", e);
                 cart = [];
             }
-            
+
             // --- Load Old Gold from Local Storage ---
             try {
                 const savedOldGold = localStorage.getItem('suhagPriceCheckerOldGold');
@@ -4239,16 +4277,16 @@
                 console.error("Failed to load old gold from localStorage", e);
                 oldGoldItems = [];
             }
-            
+
             // Presets are now loaded from CLOUD, not local storage
-            
+
             updateCartIcon();
             // Update counter on load
 
             // --- Start Firebase Sync ---
             syncData();
         });
-        
+
         // =============================================
         // === MAKING PROFILES FUNCTIONS ===
         // =============================================
@@ -4431,8 +4469,6 @@
                 badge.textContent = '⚙ ' + profile.name;
             }
         }
-
-
 
         // =============================================
         // === CART ADJUST FUNCTIONS ===================
@@ -5028,9 +5064,8 @@
             }
             bulkList.push({ barcode, name: d.itemName || barcode, price: final, weight: d.netWeight, makingOverride: null });
             input.value = '';
-            input.select();
             renderBulkList();
-            setTimeout(() => { input.value = ''; input.focus(); }, 10);
+            setTimeout(() => input.focus(), 10);
         }
 
         function renderBulkList() {
@@ -5150,7 +5185,10 @@
                 }
             }, (error) => {
                 console.error('[Ledger] Firebase read error:', error);
-                showCustomAlert('Ledger cloud sync error: ' + error.message);
+                // Do NOT call showCustomAlert here — this is a persistent listener
+                // that can fire repeatedly on reconnect/disconnect, which would
+                // flood the UI with blocking dialogs. Log only.
+                setDataSourceBadge('pending');
             });
         }
 
@@ -5174,8 +5212,18 @@
         function ledgerCashTotal() {
             return ledgerEntries.reduce((sum, e) => {
                 if (e.type === 'sale') {
-                    // For sales, only the cash portion affects physical cash balance
-                    return sum + (e.cashPortion !== undefined ? e.cashPortion : e.amount);
+                    // cashPortion is set on all new bills.
+                    // For legacy bills saved before cashPortion was added, fall back to
+                    // checking the payment mode: UPI/Card sales don't affect physical cash.
+                    if (e.cashPortion !== undefined) {
+                        return sum + e.cashPortion;
+                    }
+                    // Legacy fallback: if note says UPI or Card, cash portion is 0
+                    const note = (e.note || '').toLowerCase();
+                    if (note.includes('upi') || note.includes('card')) {
+                        return sum; // no cash change for digital-only legacy sales
+                    }
+                    return sum + (e.amount || 0);
                 }
                 if (e.type === 'in')  return sum + (e.amount || 0);
                 if (e.type === 'out' || e.type === 'expense') return sum - (e.amount || 0);
@@ -5292,7 +5340,9 @@
             groupOrder.forEach(date => {
                 const items = groups[date];
                 const dayTotal = items.reduce((s, {bill}) => s + bill.netPayable, 0);
-                html += `<div class="ledger-day-header">${date} <span style="float:right; color:#2e7d32;">+₹${_fmt(dayTotal)}</span></div>`;
+                const daySign  = dayTotal >= 0 ? '+' : '-';
+                const dayColor = dayTotal >= 0 ? '#2e7d32' : '#c62828';
+                html += `<div class="ledger-day-header">${date} <span style="float:right; color:${dayColor};">${daySign}₹${_fmt(Math.abs(dayTotal))}</span></div>`;
                 items.forEach(({bill, idx}) => {
                 const d = new Date(bill.timestamp);
                 const dateStr = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
