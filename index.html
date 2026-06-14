@@ -40,12 +40,6 @@
         window.dbUpdate = update;
         window.dbOnValue = onValue;
 
-        // ── SCHEMA VERSION GUARD ──────────────────────────────────────
-        // If the cloud reports a higher schemaVersion than this build,
-        // this (old) HTML file silently stops ALL writes so it cannot
-        // corrupt data written by a newer version.
-        window.SCHEMA_VERSION = 99;  // high value so any stale cloud version is always overwritten
-
         // ── ORIGIN GUARD ──────────────────────────────────────────────
         // Writes are ONLY allowed when the app is served from the official
         // GitHub Pages origin. Every other origin (file://, localhost, old
@@ -55,8 +49,7 @@
         // attached, so no write can ever race past this gate.
         const ALLOWED_ORIGIN = 'https://vaibhavlavish.github.io';
         const _originOk = (location.origin === ALLOWED_ORIGIN);
-        window._writeAllowed = _originOk;           // may be flipped false again by schema check
-        window._writeBlockReason = _originOk ? null : 'origin'; // 'origin' | 'schema' | null
+        window._writeAllowed = _originOk;
 
         if (!_originOk) {
             console.warn('[ORIGIN] Write blocked — not running from', ALLOWED_ORIGIN, '(got:', location.origin + ')');
@@ -79,12 +72,7 @@
             return window.dbUpdate(window.dbRef(window.firebaseDB, '/'), obj);
         };
 
-        // ── SCHEMA VERSION CHECK ──────────────────────────────────────
-        // Schema guard is intentionally disabled — the origin guard above
-        // is the sole write gate. Only GitHub Pages can write, so there is
-        // no version conflict possible. The SCHEMA_VERSION constant is kept
-        // so saveConfig() can still stamp it on the cloud for diagnostics.
-        // (No listener needed — nothing to block here.)
+
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
