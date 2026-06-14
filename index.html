@@ -39,6 +39,40 @@
         window.dbSet = set;
         window.dbUpdate = update;
         window.dbOnValue = onValue;
+
+        // ── SCHEMA VERSION GUARD ──────────────────────────────────────
+        // If the cloud reports a higher schemaVersion than this build,
+        // this (old) HTML file silently stops ALL writes so it cannot
+        // corrupt data written by a newer version.
+        window.SCHEMA_VERSION = 10;  // bump this when making breaking sync changes
+        window._writeAllowed  = true; // set to false by version check below
+
+        // Write a single safe helper used everywhere instead of dbUpdate / dbSet directly
+        window.dbSafeUpdate = function(obj) {
+            if (!window._writeAllowed) {
+                console.warn('[SCHEMA] Write blocked — this HTML is outdated. Open the latest version.');
+                return Promise.resolve();
+            }
+            if (!window.dbUpdate || !window.firebaseDB) return Promise.resolve();
+            if (!obj || Object.keys(obj).length === 0) return Promise.resolve();
+            return window.dbUpdate(window.dbRef(window.firebaseDB, '/'), obj);
+        };
+
+        // Check cloud schemaVersion once on load
+        onValue(ref(db, 'suhagMeta/schemaVersion'), (snap) => {
+            const cloudVer = snap.val();
+            if (cloudVer && cloudVer > window.SCHEMA_VERSION) {
+                window._writeAllowed = false;
+                console.warn('[SCHEMA] Cloud version', cloudVer, '> local', window.SCHEMA_VERSION, '— writes disabled. Please reload the latest HTML.');
+                const banner = document.getElementById('schema-warn-banner');
+                if (banner) banner.style.display = 'block';
+                // Make this impossible to miss — a hidden console warning was
+                // the reason deletes silently "stopped working" before.
+                setTimeout(() => {
+                    alert('⚠️ This copy of the app is OUTDATED (schema v' + window.SCHEMA_VERSION + ', cloud is v' + cloudVer + ').\n\nAll changes (deletes, edits, etc.) will NOT be saved.\nPlease open the latest index.html file instead.');
+                }, 300);
+            }
+        }, { onlyOnce: true });
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1302,6 +1336,10 @@
     </style>
 </head>
 <body>
+<!-- Schema version warning banner — hidden by default, shown if this HTML is outdated -->
+<div id="schema-warn-banner" style="display:none;position:fixed;top:0;left:0;right:0;background:#b71c1c;color:#fff;text-align:center;padding:10px 14px;font-size:14px;font-weight:700;z-index:99999;line-height:1.4;">
+  ⚠️ This file is outdated. Data writes are disabled to protect your records. <br>Please reload the latest version of the app.
+</div>
     <div id="taskbar">
         <button onclick="showSection('main')" class="active">Main</button>
         <button onclick="showSection('loose-calculator')">Loose</button>
@@ -1958,32 +1996,31 @@
                                 localStorage.setItem('activeProfileId', jsonContent.activeProfileId);
                             }
 
-                            if (window.dbSet) {
-                                const db   = window.firebaseDB;
-                                const rRef = window.dbRef;
-                                const rSet = window.dbSet;
-                                Promise.all([
-                                    rSet(rRef(db, 'jewelryData/config'), {
-                                        rates:            dataToRestore.rates,
-                                        taxRate:          dataToRestore.taxRate,
-                                        looseDefaults:    dataToRestore.looseDefaults,
-                                        baseCalcDefaults: dataToRestore.baseCalcDefaults
-                                    }),
-                                    rSet(rRef(db, 'jewelryData/products'),    dataToRestore.products    || {}),
-                                    rSet(rRef(db, 'jewelryData/billHistory'), dataToRestore.billHistory || []),
-                                    rSet(rRef(db, 'jewelryData/profiles'), {
-                                        makingProfiles: dataToRestore.makingProfiles || [],
-                                        presets:        dataToRestore.presets        || []
-                                    }),
-                                    rSet(rRef(db, 'jewelryData/rates'),            null),
-                                    rSet(rRef(db, 'jewelryData/taxRate'),          null),
-                                    rSet(rRef(db, 'jewelryData/looseDefaults'),    null),
-                                    rSet(rRef(db, 'jewelryData/baseCalcDefaults'), null),
-                                    rSet(rRef(db, 'jewelryData/makingProfiles'),   null),
-                                    rSet(rRef(db, 'jewelryData/presets'),          null)
-                                ])
+                            if (window.firebaseDB && window._writeAllowed) {
+                                // Build a single multi-path update object.
+                                // Config and products can be replaced wholesale (no per-record history).
+                                // Bills, profiles, presets are written per-record so the schema is consistent.
+                                const restoreUpdate = {};
+                                restoreUpdate['jewelryData/config/rates']            = dataToRestore.rates;
+                                restoreUpdate['jewelryData/config/taxRate']          = dataToRestore.taxRate;
+                                restoreUpdate['jewelryData/config/looseDefaults']    = dataToRestore.looseDefaults;
+                                restoreUpdate['jewelryData/config/baseCalcDefaults'] = dataToRestore.baseCalcDefaults;
+                                restoreUpdate['jewelryData/products']                = dataToRestore.products || {};
+                                restoreUpdate['suhagMeta/schemaVersion']             = window.SCHEMA_VERSION;
+                                // Bills
+                                (dataToRestore.billHistory || []).forEach(b => {
+                                    if (b.id) restoreUpdate[`jewelryData/billHistory/${b.id}`] = b;
+                                });
+                                // Profiles
+                                (dataToRestore.makingProfiles || []).forEach(p => {
+                                    if (p.id) restoreUpdate[`jewelryData/profiles/makingProfiles/${p.id}`] = p;
+                                });
+                                // Presets
+                                (dataToRestore.presets || []).forEach(p => {
+                                    if (p.id) restoreUpdate[`jewelryData/profiles/presets/${p.id}`] = p;
+                                });
+                                window.dbSafeUpdate(restoreUpdate)
                                 .then(() => {
-                                    localStorage.setItem('suhagFlatKeysTombstoned', '1');
                                     showCustomAlert("Restore Successful! Reloading app...");
                                     setTimeout(() => location.reload(), 2000);
                                 })
@@ -2064,6 +2101,18 @@
                 makingProfiles = JSON.parse(JSON.stringify(FACTORY_PROFILES));
             } else if (!makingProfiles.find(p => p.id === 'default')) {
                 makingProfiles.unshift({ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 });
+            }
+
+            // Defensive dedupe: collapse any duplicate ids (e.g. two "default"
+            // profiles left over from a prior bad sync), keeping the first.
+            if (makingProfiles && makingProfiles.length > 1) {
+                const seen = new Set();
+                makingProfiles = makingProfiles.filter(p => {
+                    if (!p || !p.id) return true;
+                    if (seen.has(p.id)) return false;
+                    seen.add(p.id);
+                    return true;
+                });
             }
         }
         // ============================================================
@@ -2245,24 +2294,17 @@
             return rest;
         }
 
-        // Attempt to push any pending offline changes — only called after a
-        // successful, merged cloud read inside syncData(). Never called blindly.
-        function attemptPendingSync() {
-            if (!hasPendingSync()) return;
-            if (!navigator.onLine) return;
-            if (!window.dbSet || !window.firebaseDB) return;
-            // Re-run syncData so the cloud snapshot is read and merged first
-            syncData();
-        }
+        
 
-        window.addEventListener('online', attemptPendingSync);
+        window.addEventListener('online', () => {
+            // When coming back online, re-run syncData to pull latest from Firebase.
+            // Individual records written while offline are queued by Firebase SDK automatically.
+            console.log('[Sync] back online — re-syncing');
+            setDataSourceBadge('live');
+        });
 
         // Accepts either a flat snapshot (old single-key format) or the merged
         // object produced by readSplitKeys() below.
-        // Tracks bill ids we've already asked Firebase to delete this session,
-        // so dedup doesn't repeatedly re-issue the same delete (which would
-        // re-trigger the jewelryData onValue listener in a loop).
-        const _billDedupRemovedIds = new Set();
         function applyDataSnapshot(cloudData) {
             rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
             taxRate = cloudData.taxRate ?? 3;
@@ -2271,36 +2313,30 @@
             baseCalcDefaults = cloudData.baseCalcDefaults || {};
             loosePresets = cloudData.presets || [];
             makingProfiles = cloudData.makingProfiles || [];
-            // Merge incoming billHistory with in-memory so a live Firebase onValue
-            // callback never drops a bill that was just saved but not yet acknowledged.
-            const _incoming = cloudData.billHistory || [];
-            if (_incoming.length > 0 && billHistory.length > 0) {
-                const _cloudIds = new Set(_incoming.map(b => String(b.id)));
-                const _localOnly = billHistory.filter(b => !_cloudIds.has(String(b.id)));
-                billHistory = [..._localOnly, ..._incoming];
-                billHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-            } else if (_incoming.length > 0) {
-                billHistory = _incoming;
+            // billHistory: cloud is authoritative — simply replace.
+            // Each bill is written individually via _saveBillRecord so there are
+            // no races; the onValue callback sees the canonical state.
+            if (cloudData.billHistory !== undefined) {
+                billHistory = cloudData.billHistory || [];
             }
-            // Remove duplicate bills that share identical content but different
-            // ids (e.g. the same checkout submitted from two tabs).
-            {
-                const result = _dedupeByFingerprint(billHistory, _billFingerprint);
-                const removed = result.removed.filter(b => !_billDedupRemovedIds.has(String(b.id)));
-                if (removed.length > 0) {
-                    billHistory = result.deduped;
-                    console.log('[Dedup] removed', removed.length, 'duplicate bill(s)');
-                    removed.forEach(b => _billDedupRemovedIds.add(String(b.id)));
-                    if (window.dbUpdate && window.dbRef && window.firebaseDB) {
-                        const _delObj = {};
-                        removed.forEach(b => { _delObj[`jewelryData/billHistory/${b.id}`] = null; });
-                        window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
-                    }
-                } else if (result.removed.length > 0) {
-                    billHistory = result.deduped;
-                }
-            }
-            // Re-render the bills tab if it is currently visible
+
+            // Defensive dedupe by id (covers the old-flat-format path, which
+            // skips the per-collection dedup done in readSplitKeys()).
+            const dedupeById = (arr) => {
+                if (!arr || arr.length < 2) return arr;
+                const seen = new Set();
+                return arr.filter(item => {
+                    if (!item || item.id === undefined) return true;
+                    const id = String(item.id);
+                    if (seen.has(id)) return false;
+                    seen.add(id);
+                    return true;
+                });
+            };
+            loosePresets  = dedupeById(loosePresets);
+            billHistory   = dedupeById(billHistory);
+            makingProfiles = dedupeById(makingProfiles);
+
             if (typeof _renderBillHistoryInLedger === 'function') {
                 _renderBillHistoryInLedger();
             }
@@ -2310,10 +2346,53 @@
 
         // Helper: Firebase object (keyed by id) → sorted array.
         // Handles both old array format and new object format transparently.
+        //
+        // IMPORTANT: a previous buggy sync (merge/update on top of an old
+        // array-stored collection) left some Firebase nodes containing BOTH
+        // numeric-index keys ("0","1","2"...) from the old array AND proper
+        // string-id keys ("uuid...") for the same logical records. That makes
+        // every record appear twice. We dedupe by record.id here, preferring
+        // the string-id (non-numeric-key) copy, and stash the dropped numeric
+        // keys on arr.__zombieKeys so callers can purge them from Firebase.
         function _objToArray(val) {
             if (!val) return [];
             if (Array.isArray(val)) return val; // legacy array format
-            return Object.values(val);
+
+            const byId = new Map();   // id (or key) -> { key, item }
+            const zombieKeys = [];
+
+            for (const [key, item] of Object.entries(val)) {
+                if (!item || typeof item !== 'object') continue;
+                const id = item.id !== undefined ? String(item.id) : null;
+                const isNumericKey = /^\d+$/.test(key);
+
+                if (id === null) {
+                    if (!byId.has(key)) byId.set(key, { key, item });
+                    continue;
+                }
+
+                if (!byId.has(id)) {
+                    byId.set(id, { key, item });
+                } else {
+                    const existing = byId.get(id);
+                    const existingIsNumeric = /^\d+$/.test(existing.key);
+                    if (existingIsNumeric && !isNumericKey) {
+                        // Prefer the proper string-id copy; mark the numeric
+                        // one as a zombie to be purged from Firebase.
+                        zombieKeys.push(existing.key);
+                        byId.set(id, { key, item });
+                    } else {
+                        // Drop the extra copy as a zombie.
+                        zombieKeys.push(key);
+                    }
+                }
+            }
+
+            const arr = Array.from(byId.values()).map(v => v.item);
+            if (zombieKeys.length) {
+                arr.__zombieKeys = zombieKeys;
+            }
+            return arr;
         }
 
         // Helper: remove duplicate records that share the same content but have
@@ -2345,6 +2424,10 @@
             return [b.timestamp, b.total, b.netPayable, b.oldGoldTotal, JSON.stringify(b.items), JSON.stringify(b.payment)].join('|');
         }
 
+        function _presetFingerprint(p) {
+            return [p.name, p.metal, p.stamp, p.makingType, p.makingValue].join('|');
+        }
+
         // Read the Firebase snapshot and normalise it into one flat object that
         // applyDataSnapshot() understands.  Handles two formats:
         //   • OLD (flat):  { rates, taxRate, products, billHistory, makingProfiles, ... }
@@ -2362,6 +2445,44 @@
             // New split-key format
             const config   = val.config   || {};
             const profiles = val.profiles || {};
+
+            let billHistory       = _objToArray(val.billHistory);
+            let makingProfiles    = _objToArray(profiles.makingProfiles);
+            let presets           = _objToArray(profiles.presets);
+
+            // Collect Firebase paths of zombie (duplicate numeric-index) keys
+            // so the caller can purge them in one update() call.
+            const zombiePaths = [];
+            (billHistory.__zombieKeys || []).forEach(k => zombiePaths.push(`jewelryData/billHistory/${k}`));
+            (makingProfiles.__zombieKeys || []).forEach(k => zombiePaths.push(`jewelryData/profiles/makingProfiles/${k}`));
+            (presets.__zombieKeys || []).forEach(k => zombiePaths.push(`jewelryData/profiles/presets/${k}`));
+
+            // Same-content-different-id duplicates (e.g. a bill saved twice
+            // from two devices before sync settled) — dedupe by fingerprint
+            // and purge the dropped copies too.
+            const billDedupe = _dedupeByFingerprint(billHistory, _billFingerprint);
+            billHistory = billDedupe.deduped;
+            billDedupe.removed.forEach(b => zombiePaths.push(`jewelryData/billHistory/${b.id}`));
+
+            // Same for presets (e.g. two identical "Veetla" presets with
+            // different ids, as seen in the Manage Presets list).
+            const presetDedupe = _dedupeByFingerprint(presets, _presetFingerprint);
+            presets = presetDedupe.deduped;
+            presetDedupe.removed.forEach(p => zombiePaths.push(`jewelryData/profiles/presets/${p.id}`));
+
+            // makingProfiles: drop duplicate 'default' entries (keep first).
+            const seenProfileIds = new Set();
+            makingProfiles = makingProfiles.filter(p => {
+                if (!p || !p.id) return true;
+                if (seenProfileIds.has(p.id)) {
+                    zombiePaths.push(`jewelryData/profiles/makingProfiles/${p.id}`);
+                    // Note: pushing the same path twice is harmless in update().
+                    return false;
+                }
+                seenProfileIds.add(p.id);
+                return true;
+            });
+
             return {
                 rates:            config.rates            || null,
                 taxRate:          config.taxRate          ?? 3,
@@ -2369,9 +2490,10 @@
                 baseCalcDefaults: config.baseCalcDefaults || {},
                 products:         val.products            || {},
                 // billHistory and profiles may be keyed objects (new) or arrays (old)
-                billHistory:      _objToArray(val.billHistory),
-                makingProfiles:   _objToArray(profiles.makingProfiles),
-                presets:          _objToArray(profiles.presets)
+                billHistory,
+                makingProfiles,
+                presets,
+                _zombiePaths: zombiePaths
             };
         }
 
@@ -2413,7 +2535,6 @@
             if (!window.dbOnValue || !window.firebaseDB) {
                 console.warn("Firebase SDK not available (offline?). Running on local cache.");
                 if (!cachedData) {
-                    // No cache and no Firebase — use hardcoded defaults silently
                     rates = JSON.parse(JSON.stringify(defaultRates));
                     taxRate = 0; productData = {};
                     looseDefaultsCloud = null;
@@ -2433,59 +2554,31 @@
                 const cloudData = readSplitKeys(snapshot) || snapshot.val();
 
                 if (cloudData) {
-                    if (hasPendingSync()) {
-                        // We have offline edits in local cache — merge them on top of
-                        // the cloud snapshot we just read, then push the merged result.
-                        // (cachedData holds our offline-edited state)
-                        // Deep-merge arrays by ID so offline edits don't silently
-                    // overwrite items added on another device.
-                    const localData = cachedData ? stripCacheMeta(cachedData) : {};
-                    // Start with cloud as the authoritative base, then layer in
-                    // local-only changes. Object.assign is intentionally NOT used
-                    // for products — that would silently overwrite barcodes added
-                    // on another device. Instead we merge per-barcode: cloud wins
-                    // for any key that exists in both (newest cloud data), and
-                    // local-only barcodes (added while offline) are preserved.
-                    const merged = Object.assign({}, cloudData, localData);
-                    const cloudProducts = cloudData.products || {};
-                    const localProducts = localData.products || {};
-                    merged.products = Object.assign({}, localProducts, cloudProducts);
-
-                    // billHistory: union of both arrays, keyed by id
-                    if (Array.isArray(cloudData.billHistory) && Array.isArray(localData.billHistory)) {
-                        const seen = new Set(localData.billHistory.map(b => b.id));
-                        merged.billHistory = [
-                            ...localData.billHistory,
-                            ...cloudData.billHistory.filter(b => !seen.has(b.id))
-                        ];
+                    // ── CLEAN READ-ONLY APPLY ──────────────────────────────────────
+                    // The onValue callback ONLY reads from Firebase — it never writes
+                    // back fresh data. All writes happen via per-record helpers
+                    // (_saveBillRecord, _saveLedgerRecord, etc.) triggered by user
+                    // actions. This prevents the old "merge → push → onValue fires
+                    // again → duplicate" loop.
+                    //
+                    // EXCEPTION: one-time zombie-key purge. Earlier syncs left some
+                    // collections with BOTH numeric-index keys (old array format)
+                    // AND proper id keys (new format) for the same record, causing
+                    // doubled entries and "undeletable" rows (deleting the id key
+                    // left the numeric-index zombie behind, which reappears on
+                    // reload). _objToArray() already deduped these for display; here
+                    // we null out the leftover numeric-index keys in Firebase so
+                    // they stop coming back.
+                    if (cloudData._zombiePaths && cloudData._zombiePaths.length) {
+                        console.log('[Cleanup] purging zombie keys:', cloudData._zombiePaths);
+                        const purge = {};
+                        cloudData._zombiePaths.forEach(p => { purge[p] = null; });
+                        window.dbSafeUpdate(purge).catch(e => console.error('[Cleanup] zombie purge failed', e));
                     }
-                    // makingProfiles: union keyed by id
-                    if (Array.isArray(cloudData.makingProfiles) && Array.isArray(localData.makingProfiles)) {
-                        const seenP = new Set(localData.makingProfiles.map(p => p.id));
-                        merged.makingProfiles = [
-                            ...localData.makingProfiles,
-                            ...cloudData.makingProfiles.filter(p => !seenP.has(p.id))
-                        ];
-                    }
-                    // presets: union keyed by id
-                    if (Array.isArray(cloudData.presets) && Array.isArray(localData.presets)) {
-                        const seenPr = new Set(localData.presets.map(p => p.id));
-                        merged.presets = [
-                            ...localData.presets,
-                            ...cloudData.presets.filter(p => !seenPr.has(p.id))
-                        ];
-                    }
-                        applyDataSnapshot(merged);
-                        saveDataToLocalCache(merged);
-                        setDataSourceBadge('syncing');
-                        saveAllDataToCloud();
-                    } else {
-                        applyDataSnapshot(cloudData);
-                        // Save fresh copy to local cache for offline use
-                        saveDataToLocalCache(cloudData);
-                        setDataSourceBadge('live');
-                    }
-                    console.log("Data synced from Firebase and cached locally.");
+                    applyDataSnapshot(cloudData);
+                    saveDataToLocalCache(cloudData);
+                    setDataSourceBadge('live');
+                    console.log("Data synced from Firebase.");
                 } else {
                     console.warn("No data in cloud. Using local cache/defaults.");
                     if (!cachedData) {
@@ -2504,140 +2597,167 @@
             }, (error) => {
                 console.error("Firebase read failed:", error);
                 if (cachedData) {
-                    // Already loaded cache above — just keep it, don't pop an alert
                     console.warn("Firebase error, continuing with cached data.");
                     setDataSourceBadge('cached', cachedData._cachedAt);
                 } else {
                     setDataSourceBadge('cached', null);
-                    refreshUI(); // still render with empty defaults
+                    refreshUI();
                 }
             });
         }
 
-        function saveAllDataToCloud() {
-            const dataToSave = {
-                rates: rates,
-                taxRate: taxRate,
-                products: productData,
-                looseDefaults: looseDefaultsCloud,
-                baseCalcDefaults: baseCalcDefaults,
-                presets: loosePresets,
-                makingProfiles: makingProfiles,
-                billHistory: billHistory
-            };
+        // ── ATOMIC SAVE HELPERS ────────────────────────────────────────
+        // All writes go through these; they NEVER use set() on a whole array.
+        // This means concurrent writes from two devices always merge per-record.
 
-            // Always keep local cache up to date so nothing is lost offline
-            saveDataToLocalCache(dataToSave);
-
-            if (!window.dbSet || !window.firebaseDB || !navigator.onLine) {
-                markPendingSync();
-                return;
-            }
-
-            // Write to split sub-keys so a large billHistory doesn't block a
-            // small rate update, and vice-versa.
-            const db   = window.firebaseDB;
-            const rRef = window.dbRef;
-            const rSet = window.dbSet;
-            // Compute once — avoids re-reading localStorage inside the array spread.
-            const _needsTombstone = !localStorage.getItem('suhagFlatKeysTombstoned');
-
-            // Convert arrays to keyed objects for Firebase so concurrent writes
-            // from multiple devices merge per-record instead of overwriting each other.
-            const billHistoryObj = {};
-            (billHistory || []).forEach(b => { billHistoryObj[String(b.id)] = b; });
-            const profilesObj = {};
-            (makingProfiles || []).forEach(p => { profilesObj[String(p.id)] = p; });
-            const presetsObj = {};
-            (loosePresets || []).forEach(p => { presetsObj[String(p.id)] = p; });
-
-            // Build a single master multi-path update object. Firebase forbids
-            // calling update() with an empty object — merging everything into one
-            // map and guarding with a length check avoids that crash (e.g. when
-            // billHistory is empty after a clear, or a new user has 0 presets).
-            const rUpdate = window.dbUpdate;
-            const masterUpdate = {};
-            Object.entries(billHistoryObj).forEach(([k, v]) => { masterUpdate[`jewelryData/billHistory/${k}`] = v; });
-            Object.entries(profilesObj).forEach(([k, v]) => { masterUpdate[`jewelryData/profiles/makingProfiles/${k}`] = v; });
-            Object.entries(presetsObj).forEach(([k, v]) => { masterUpdate[`jewelryData/profiles/presets/${k}`] = v; });
-
-            const promises = [
-                rSet(rRef(db, 'jewelryData/config'), {
-                    rates, taxRate,
-                    looseDefaults: looseDefaultsCloud,
-                    baseCalcDefaults
-                }),
-                rSet(rRef(db, 'jewelryData/products'), productData || {})
-            ];
-
-            // Only call update() if there is at least one key — empty object crashes Firebase
-            if (Object.keys(masterUpdate).length > 0) {
-                promises.push(rUpdate(rRef(db, '/'), masterUpdate));
-            }
-
-            // Tombstone old flat-key fields — only once per device after migration
-            if (_needsTombstone) {
-                promises.push(
-                    rSet(rRef(db, 'jewelryData/rates'),            null),
-                    rSet(rRef(db, 'jewelryData/taxRate'),          null),
-                    rSet(rRef(db, 'jewelryData/looseDefaults'),    null),
-                    rSet(rRef(db, 'jewelryData/baseCalcDefaults'), null),
-                    rSet(rRef(db, 'jewelryData/makingProfiles'),   null),
-                    rSet(rRef(db, 'jewelryData/presets'),          null)
-                );
-            }
-
-            Promise.all(promises)
-            .then(() => {
-                console.log("Data saved to Firebase (split keys).");
-                localStorage.setItem('suhagFlatKeysTombstoned', '1');
-                clearPendingSync();
-                setDataSourceBadge('live');
-            })
-            .catch((error) => {
-                console.error("Firebase write failed:", error);
-                markPendingSync();
-                showCustomAlert("You're offline. Changes saved locally and will sync automatically when you're back online.", true);
-            });
-        }
-
-        // Debounced wrapper — use for rapid-fire edits (rate changes, profile saves).
-        // Always writes local cache immediately; delays the Firebase write by 500 ms.
-        let _saveDebounceTimer = null;
-        function saveAllDataToCloudDebounced() {
-            // Local cache write is inside saveAllDataToCloud and happens synchronously
-            // before the Firebase call, so calling it now is safe.
+        // Save config (rates, tax, loose defaults, base calc)
+        function saveConfig() {
             const dataToSave = {
                 rates, taxRate, products: productData,
                 looseDefaults: looseDefaultsCloud, baseCalcDefaults,
                 presets: loosePresets, makingProfiles, billHistory
             };
             saveDataToLocalCache(dataToSave);
-            clearTimeout(_saveDebounceTimer);
-            _saveDebounceTimer = setTimeout(() => saveAllDataToCloud(), 500);
+            if (!window._writeAllowed || !window.firebaseDB || !navigator.onLine) {
+                markPendingSync(); return;
+            }
+            const update = {};
+            update['jewelryData/config/rates']            = rates;
+            update['jewelryData/config/taxRate']          = taxRate;
+            update['jewelryData/config/looseDefaults']    = looseDefaultsCloud || null;
+            update['jewelryData/config/baseCalcDefaults'] = baseCalcDefaults || {};
+            update['jewelryData/products']                = productData || {};
+            // Stamp the schema version so old files can detect they're stale
+            update['suhagMeta/schemaVersion']             = window.SCHEMA_VERSION;
+            window.dbSafeUpdate(update)
+                .then(() => { clearPendingSync(); setDataSourceBadge('live'); })
+                .catch(() => markPendingSync());
         }
 
+        // Save a single bill record
+        function _saveBillRecord(bill) {
+            if (!bill || !bill.id) return;
+            const update = {};
+            update[`jewelryData/billHistory/${bill.id}`] = bill;
+            window.dbSafeUpdate(update).catch(e => console.error('[Bill] save failed', e));
+        }
+
+        // Delete a single bill record from Firebase + local
+        function _deleteBillRecord(id, onDone) {
+            billHistory = billHistory.filter(b => String(b.id) !== String(id));
+            _persistLocalCache();
+            const update = {};
+            update[`jewelryData/billHistory/${id}`] = null;
+            window.dbSafeUpdate(update)
+                .then(() => { if (onDone) onDone(); })
+                .catch(e => { console.error('[Bill] delete failed', e); if (onDone) onDone(); });
+        }
+
+        // Save a single ledger entry
+        function _saveLedgerRecord(entry) {
+            if (!entry || !entry.id) return;
+            const update = {};
+            update[`jewelryData/ledgerEntries/${entry.id}`] = entry;
+            window.dbSafeUpdate(update).catch(e => console.error('[Ledger] save failed', e));
+        }
+
+        // Delete a single ledger entry from Firebase + local
+        function _deleteLedgerRecord(id, onDone) {
+            ledgerEntries = ledgerEntries.filter(e => String(e.id) !== String(id));
+            _saveLedgerLocal();
+            const update = {};
+            update[`jewelryData/ledgerEntries/${id}`] = null;
+            window.dbSafeUpdate(update)
+                .then(() => { if (onDone) onDone(); })
+                .catch(e => { console.error('[Ledger] delete failed', e); if (onDone) onDone(); });
+        }
+
+        // Save a single profile
+        function _saveProfileRecord(profile) {
+            if (!profile || !profile.id) return;
+            const update = {};
+            update[`jewelryData/profiles/makingProfiles/${profile.id}`] = profile;
+            window.dbSafeUpdate(update).catch(e => console.error('[Profile] save failed', e));
+        }
+
+        // Delete a single profile from Firebase + local
+        function _deleteProfileRecord(id, onDone) {
+            makingProfiles = makingProfiles.filter(p => p.id !== id);
+            _persistLocalCache();
+            const update = {};
+            update[`jewelryData/profiles/makingProfiles/${id}`] = null;
+            window.dbSafeUpdate(update)
+                .then(() => { if (onDone) onDone(); })
+                .catch(e => { console.error('[Profile] delete failed', e); if (onDone) onDone(); });
+        }
+
+        // Save a single preset
+        function _savePresetRecord(preset) {
+            if (!preset || !preset.id) return;
+            const update = {};
+            update[`jewelryData/profiles/presets/${preset.id}`] = preset;
+            window.dbSafeUpdate(update).catch(e => console.error('[Preset] save failed', e));
+        }
+
+        // Delete a single preset from Firebase + local
+        function _deletePresetRecord(id, onDone) {
+            loosePresets = loosePresets.filter(p => p.id !== id);
+            _persistLocalCache();
+            const update = {};
+            update[`jewelryData/profiles/presets/${id}`] = null;
+            window.dbSafeUpdate(update)
+                .then(() => { if (onDone) onDone(); })
+                .catch(e => { console.error('[Preset] delete failed', e); if (onDone) onDone(); });
+        }
+
+        // Write current full state to localStorage (bills+ledger+config in one shot)
+        function _persistLocalCache() {
+            const dataToSave = {
+                rates, taxRate, products: productData,
+                looseDefaults: looseDefaultsCloud, baseCalcDefaults,
+                presets: loosePresets, makingProfiles, billHistory
+            };
+            saveDataToLocalCache(dataToSave);
+            _saveLedgerLocal();
+        }
+
+        // ── LEGACY WRAPPER (called in many places — now routes to saveConfig) ──
+        function saveAllDataToCloud() {
+            saveConfig();
+        }
+
+        // Debounced wrapper for rapid-fire edits
+        let _saveDebounceTimer = null;
+        function saveAllDataToCloudDebounced() {
+            _persistLocalCache();
+            clearTimeout(_saveDebounceTimer);
+            _saveDebounceTimer = setTimeout(() => saveConfig(), 500);
+        }
+
+
+
         function clearAllData() {
-            if (!window.dbSet) return;
             if (!navigator.onLine) {
                 showCustomAlert('Cannot clear data while offline. Please reconnect and try again.');
                 return;
             }
-            showCustomConfirm('Clear ALL synced data (rates, tax, products, presets)? This can be undone.', 'Confirm Clear', () => {
-                // Clear all four sub-keys
-                Promise.all([
-                    window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData/config'),      null),
-                    window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData/products'),    null),
-                    window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData/billHistory'), null),
-                    window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData/profiles'),    null)
-                ])
+            showCustomConfirm('Clear ALL synced data (rates, tax, products, bills, presets)? This cannot be undone.', 'Confirm Clear', () => {
+                const clearUpdate = {
+                    'jewelryData/config':      null,
+                    'jewelryData/products':    null,
+                    'jewelryData/billHistory': null,
+                    'jewelryData/profiles':    null,
+                    'jewelryData/ledgerEntries': null
+                };
+                window.dbSafeUpdate(clearUpdate)
                 .then(() => {
+                    localStorage.clear();
                     showCustomAlert('All cloud data cleared. Reloading page.');
                     setTimeout(() => location.reload(), 1500);
                 })
                 .catch((error) => {
                     console.error("Firebase write failed:", error);
-                    showCustomAlert("Data clear failed. Check console.", true);
+                    showCustomAlert("Data clear failed. Check console.");
                 });
             });
         }
@@ -3421,13 +3541,19 @@
                 makingValue: makingValue
             };
 
+            let savedPreset;
             if (_editingPresetId) {
                 const idx = loosePresets.findIndex(p => p.id === _editingPresetId);
-                if (idx !== -1) loosePresets[idx] = { ...loosePresets[idx], ...newPreset, id: loosePresets[idx].id };
+                if (idx !== -1) {
+                    loosePresets[idx] = { ...loosePresets[idx], ...newPreset, id: loosePresets[idx].id };
+                    savedPreset = loosePresets[idx];
+                }
             } else {
-                loosePresets.push(newPreset);
+                savedPreset = newPreset;
+                loosePresets.push(savedPreset);
             }
-            saveAllDataToCloud();
+            _persistLocalCache();
+            if (savedPreset) _savePresetRecord(savedPreset); // single-record Firebase write
             _resetPresetForm();
             updatePresetModalStamps();
             renderPresetList();
@@ -3437,14 +3563,9 @@
 
         function deletePreset(id) {
             if (!checkPin()) return;
-            loosePresets = loosePresets.filter(p => p.id !== id);
-            if (window.dbUpdate && window.firebaseDB) {
-                const _delObj = {};
-                _delObj[`jewelryData/profiles/presets/${id}`] = null;
-                window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
-            }
-            saveAllDataToCloud();
-            renderPresetList();
+            _deletePresetRecord(id, () => {
+                renderPresetList();
+            });
         }
 
         function loadPreset(id) {
@@ -4578,18 +4699,21 @@
                     perPc   : parseFloat(document.getElementById('np-silver-perpc').value)   || 0,
                 }
             };
+            let savedProfile;
             if (_editingProfileId) {
-                // Edit mode — update existing
                 const idx = makingProfiles.findIndex(p => p.id === _editingProfileId);
-                if (idx !== -1) makingProfiles[idx] = { ...makingProfiles[idx], ...profileData };
+                if (idx !== -1) {
+                    makingProfiles[idx] = { ...makingProfiles[idx], ...profileData };
+                    savedProfile = makingProfiles[idx];
+                }
                 _editingProfileId = null;
             } else {
-                // Create mode — add new
-                makingProfiles.push({ id: 'prof_' + crypto.randomUUID(), ...profileData });
+                savedProfile = { id: 'prof_' + crypto.randomUUID(), ...profileData };
+                makingProfiles.push(savedProfile);
             }
-            saveAllDataToCloudDebounced();
+            _persistLocalCache();
+            if (savedProfile) _saveProfileRecord(savedProfile); // single-record Firebase write
             if (currentBarcode) runPriceCalculation();
-            // Reset form
             _resetProfileForm();
             renderProfileList();
         }
@@ -4609,20 +4733,15 @@
         function deleteProfile(id) {
             if (id === 'default') return;
             if (!checkPin()) return;
-            makingProfiles = makingProfiles.filter(p => p.id !== id);
-            if (window.dbUpdate && window.firebaseDB) {
-                const _delObj = {};
-                _delObj[`jewelryData/profiles/makingProfiles/${id}`] = null;
-                window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
-            }
-            if (activeProfileId === id) {
-                activeProfileId = 'default';
-                localStorage.setItem('activeProfileId', 'default');
-                updateProfileBadge();
-                if (currentBarcode) runPriceCalculation();
-            }
-            saveAllDataToCloudDebounced();
-            renderProfileList();
+            _deleteProfileRecord(id, () => {
+                if (activeProfileId === id) {
+                    activeProfileId = 'default';
+                    localStorage.setItem('activeProfileId', 'default');
+                    updateProfileBadge();
+                    if (currentBarcode) runPriceCalculation();
+                }
+                renderProfileList();
+            });
         }
 
         // Patch updateProfileBadge to also toggle visibility
@@ -5105,23 +5224,20 @@
                 payment
             };
             billHistory.unshift(bill);
+            // Trim to 500 and delete dropped ones from Firebase atomically
             if (billHistory.length > 500) {
-                // Capture bills falling off the end before slicing them away.
-                // Firebase uses update()-per-record so old bills accumulate in the
-                // cloud forever unless we explicitly set their keys to null.
                 const droppedBills = billHistory.slice(500);
                 billHistory = billHistory.slice(0, 500);
-                if (window.dbUpdate && window.dbRef && window.firebaseDB) {
-                    const deletePayload = {};
-                    droppedBills.forEach(b => { deletePayload[`jewelryData/billHistory/${b.id}`] = null; });
-                    window.dbUpdate(window.dbRef(window.firebaseDB, '/'), deletePayload);
-                }
+                const delPayload = {};
+                droppedBills.forEach(b => { delPayload[`jewelryData/billHistory/${b.id}`] = null; });
+                window.dbSafeUpdate(delPayload);
             }
+            _persistLocalCache();
+            _saveBillRecord(bill); // single-record Firebase write — no full-array overwrite
 
             // --- Record in ledger ---
             if (netPayable > 0) {
-                // Normal sale: customer pays us
-                ledgerEntries.push({
+                const entry = {
                     id: crypto.randomUUID(),
                     type: 'sale',
                     amount: Math.round(netPayable),
@@ -5129,12 +5245,13 @@
                     note: saleNote,
                     timestamp: new Date().toISOString(),
                     source: 'checkout'
-                });
-                saveLedger();
+                };
+                ledgerEntries.push(entry);
+                _saveLedgerLocal();
+                _saveLedgerRecord(entry); // single-record Firebase write
                 renderLedger();
             } else if (netPayable < 0) {
-                // Old jewellery value exceeds item price: we pay the customer
-                ledgerEntries.push({
+                const entry = {
                     id: crypto.randomUUID(),
                     type: 'out',
                     amount: Math.round(Math.abs(netPayable)),
@@ -5142,13 +5259,12 @@
                     note: 'Refund to customer (old jewellery > item price)',
                     timestamp: new Date().toISOString(),
                     source: 'checkout'
-                });
-                saveLedger();
+                };
+                ledgerEntries.push(entry);
+                _saveLedgerLocal();
+                _saveLedgerRecord(entry); // single-record Firebase write
                 renderLedger();
             }
-
-            // saveAllDataToCloud always writes local cache first, then attempts Firebase.
-            saveAllDataToCloud();
 
             // At this point local cache is up to date — safe to clear session state.
             cart = []; oldGoldItems = []; cartAdjustment = 0;
@@ -5183,22 +5299,21 @@
 
         function deleteBill(id) {
             if (!checkPin()) return;
-            billHistory = billHistory.filter(b => b.id !== id);
-            if (window.dbUpdate && window.firebaseDB) {
-                const _delObj = {};
-                _delObj[`jewelryData/billHistory/${id}`] = null;
-                window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
-            }
-            saveAllDataToCloud();
-            _renderBillHistoryInLedger();
+            _deleteBillRecord(id, () => {
+                _renderBillHistoryInLedger();
+            });
         }
 
         function clearBillHistory() {
             if (billHistory.length === 0) { showCustomAlert('No history to clear.'); return; }
             if (!checkPin()) return;
             showCustomConfirm('Delete all bill history? This cannot be undone.', 'Clear History', () => {
+                // Build delete map for every bill id
+                const delObj = {};
+                billHistory.forEach(b => { delObj[`jewelryData/billHistory/${b.id}`] = null; });
                 billHistory = [];
-                saveAllDataToCloud();
+                _persistLocalCache();
+                window.dbSafeUpdate(delObj).catch(e => console.error('[Bill] clearAll failed', e));
                 _renderBillHistoryInLedger();
             });
         }
@@ -5355,25 +5470,11 @@
         let _ledgerEntryType = 'in';
         let _currentLedgerTab = 'all';
 
-        // Tracks ids we've already asked Firebase to delete this session, so
-        // dedup doesn't repeatedly re-issue the same delete (which would
-        // re-trigger the ledger onValue listener in a loop).
-        const _ledgerDedupRemovedIds = new Set();
-
         function loadLedger() {
             try {
                 const saved = localStorage.getItem('suhagLedger');
                 if (saved) ledgerEntries = JSON.parse(saved);
             } catch(e) { ledgerEntries = []; }
-            // Dedup the cached copy immediately so the very first render (before
-            // the async Firebase sync responds) doesn't show stale duplicates.
-            // The Firebase-side cleanup happens once syncLedgerFromCloud responds.
-            const { deduped, removed } = _dedupeByFingerprint(ledgerEntries, _ledgerEntryFingerprint);
-            if (removed.length > 0) {
-                ledgerEntries = deduped;
-                removed.forEach(e => _ledgerDedupRemovedIds.add(String(e.id)));
-                localStorage.setItem('suhagLedger', JSON.stringify(ledgerEntries));
-            }
             console.log('[Ledger] loaded from local cache:', ledgerEntries.length, 'entries');
             syncLedgerFromCloud();
         }
@@ -5392,85 +5493,63 @@
             console.log('[Ledger] attaching Firebase listener on jewelryData/ledgerEntries');
             const ledgerRef = window.dbRef(window.firebaseDB, 'jewelryData/ledgerEntries');
             window.dbOnValue(ledgerRef, (snapshot) => {
-                let cloudEntries = snapshot.val();
-                console.log('[Ledger] cloud snapshot received:', cloudEntries);
-                // _objToArray handles both keyed-object (new) and array (legacy) formats
-                cloudEntries = _objToArray(cloudEntries);
-                if (cloudEntries.length > 0) {
-                    const seen = new Set(cloudEntries.map(e => String(e.id)));
-                    const localOnly = ledgerEntries.filter(e => !seen.has(String(e.id)));
-                    ledgerEntries = [...cloudEntries, ...localOnly];
+                const raw = _objToArray(snapshot.val());
+                console.log('[Ledger] cloud snapshot received, count:', raw.length);
 
-                    // Remove duplicate ledger entries that share identical content
-                    // but different ids (e.g. the same checkout submitted from two
-                    // tabs/windows at once).
-                    const result = _dedupeByFingerprint(ledgerEntries, _ledgerEntryFingerprint);
-                    const removed = result.removed.filter(e => !_ledgerDedupRemovedIds.has(String(e.id)));
-                    if (removed.length > 0) {
-                        ledgerEntries = result.deduped;
-                        console.log('[Dedup] removed', removed.length, 'duplicate ledger entr(y/ies)');
-                        removed.forEach(e => _ledgerDedupRemovedIds.add(String(e.id)));
-                        if (window.dbUpdate && window.dbRef && window.firebaseDB) {
-                            const _delObj = {};
-                            removed.forEach(e => { _delObj[`jewelryData/ledgerEntries/${e.id}`] = null; });
-                            window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
-                        }
-                    } else if (result.removed.length > 0) {
-                        // Already requested deletion of these; just keep them out
-                        // of the in-memory/local view while we wait for Firebase
-                        // to confirm the delete.
-                        ledgerEntries = result.deduped;
-                    }
-
-                    localStorage.setItem('suhagLedger', JSON.stringify(ledgerEntries));
-                    console.log('[Ledger] merged total entries:', ledgerEntries.length, '(local-only pushed up:', localOnly.length, ')');
-                    if (localOnly.length) saveLedger();
-                    const el = document.getElementById('ledger');
-                    if (el && el.style.display !== 'none') renderLedger();
-                } else if (ledgerEntries.length > 0) {
-                    // Cloud empty but we have local entries — push them up
-                    console.log('[Ledger] cloud empty, pushing local entries up:', ledgerEntries.length);
-                    saveLedger();
-                } else {
-                    console.log('[Ledger] cloud empty and no local entries to push');
+                // One-time purge of leftover numeric-index zombie keys (see
+                // _objToArray for why these exist).
+                if (raw.__zombieKeys && raw.__zombieKeys.length) {
+                    console.log('[Cleanup] purging ledger zombie keys:', raw.__zombieKeys);
+                    const purge = {};
+                    raw.__zombieKeys.forEach(k => { purge[`jewelryData/ledgerEntries/${k}`] = null; });
+                    window.dbSafeUpdate(purge).catch(e => console.error('[Cleanup] ledger zombie purge failed', e));
                 }
+
+                // Some duplicates have DIFFERENT ids (e.g. a checkout submitted
+                // twice from two devices) — dedupe those by content fingerprint
+                // and remove the dropped copies from Firebase too.
+                const { deduped, removed } = _dedupeByFingerprint(raw, _ledgerEntryFingerprint);
+                if (removed.length) {
+                    console.log('[Cleanup] removing fingerprint-duplicate ledger entries:', removed.map(e => e.id));
+                    const purge = {};
+                    removed.forEach(e => { purge[`jewelryData/ledgerEntries/${e.id}`] = null; });
+                    window.dbSafeUpdate(purge).catch(e => console.error('[Cleanup] ledger dup purge failed', e));
+                }
+                const cloudEntries = deduped;
+
+                if (cloudEntries.length > 0) {
+                    // Cloud is authoritative — replace local in-memory state.
+                    // Individual writes go via _saveLedgerRecord; no need to push back.
+                    ledgerEntries = cloudEntries;
+                    _saveLedgerLocal();
+                }
+                // If cloud is empty but we have local entries that were written
+                // via _saveLedgerRecord while offline, they're already in Firebase
+                // once we're online — nothing extra needed.
+                const el = document.getElementById('ledger');
+                if (el && el.style.display !== 'none') renderLedger();
             }, (error) => {
                 console.error('[Ledger] Firebase read error:', error);
-                // Do NOT showCustomAlert here — persistent listener fires on every
-                // reconnect/disconnect and would flood the UI with blocking dialogs.
                 setDataSourceBadge('pending');
             });
         }
 
-        function saveLedger() {
+        function _saveLedgerLocal() {
             try {
-                // Keep only the most recent LEDGER_MAX_ENTRIES to avoid quota issues.
-                // Entries are stored newest-first after sort, so slice from the front.
                 const toSave = ledgerEntries.length > LEDGER_MAX_ENTRIES
                     ? [...ledgerEntries].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, LEDGER_MAX_ENTRIES)
                     : ledgerEntries;
                 localStorage.setItem('suhagLedger', JSON.stringify(toSave));
                 _checkStorageQuota();
             } catch(e) {
-                console.warn('[Ledger] localStorage quota exceeded, skipping local save:', e);
-                _storageWarnShown = false;
-                _checkStorageQuota();
+                console.warn('[Ledger] localStorage quota exceeded:', e);
             }
-            if (window.dbUpdate && window.dbRef && window.firebaseDB) {
-                // Write as a flat multi-path update (id → entry) so concurrent writes
-                // from multiple devices merge per-entry instead of overwriting each other.
-                const ledgerObj = {};
-                ledgerEntries.forEach(e => { ledgerObj[`jewelryData/ledgerEntries/${String(e.id)}`] = e; });
-                console.log('[Ledger] writing', ledgerEntries.length, 'entries to Firebase');
-                window.dbUpdate(window.dbRef(window.firebaseDB, '/'), ledgerObj)
-                    .then(() => console.log('[Ledger] write succeeded'))
-                    .catch((e) => {
-                        console.error("[Ledger] Firebase write failed:", e);
-                        showCustomAlert('Ledger cloud save failed: ' + e.message);
-                    });
-            } else {
-                console.log('[Ledger] dbSet or firebaseDB not available, skipping cloud write');
-            }
+        }
+
+        function saveLedger() {
+            _saveLedgerLocal();
+            // NOTE: Firebase writes for new entries happen via _saveLedgerRecord(entry)
+            // called immediately after push(). This function is kept for compatibility.
         }
 
         function ledgerCashTotal() {
@@ -5695,15 +5774,17 @@
             const amt = parseFloat(document.getElementById('ledger-entry-amount').value);
             if (!amt || amt <= 0) { showCustomAlert('Please enter a valid amount.'); return; }
             const note = document.getElementById('ledger-entry-note').value.trim();
-            ledgerEntries.push({
+            const entry = {
                 id: crypto.randomUUID(),
                 type: _ledgerEntryType,
                 amount: amt,
                 note,
                 timestamp: new Date().toISOString(),
                 source: 'manual'
-            });
-            saveLedger();
+            };
+            ledgerEntries.push(entry);
+            _saveLedgerLocal();
+            _saveLedgerRecord(entry); // single-record Firebase write
             renderLedger();
             closeLedgerEntryModal();
             showCustomAlert('Entry saved!');
@@ -5711,14 +5792,9 @@
 
         function deleteLedgerEntry(id) {
             if (!checkPin()) return;
-            ledgerEntries = ledgerEntries.filter(e => String(e.id) !== String(id));
-            if (window.dbUpdate && window.firebaseDB) {
-                const _delObj = {};
-                _delObj[`jewelryData/ledgerEntries/${id}`] = null;
-                window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
-            }
-            saveLedger();
-            renderLedger();
+            _deleteLedgerRecord(id, () => {
+                renderLedger();
+            });
         }
 
 
@@ -5855,7 +5931,7 @@
             <div class="ledger-summary-card" id="ledger-summary-cards"></div>
             <div id="ledger-all-list"></div>
             <div style="display:flex; gap:8px; margin-top:8px;">
-                <button onclick="if(checkPin()) { showCustomConfirm('Clear entire ledger? Cannot undo.', 'Confirm Clear', () => { ledgerEntries=[]; saveLedger(); renderLedger(); }); }"
+                <button onclick="if(checkPin()) { showCustomConfirm('Clear entire ledger? Cannot undo.', 'Confirm Clear', () => { const delObj={}; ledgerEntries.forEach(e=>{delObj['jewelryData/ledgerEntries/'+e.id]=null;}); ledgerEntries=[]; _saveLedgerLocal(); window.dbSafeUpdate(delObj); renderLedger(); }); }"
                     style="flex:1; background:#f44336; color:white; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none;">
                     🗑 Clear Entries
                 </button>
