@@ -45,47 +45,66 @@
         // this (old) HTML file silently stops ALL writes so it cannot
         // corrupt data written by a newer version.
         window.SCHEMA_VERSION = 10;  // bump this when making breaking sync changes
-        window._writeAllowed  = true; // set to false by version check below
 
         // ── ORIGIN GUARD ──────────────────────────────────────────────
-        // Only allow writes when served from the official GitHub Pages URL.
-        // Running from a local file (file://) or any other origin is read-only.
+        // Writes are ONLY allowed when the app is served from the official
+        // GitHub Pages origin. Every other origin (file://, localhost, old
+        // saved copies, other servers) is permanently read-only.
+        //
+        // This is checked synchronously before any Firebase listener is
+        // attached, so no write can ever race past this gate.
         const ALLOWED_ORIGIN = 'https://vaibhavlavish.github.io';
-        if (location.origin !== ALLOWED_ORIGIN) {
-            window._writeAllowed = false;
+        const _originOk = (location.origin === ALLOWED_ORIGIN);
+        window._writeAllowed = _originOk;           // may be flipped false again by schema check
+        window._writeBlockReason = _originOk ? null : 'origin'; // 'origin' | 'schema' | null
+
+        if (!_originOk) {
             console.warn('[ORIGIN] Write blocked — not running from', ALLOWED_ORIGIN, '(got:', location.origin + ')');
             setTimeout(() => {
-                alert('⚠️ This copy is running from:\n' + location.origin +
-                      '\n\nWrites are DISABLED to protect cloud data.\n\nOpen the official app instead:\nhttps://vaibhavlavish.github.io/Suhag-Price-Checker/');
-            }, 300);
+                alert('\u26a0\ufe0f Read-only mode\n\nThis copy is running from:\n' + location.origin +
+                      '\n\nAll writes to the cloud are DISABLED to protect your data.\n\nOpen the official app:\nhttps://vaibhavlavish.github.io/Suhag-Price-Checker/');
+            }, 400);
         }
 
-        // Write a single safe helper used everywhere instead of dbUpdate / dbSet directly
+        // ── SINGLE WRITE GATEWAY ──────────────────────────────────────
+        // Every Firebase write in the entire app goes through dbSafeUpdate.
+        // Nothing calls dbUpdate / dbSet directly.
         window.dbSafeUpdate = function(obj) {
             if (!window._writeAllowed) {
-                console.warn('[SCHEMA] Write blocked — this HTML is outdated. Open the latest version.');
-                return Promise.resolve();
+                const reason = window._writeBlockReason === 'schema'
+                    ? '[BLOCKED] Write rejected — app is outdated (schema mismatch). Open the latest version.'
+                    : '[BLOCKED] Write rejected — not running from the official GitHub Pages URL.';
+                console.warn(reason, obj);
+                return Promise.resolve();   // silently no-op; never throws
             }
             if (!window.dbUpdate || !window.firebaseDB) return Promise.resolve();
             if (!obj || Object.keys(obj).length === 0) return Promise.resolve();
-            return window.dbUpdate(window.dbRef(window.firebaseDB, '/'), obj);
+            // Extra sanity: never write undefined values accidentally
+            const safe = {};
+            for (const [k, v] of Object.entries(obj)) {
+                safe[k] = (v === undefined) ? null : v;
+            }
+            return window.dbUpdate(window.dbRef(window.firebaseDB, '/'), safe);
         };
 
-        // Check cloud schemaVersion once on load
-        onValue(ref(db, 'suhagMeta/schemaVersion'), (snap) => {
-            const cloudVer = snap.val();
-            if (cloudVer && cloudVer > window.SCHEMA_VERSION) {
-                window._writeAllowed = false;
-                console.warn('[SCHEMA] Cloud version', cloudVer, '> local', window.SCHEMA_VERSION, '— writes disabled. Please reload the latest HTML.');
-                const banner = document.getElementById('schema-warn-banner');
-                if (banner) banner.style.display = 'block';
-                // Make this impossible to miss — a hidden console warning was
-                // the reason deletes silently "stopped working" before.
-                setTimeout(() => {
-                    alert('⚠️ This copy of the app is OUTDATED (schema v' + window.SCHEMA_VERSION + ', cloud is v' + cloudVer + ').\n\nAll changes (deletes, edits, etc.) will NOT be saved.\nPlease open the latest index.html file instead.');
-                }, 300);
-            }
-        }, { onlyOnce: true });
+        // ── SCHEMA VERSION CHECK (async, only on correct origin) ──────
+        // Only bother if we're already on the right origin; off-origin is
+        // already blocked above so there's no point listening.
+        if (_originOk) {
+            onValue(ref(db, 'suhagMeta/schemaVersion'), (snap) => {
+                const cloudVer = snap.val();
+                if (cloudVer && cloudVer > window.SCHEMA_VERSION) {
+                    window._writeAllowed = false;
+                    window._writeBlockReason = 'schema';
+                    console.warn('[SCHEMA] Cloud version', cloudVer, '> local', window.SCHEMA_VERSION, '— writes disabled.');
+                    const banner = document.getElementById('schema-warn-banner');
+                    if (banner) banner.style.display = 'block';
+                    setTimeout(() => {
+                        alert('\u26a0\ufe0f This copy of the app is OUTDATED (schema v' + window.SCHEMA_VERSION + ', cloud is v' + cloudVer + ').\n\nAll changes (deletes, edits, etc.) will NOT be saved.\nPlease open the latest version of the app.');
+                    }, 300);
+                }
+            }, { onlyOnce: true });
+        }
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
