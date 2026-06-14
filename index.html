@@ -2259,6 +2259,10 @@
 
         // Accepts either a flat snapshot (old single-key format) or the merged
         // object produced by readSplitKeys() below.
+        // Tracks bill ids we've already asked Firebase to delete this session,
+        // so dedup doesn't repeatedly re-issue the same delete (which would
+        // re-trigger the jewelryData onValue listener in a loop).
+        const _billDedupRemovedIds = new Set();
         function applyDataSnapshot(cloudData) {
             rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
             taxRate = cloudData.taxRate ?? 3;
@@ -2278,6 +2282,24 @@
             } else if (_incoming.length > 0) {
                 billHistory = _incoming;
             }
+            // Remove duplicate bills that share identical content but different
+            // ids (e.g. the same checkout submitted from two tabs).
+            {
+                const result = _dedupeByFingerprint(billHistory, _billFingerprint);
+                const removed = result.removed.filter(b => !_billDedupRemovedIds.has(String(b.id)));
+                if (removed.length > 0) {
+                    billHistory = result.deduped;
+                    console.log('[Dedup] removed', removed.length, 'duplicate bill(s)');
+                    removed.forEach(b => _billDedupRemovedIds.add(String(b.id)));
+                    if (window.dbUpdate && window.dbRef && window.firebaseDB) {
+                        const _delObj = {};
+                        removed.forEach(b => { _delObj[`jewelryData/billHistory/${b.id}`] = null; });
+                        window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
+                    }
+                } else if (result.removed.length > 0) {
+                    billHistory = result.deduped;
+                }
+            }
             // Re-render the bills tab if it is currently visible
             if (typeof _renderBillHistoryInLedger === 'function') {
                 _renderBillHistoryInLedger();
@@ -2292,6 +2314,35 @@
             if (!val) return [];
             if (Array.isArray(val)) return val; // legacy array format
             return Object.values(val);
+        }
+
+        // Helper: remove duplicate records that share the same content but have
+        // different ids (e.g. caused by the same checkout being submitted from
+        // two browser tabs/windows at once). Keeps the first occurrence of each
+        // unique fingerprint. Returns { deduped, removed } where removed is the
+        // list of dropped records (so callers can clean them up in Firebase too).
+        function _dedupeByFingerprint(arr, fingerprintFn) {
+            const seen = new Set();
+            const deduped = [];
+            const removed = [];
+            (arr || []).forEach(item => {
+                const fp = fingerprintFn(item);
+                if (seen.has(fp)) {
+                    removed.push(item);
+                } else {
+                    seen.add(fp);
+                    deduped.push(item);
+                }
+            });
+            return { deduped, removed };
+        }
+
+        function _ledgerEntryFingerprint(e) {
+            return [e.type, e.amount, e.timestamp, e.note || '', e.source || '', e.cashPortion ?? ''].join('|');
+        }
+
+        function _billFingerprint(b) {
+            return [b.timestamp, b.total, b.netPayable, b.oldGoldTotal, JSON.stringify(b.items), JSON.stringify(b.payment)].join('|');
         }
 
         // Read the Firebase snapshot and normalise it into one flat object that
@@ -5304,11 +5355,25 @@
         let _ledgerEntryType = 'in';
         let _currentLedgerTab = 'all';
 
+        // Tracks ids we've already asked Firebase to delete this session, so
+        // dedup doesn't repeatedly re-issue the same delete (which would
+        // re-trigger the ledger onValue listener in a loop).
+        const _ledgerDedupRemovedIds = new Set();
+
         function loadLedger() {
             try {
                 const saved = localStorage.getItem('suhagLedger');
                 if (saved) ledgerEntries = JSON.parse(saved);
             } catch(e) { ledgerEntries = []; }
+            // Dedup the cached copy immediately so the very first render (before
+            // the async Firebase sync responds) doesn't show stale duplicates.
+            // The Firebase-side cleanup happens once syncLedgerFromCloud responds.
+            const { deduped, removed } = _dedupeByFingerprint(ledgerEntries, _ledgerEntryFingerprint);
+            if (removed.length > 0) {
+                ledgerEntries = deduped;
+                removed.forEach(e => _ledgerDedupRemovedIds.add(String(e.id)));
+                localStorage.setItem('suhagLedger', JSON.stringify(ledgerEntries));
+            }
             console.log('[Ledger] loaded from local cache:', ledgerEntries.length, 'entries');
             syncLedgerFromCloud();
         }
@@ -5335,6 +5400,28 @@
                     const seen = new Set(cloudEntries.map(e => String(e.id)));
                     const localOnly = ledgerEntries.filter(e => !seen.has(String(e.id)));
                     ledgerEntries = [...cloudEntries, ...localOnly];
+
+                    // Remove duplicate ledger entries that share identical content
+                    // but different ids (e.g. the same checkout submitted from two
+                    // tabs/windows at once).
+                    const result = _dedupeByFingerprint(ledgerEntries, _ledgerEntryFingerprint);
+                    const removed = result.removed.filter(e => !_ledgerDedupRemovedIds.has(String(e.id)));
+                    if (removed.length > 0) {
+                        ledgerEntries = result.deduped;
+                        console.log('[Dedup] removed', removed.length, 'duplicate ledger entr(y/ies)');
+                        removed.forEach(e => _ledgerDedupRemovedIds.add(String(e.id)));
+                        if (window.dbUpdate && window.dbRef && window.firebaseDB) {
+                            const _delObj = {};
+                            removed.forEach(e => { _delObj[`jewelryData/ledgerEntries/${e.id}`] = null; });
+                            window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
+                        }
+                    } else if (result.removed.length > 0) {
+                        // Already requested deletion of these; just keep them out
+                        // of the in-memory/local view while we wait for Firebase
+                        // to confirm the delete.
+                        ledgerEntries = result.deduped;
+                    }
+
                     localStorage.setItem('suhagLedger', JSON.stringify(ledgerEntries));
                     console.log('[Ledger] merged total entries:', ledgerEntries.length, '(local-only pushed up:', localOnly.length, ')');
                     if (localOnly.length) saveLedger();
@@ -5472,11 +5559,23 @@
                             ${e.note ? `<div class="ledger-entry-note">${e.note}</div>` : ''}
                         </div>
                         <div class="ledger-entry-amount ${isPos ? 'positive' : 'negative'}">${isPos?'+':'-'}₹${_fmt(e.amount)}</div>
-                        <button class="ledger-entry-del" onclick="deleteLedgerEntry('${e.id}')">✕</button>
+                        <button class="ledger-entry-del" data-entry-id="${String(e.id).replace(/"/g,'&quot;')}">✕</button>
                     </div>`;
                 });
             });
             el.innerHTML = html;
+
+            // Delegated click handler for delete buttons (attached once per container).
+            // Using a data-attribute + delegation avoids any issue with the entry
+            // id containing characters that could break an inline onclick string.
+            if (!el.dataset.deleteHandlerAttached) {
+                el.addEventListener('click', function(ev) {
+                    const btn = ev.target.closest('.ledger-entry-del');
+                    if (!btn) return;
+                    deleteLedgerEntry(btn.dataset.entryId);
+                });
+                el.dataset.deleteHandlerAttached = 'true';
+            }
         }
 
         function switchLedgerTab(tab) {
@@ -5612,7 +5711,7 @@
 
         function deleteLedgerEntry(id) {
             if (!checkPin()) return;
-            ledgerEntries = ledgerEntries.filter(e => e.id !== id);
+            ledgerEntries = ledgerEntries.filter(e => String(e.id) !== String(id));
             if (window.dbUpdate && window.firebaseDB) {
                 const _delObj = {};
                 _delObj[`jewelryData/ledgerEntries/${id}`] = null;
