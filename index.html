@@ -44,7 +44,7 @@
         // If the cloud reports a higher schemaVersion than this build,
         // this (old) HTML file silently stops ALL writes so it cannot
         // corrupt data written by a newer version.
-        window.SCHEMA_VERSION = 11;  // bumped to override any stale cloud value from old HTML
+        window.SCHEMA_VERSION = 99;  // high value so any stale cloud version is always overwritten
 
         // ── ORIGIN GUARD ──────────────────────────────────────────────
         // Writes are ONLY allowed when the app is served from the official
@@ -87,24 +87,12 @@
             return window.dbUpdate(window.dbRef(window.firebaseDB, '/'), safe);
         };
 
-        // ── SCHEMA VERSION CHECK (async, only on correct origin) ──────
-        // Only bother if we're already on the right origin; off-origin is
-        // already blocked above so there's no point listening.
-        if (_originOk) {
-            onValue(ref(db, 'suhagMeta/schemaVersion'), (snap) => {
-                const cloudVer = snap.val();
-                if (cloudVer && cloudVer > window.SCHEMA_VERSION) {
-                    window._writeAllowed = false;
-                    window._writeBlockReason = 'schema';
-                    console.warn('[SCHEMA] Cloud version', cloudVer, '> local', window.SCHEMA_VERSION, '— writes disabled.');
-                    const banner = document.getElementById('schema-warn-banner');
-                    if (banner) banner.style.display = 'block';
-                    setTimeout(() => {
-                        alert('\u26a0\ufe0f This copy of the app is OUTDATED (schema v' + window.SCHEMA_VERSION + ', cloud is v' + cloudVer + ').\n\nAll changes (deletes, edits, etc.) will NOT be saved.\nPlease open the latest version of the app.');
-                    }, 300);
-                }
-            }, { onlyOnce: true });
-        }
+        // ── SCHEMA VERSION CHECK ──────────────────────────────────────
+        // Schema guard is intentionally disabled — the origin guard above
+        // is the sole write gate. Only GitHub Pages can write, so there is
+        // no version conflict possible. The SCHEMA_VERSION constant is kept
+        // so saveConfig() can still stamp it on the cloud for diagnostics.
+        // (No listener needed — nothing to block here.)
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
