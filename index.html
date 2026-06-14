@@ -62,23 +62,23 @@
              --border:    #E2E0DB
         ============================================================ */
         :root {
-            --bg:       #F7F7F8;
+            --bg:       #FFFFFF;
             --surface:  #FFFFFF;
-            --charcoal: #1C1C1E;
-            --gold:     #B8922E;
-            --gold-dk:  #8A6B1E;
-            --gold-lt:  #F5EDD6;
-            --green:    #1E7A3E;
-            --green-lt: #E8F5EE;
-            --blue:     #1252A3;
-            --blue-lt:  #E8EFFC;
-            --red:      #C0392B;
-            --red-lt:   #FDEDEB;
-            --text:     #1C1C1E;
-            --text2:    #6B6B6B;
-            --border:   #E2E0DB;
-            --radius:   12px;
-            --radius-sm:8px;
+            --charcoal: #071A0F;
+            --gold:     #15803D;
+            --gold-dk:  #166534;
+            --gold-lt:  #F0FDF4;
+            --green:    #15803D;
+            --green-lt: #F0FDF4;
+            --blue:     #1D6BB5;
+            --blue-lt:  #EFF6FF;
+            --red:      #DC2626;
+            --red-lt:   #FEF2F2;
+            --text:     #071A0F;
+            --text2:    #6B8F73;
+            --border:   #BBF7D0;
+            --radius:   14px;
+            --radius-sm:9px;
         }
     </style>
     <style>
@@ -98,10 +98,10 @@
             display: flex;
             flex-direction: column;
             touch-action: manipulation;
-            overscroll-behavior-y: auto;
+            overscroll-behavior-y: contain;
         }
         #taskbar {
-            background: var(--charcoal);
+            background: #071A0F;
             color: white;
             padding: 10px 10px;
             display: flex;
@@ -134,9 +134,9 @@
             color: white;
         }
         #taskbar button.active {
-            background: var(--gold);
+            background: #15803D;
             color: #fff;
-            box-shadow: 0 2px 8px rgba(184,146,46,0.45);
+            box-shadow: 0 2px 10px rgba(21,128,61,0.55);
         }
         #options-btn {
             background: rgba(255,255,255,0.08) !important;
@@ -252,19 +252,19 @@
             width: 100%;
             max-width: 100%;
             text-align: center;
-            border: 1.5px solid #D8D8DC;
+            border: 2px solid #BBF7D0;
             border-radius: var(--radius);
             margin-bottom: 16px;
-            background: #F7F7F8;
+            background: #F0FDF4;
             box-shadow: none;
             font-family: 'Inter', sans-serif;
             font-weight: 500;
             color: var(--text);
         }
         #barcode:focus, #loose-weight:focus {
-            border-color: var(--gold);
+            border-color: #15803D;
             outline: none;
-            box-shadow: 0 0 0 3px rgba(184,146,46,0.2);
+            box-shadow: 0 0 0 3px rgba(21,128,61,0.18);
         }
         #product-code {
             font-size: 16px;
@@ -285,24 +285,24 @@
         #price-display {
             font-size: 56px;
             font-weight: 900;
-            color: #B8922E;
+            color: #15803D;
             margin: 8px 0 4px;
             opacity: 0;
             transition: opacity 0.35s ease;
             letter-spacing: -2px;
             font-family: 'Inter', sans-serif;
             line-height: 1;
-            text-shadow: 0 2px 12px rgba(184,146,46,0.25);
+            text-shadow: none;
         }
         #loose-price-display { /* Style for loose calculator display */
             font-size: 52px;
             font-weight: 800;
-            color: #B8922E;
+            color: #15803D;
             margin: 16px 0;
             text-align: center;
             letter-spacing: -1.5px;
             font-family: 'Inter', sans-serif;
-            text-shadow: 0 2px 12px rgba(184,146,46,0.25);
+            text-shadow: none;
         }
         #price-display.show {
             opacity: 1;
@@ -357,36 +357,31 @@
             box-shadow: 0 1px 4px rgba(0,0,0,0.2);
         }
         #detail-btn {
-            background: #D6E4F7;
-            color: #1252A3 !important;
-            box-shadow: 0 2px 8px rgba(18,82,163,0.15);
+            background: #1D6BB5;
+            box-shadow: 0 3px 10px rgba(29,107,181,0.4);
         }
         #add-to-cart-btn, #loose-add-to-cart-btn {
-            background: #D4EFE0;
-            color: #1E7A3E !important;
-            box-shadow: 0 2px 8px rgba(30,122,62,0.15);
+            background: #15803D;
+            box-shadow: 0 3px 10px rgba(21,128,61,0.4);
         }
         #alter-btn, #loose-alter-btn {
-            background: #FDEBD0;
-            color: #C05C00 !important;
-            box-shadow: 0 2px 8px rgba(192,92,0,0.15);
+            background: #D97706;
+            box-shadow: 0 3px 10px rgba(217,119,6,0.4);
         }
         .clear-btn {
-            background: #FAD7D3;
-            color: #C0392B !important;
-            box-shadow: 0 2px 8px rgba(192,57,43,0.15);
+            background: #DC2626;
+            box-shadow: 0 3px 10px rgba(220,38,38,0.35);
         }
         #cart-btn {
-            background: #E0E0E5;
+            background: #071A0F;
             position: relative;
-            color: #1C1C1E !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+            box-shadow: 0 3px 10px rgba(7,26,15,0.4);
         }
         #cart-counter {
             position: absolute;
             top: -5px;
             right: 10px;
-            background: #f44336;
+            background: #E8553E;
             color: white;
             border-radius: 50%;
             width: 22px;
@@ -1335,6 +1330,9 @@
 
             <div class="menu-divider"></div>
             <div class="menu-section-label">Actions</div>
+            <button onclick="location.reload()" style="color:#15803D; font-weight:700;">
+                <span class="menu-icon" style="background:#F0FDF4;">🔄</span> Refresh App
+            </button>
             <button onclick="clearAll()">
                 <span class="menu-icon" style="background:#f5f5f5;">🧹</span> Clear Screen
             </button>
@@ -1367,7 +1365,7 @@
         <div style="display:flex; gap:8px; align-items:center;">
             <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus maxlength="50" style="flex:1; margin-bottom:0;">
             <button onclick="openCamera('barcode')" id="cam-btn-main" title="Scan with camera"
-                style="flex-shrink:0; width:46px; height:46px; border-radius:12px; background:var(--gold); color:white; border:none; font-size:22px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 8px rgba(184,146,46,0.35);">
+                style="flex-shrink:0; width:46px; height:46px; border-radius:12px; background:#15803D; color:white; border:none; font-size:22px; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 10px rgba(21,128,61,0.45);">
                 📷
             </button>
         </div>
@@ -1429,8 +1427,8 @@
             Clear Screen
         </button>
 
-        <button id="loose-add-to-cart-btn" class="full-width-btn" onclick="addToCartLoose()" style="margin-top: 10px; background-color: #D4EFE0; color: #1E7A3E;">Add to Cart</button>
-        <button id="loose-alter-btn" class="full-width-btn" onclick="openLooseAlterDialog()" style="margin-top: 10px; background-color: #FDEBD0; color: #C05C00;">Alter</button>
+        <button id="loose-add-to-cart-btn" class="full-width-btn" onclick="addToCartLoose()" style="margin-top: 10px; background-color: #15803D;">Add to Cart</button>
+        <button id="loose-alter-btn" class="full-width-btn" onclick="openLooseAlterDialog()" style="margin-top: 10px; background-color: #D97706;">Alter</button>
         <button onclick="showSection('main')" style="margin-top: 10px;">Back to Main</button>
 
         <label for="repair-amount">Other Amount (₹):</label>
@@ -5696,7 +5694,7 @@
             </div>
 
             <button onclick="confirmPayment()" id="pay-confirm-btn"
-                style="width:100%; padding:14px; background:var(--green); color:white; border:none; border-radius:14px; font-size:16px; font-weight:800; cursor:pointer; letter-spacing:0.02em; font-family:'Inter',sans-serif;">
+                style="width:100%; padding:14px; background:#0D6B3A; color:white; border:none; border-radius:14px; font-size:16px; font-weight:800; cursor:pointer; letter-spacing:0.02em; font-family:'Inter',sans-serif; box-shadow:0 4px 14px rgba(13,107,58,0.4);">
                 ✓ Confirm &amp; Save Bill
             </button>
         </div>
@@ -5716,82 +5714,13 @@
             font-family: 'Inter', sans-serif;
         }
         .pay-mode-btn.selected {
-            border-color: var(--gold);
-            background: linear-gradient(135deg, #B8922E, #D4A843);
+            border-color: #15803D;
+            background: linear-gradient(135deg, #15803D, #16A34A);
             color: #fff;
-            box-shadow: 0 4px 14px rgba(184,146,46,0.45);
+            box-shadow: 0 4px 14px rgba(21,128,61,0.45);
             transform: translateY(-1px);
         }
     </style>
 
 </body>
 </html>
-
-<!-- Pull-to-Refresh -->
-<div id="ptr-indicator" style="
-    position: fixed;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%) translateY(-60px);
-    background: #1C1C1E;
-    color: white;
-    border-radius: 0 0 20px 20px;
-    padding: 8px 20px;
-    font-size: 13px;
-    font-weight: 600;
-    z-index: 9999;
-    transition: transform 0.2s ease;
-    white-space: nowrap;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    pointer-events: none;
-">↓ Pull to refresh</div>
-
-<script>
-(function() {
-    var ptr = document.getElementById('ptr-indicator');
-    var startY = 0;
-    var pulling = false;
-    var threshold = 80;
-
-    document.addEventListener('touchstart', function(e) {
-        // Only activate if at the very top of the page/scroll
-        startY = e.touches[0].clientY;
-        pulling = true;
-    }, { passive: true });
-
-    document.addEventListener('touchmove', function(e) {
-        if (!pulling) return;
-        var dy = e.touches[0].clientY - startY;
-        if (dy <= 0) {
-            ptr.style.transform = 'translateX(-50%) translateY(-60px)';
-            ptr.style.background = '#1C1C1E';
-            ptr.textContent = '↓ Pull to refresh';
-            return;
-        }
-        var progress = Math.min(dy / threshold, 1);
-        var translateY = -60 + (progress * 60);
-        ptr.style.transform = 'translateX(-50%) translateY(' + translateY + 'px)';
-        if (progress >= 1) {
-            ptr.style.background = '#B8922E';
-            ptr.textContent = '↑ Release to reload';
-        } else {
-            ptr.style.background = '#1C1C1E';
-            ptr.textContent = '↓ Pull to refresh';
-        }
-    }, { passive: true });
-
-    document.addEventListener('touchend', function(e) {
-        if (!pulling) return;
-        pulling = false;
-        var dy = (e.changedTouches[0].clientY - startY);
-        if (dy >= threshold) {
-            ptr.style.background = '#B8922E';
-            ptr.textContent = '⟳ Reloading…';
-            ptr.style.transform = 'translateX(-50%) translateY(0px)';
-            setTimeout(function() { location.reload(); }, 400);
-        } else {
-            ptr.style.transform = 'translateX(-50%) translateY(-60px)';
-        }
-    }, { passive: true });
-})();
-</script>
