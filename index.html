@@ -17,7 +17,7 @@
     <script type="module">
         // Import the functions you need from the Firebase SDKs
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+        import { getDatabase, ref, set, update, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
         // Your web app's Firebase configuration
         const firebaseConfig = {
@@ -37,6 +37,7 @@
         window.firebaseDB = db;
         window.dbRef = ref;
         window.dbSet = set;
+        window.dbUpdate = update;
         window.dbOnValue = onValue;
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
@@ -1961,8 +1962,6 @@
                                 const db   = window.firebaseDB;
                                 const rRef = window.dbRef;
                                 const rSet = window.dbSet;
-                                // Write using the same split-key format as saveAllDataToCloud
-                                // so the tombstone logic never races against restored flat keys.
                                 Promise.all([
                                     rSet(rRef(db, 'jewelryData/config'), {
                                         rates:            dataToRestore.rates,
@@ -1976,8 +1975,6 @@
                                         makingProfiles: dataToRestore.makingProfiles || [],
                                         presets:        dataToRestore.presets        || []
                                     }),
-                                    // Null out any leftover flat keys so readSplitKeys
-                                    // doesn't fall back to the old format next load.
                                     rSet(rRef(db, 'jewelryData/rates'),            null),
                                     rSet(rRef(db, 'jewelryData/taxRate'),          null),
                                     rSet(rRef(db, 'jewelryData/looseDefaults'),    null),
@@ -1986,7 +1983,6 @@
                                     rSet(rRef(db, 'jewelryData/presets'),          null)
                                 ])
                                 .then(() => {
-                                    // Mark tombstone done so saveAllDataToCloud skips null-writes
                                     localStorage.setItem('suhagFlatKeysTombstoned', '1');
                                     showCustomAlert("Restore Successful! Reloading app...");
                                     setTimeout(() => location.reload(), 2000);
@@ -2128,6 +2124,43 @@
         // === OFFLINE CACHE HELPERS ===
         const CACHE_KEY = 'suhagPriceCheckerDataCache';
 
+        // --- Storage quota guard ---
+        // Returns approximate used KB across all suhag keys.
+        function _suhagStorageUsedKB() {
+            const keys = [
+                CACHE_KEY, 'suhagLedger', 'suhagPriceCheckerCart',
+                'suhagPriceCheckerOldGold', PENDING_SYNC_KEY, 'activeProfileId',
+                'suhagFlatKeysTombstoned'
+            ];
+            let bytes = 0;
+            for (const k of keys) {
+                try {
+                    const v = localStorage.getItem(k);
+                    if (v) bytes += k.length + v.length;
+                } catch(_) {}
+            }
+            return Math.round(bytes * 2 / 1024); // UTF-16: 2 bytes per char
+        }
+
+        // Shows a one-time banner if storage is above threshold.
+        let _storageWarnShown = false;
+        function _checkStorageQuota() {
+            if (_storageWarnShown) return;
+            const usedKB = _suhagStorageUsedKB();
+            if (usedKB > 3500) { // warn at ~3.5 MB (out of 5 MB limit)
+                _storageWarnShown = true;
+                console.warn('[Storage] Used ~' + usedKB + ' KB — approaching 5 MB limit');
+                const banner = document.createElement('div');
+                banner.id = 'storage-warn-banner';
+                banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#e65100;color:#fff;text-align:center;padding:8px 14px;font-size:13px;font-weight:700;z-index:9999;';
+                banner.innerHTML = '⚠️ Storage nearly full (' + Math.round(usedKB/1024*10)/10 + ' MB / 5 MB). Export & clear old bills to free space. <button onclick="this.parentElement.remove()" style="background:none;border:1px solid #fff;color:#fff;border-radius:5px;padding:2px 8px;cursor:pointer;margin-left:8px;font-size:12px;">Dismiss</button>';
+                document.body.appendChild(banner);
+            }
+        }
+
+        // Prune ledger to keep only the most recent N entries when saving.
+        const LEDGER_MAX_ENTRIES = 400;
+
         function saveDataToLocalCache(data) {
             try {
                 const cachePayload = {
@@ -2135,8 +2168,16 @@
                     _cachedAt: new Date().toISOString()
                 };
                 localStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
+                _checkStorageQuota();
             } catch (e) {
-                console.warn("Could not save to local cache:", e);
+                // Storage is completely full — do NOT remove or wipe the cache.
+                // Deleting CACHE_KEY would destroy the entire offline database, leaving
+                // the app with an empty screen if the internet goes down.
+                // Instead, just warn the user and let them clear space manually.
+                console.warn("Could not save to local cache (quota exceeded):", e);
+                _storageWarnShown = false;
+                _checkStorageQuota();
+                showCustomAlert("⚠️ CRITICAL: Device storage is completely full. New changes cannot be saved offline. Please clear old bills or free up space on this device to avoid data loss.");
             }
         }
 
@@ -2233,7 +2274,7 @@
                 const _cloudIds = new Set(_incoming.map(b => String(b.id)));
                 const _localOnly = billHistory.filter(b => !_cloudIds.has(String(b.id)));
                 billHistory = [..._localOnly, ..._incoming];
-                billHistory.sort((a, b) => b.id - a.id);
+                billHistory.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
             } else if (_incoming.length > 0) {
                 billHistory = _incoming;
             }
@@ -2245,10 +2286,18 @@
             applyFactoryDefaults();
         }
 
+        // Helper: Firebase object (keyed by id) → sorted array.
+        // Handles both old array format and new object format transparently.
+        function _objToArray(val) {
+            if (!val) return [];
+            if (Array.isArray(val)) return val; // legacy array format
+            return Object.values(val);
+        }
+
         // Read the Firebase snapshot and normalise it into one flat object that
         // applyDataSnapshot() understands.  Handles two formats:
         //   • OLD (flat):  { rates, taxRate, products, billHistory, makingProfiles, ... }
-        //   • NEW (split): { config:{rates,taxRate,...}, products:{...}, billHistory:[...], profiles:{...} }
+        //   • NEW (split): { config:{rates,taxRate,...}, products:{...}, billHistory:{...}, profiles:{...} }
         function readSplitKeys(snapshot) {
             const val = snapshot.val();
             if (!val) return null;
@@ -2263,14 +2312,15 @@
             const config   = val.config   || {};
             const profiles = val.profiles || {};
             return {
-                rates:           config.rates           || null,
-                taxRate:         config.taxRate         ?? 3,
-                looseDefaults:   config.looseDefaults   || null,
+                rates:            config.rates            || null,
+                taxRate:          config.taxRate          ?? 3,
+                looseDefaults:    config.looseDefaults    || null,
                 baseCalcDefaults: config.baseCalcDefaults || {},
-                products:        val.products           || {},
-                billHistory:     Array.isArray(val.billHistory) ? val.billHistory : [],
-                makingProfiles:  profiles.makingProfiles || [],
-                presets:         profiles.presets        || []
+                products:         val.products            || {},
+                // billHistory and profiles may be keyed objects (new) or arrays (old)
+                billHistory:      _objToArray(val.billHistory),
+                makingProfiles:   _objToArray(profiles.makingProfiles),
+                presets:          _objToArray(profiles.presets)
             };
         }
 
@@ -2339,7 +2389,16 @@
                         // Deep-merge arrays by ID so offline edits don't silently
                     // overwrite items added on another device.
                     const localData = cachedData ? stripCacheMeta(cachedData) : {};
+                    // Start with cloud as the authoritative base, then layer in
+                    // local-only changes. Object.assign is intentionally NOT used
+                    // for products — that would silently overwrite barcodes added
+                    // on another device. Instead we merge per-barcode: cloud wins
+                    // for any key that exists in both (newest cloud data), and
+                    // local-only barcodes (added while offline) are preserved.
                     const merged = Object.assign({}, cloudData, localData);
+                    const cloudProducts = cloudData.products || {};
+                    const localProducts = localData.products || {};
+                    merged.products = Object.assign({}, localProducts, cloudProducts);
 
                     // billHistory: union of both arrays, keyed by id
                     if (Array.isArray(cloudData.billHistory) && Array.isArray(localData.billHistory)) {
@@ -2355,6 +2414,14 @@
                         merged.makingProfiles = [
                             ...localData.makingProfiles,
                             ...cloudData.makingProfiles.filter(p => !seenP.has(p.id))
+                        ];
+                    }
+                    // presets: union keyed by id
+                    if (Array.isArray(cloudData.presets) && Array.isArray(localData.presets)) {
+                        const seenPr = new Set(localData.presets.map(p => p.id));
+                        merged.presets = [
+                            ...localData.presets,
+                            ...cloudData.presets.filter(p => !seenPr.has(p.id))
                         ];
                     }
                         applyDataSnapshot(merged);
@@ -2421,37 +2488,55 @@
             const db   = window.firebaseDB;
             const rRef = window.dbRef;
             const rSet = window.dbSet;
-
-            // For fresh devices that were never on the old flat-key format,
-            // mark the tombstone immediately so no null-writes are included below.
-            // (The flag is also set in .then() after a successful write — this
-            //  just ensures new installs skip the null-write array entirely.)
+            // Compute once — avoids re-reading localStorage inside the array spread.
             const _needsTombstone = !localStorage.getItem('suhagFlatKeysTombstoned');
 
-            Promise.all([
-                rSet(rRef(db, 'jewelryData/config'),  {
+            // Convert arrays to keyed objects for Firebase so concurrent writes
+            // from multiple devices merge per-record instead of overwriting each other.
+            const billHistoryObj = {};
+            (billHistory || []).forEach(b => { billHistoryObj[String(b.id)] = b; });
+            const profilesObj = {};
+            (makingProfiles || []).forEach(p => { profilesObj[String(p.id)] = p; });
+            const presetsObj = {};
+            (loosePresets || []).forEach(p => { presetsObj[String(p.id)] = p; });
+
+            // Build a single master multi-path update object. Firebase forbids
+            // calling update() with an empty object — merging everything into one
+            // map and guarding with a length check avoids that crash (e.g. when
+            // billHistory is empty after a clear, or a new user has 0 presets).
+            const rUpdate = window.dbUpdate;
+            const masterUpdate = {};
+            Object.entries(billHistoryObj).forEach(([k, v]) => { masterUpdate[`jewelryData/billHistory/${k}`] = v; });
+            Object.entries(profilesObj).forEach(([k, v]) => { masterUpdate[`jewelryData/profiles/makingProfiles/${k}`] = v; });
+            Object.entries(presetsObj).forEach(([k, v]) => { masterUpdate[`jewelryData/profiles/presets/${k}`] = v; });
+
+            const promises = [
+                rSet(rRef(db, 'jewelryData/config'), {
                     rates, taxRate,
                     looseDefaults: looseDefaultsCloud,
                     baseCalcDefaults
                 }),
-                rSet(rRef(db, 'jewelryData/products'),     productData   || {}),
-                rSet(rRef(db, 'jewelryData/billHistory'),  billHistory   || []),
-                rSet(rRef(db, 'jewelryData/profiles'),     {
-                    makingProfiles: makingProfiles || [],
-                    presets: loosePresets || []
-                }),
-                // Tombstone old flat-key fields — only once per device after migration,
-                // and only if the old flat 'rates' key was present in the last cloud read.
-                // Fresh devices that never used the old format set the flag immediately.
-                ...(_needsTombstone ? [
+                rSet(rRef(db, 'jewelryData/products'), productData || {})
+            ];
+
+            // Only call update() if there is at least one key — empty object crashes Firebase
+            if (Object.keys(masterUpdate).length > 0) {
+                promises.push(rUpdate(rRef(db, '/'), masterUpdate));
+            }
+
+            // Tombstone old flat-key fields — only once per device after migration
+            if (_needsTombstone) {
+                promises.push(
                     rSet(rRef(db, 'jewelryData/rates'),            null),
                     rSet(rRef(db, 'jewelryData/taxRate'),          null),
                     rSet(rRef(db, 'jewelryData/looseDefaults'),    null),
                     rSet(rRef(db, 'jewelryData/baseCalcDefaults'), null),
                     rSet(rRef(db, 'jewelryData/makingProfiles'),   null),
                     rSet(rRef(db, 'jewelryData/presets'),          null)
-                ] : [])
-            ])
+                );
+            }
+
+            Promise.all(promises)
             .then(() => {
                 console.log("Data saved to Firebase (split keys).");
                 localStorage.setItem('suhagFlatKeysTombstoned', '1');
@@ -3277,7 +3362,7 @@
             }
 
             const newPreset = {
-                id: Date.now(),
+                id: crypto.randomUUID(),
                 name: name,
                 metal: metal,
                 stamp: stamp,
@@ -3300,10 +3385,13 @@
         }
 
         function deletePreset(id) {
-            // PIN CHECK ADDED
             if (!checkPin()) return;
             loosePresets = loosePresets.filter(p => p.id !== id);
-            // NOW SAVING TO CLOUD
+            if (window.dbUpdate && window.firebaseDB) {
+                const _delObj = {};
+                _delObj[`jewelryData/profiles/presets/${id}`] = null;
+                window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
+            }
             saveAllDataToCloud();
             renderPresetList();
         }
@@ -3863,9 +3951,8 @@
                         clickAction = '';
                     } else {
                         // Standard Logic — use data-* attrs to avoid quote injection
-                        // from barcodes that might contain apostrophes.
                         details = `Barcode: ${item.barcode}`;
-                        clickAction = `data-barcode="${item.barcode.replace(/"/g,'&quot;')}" data-override='${JSON.stringify(item.makingOverride).replace(/'/g,"&#39;")}'  onclick="viewItemFromCart(this.dataset.barcode, JSON.parse(this.dataset.override))"`;
+                        clickAction = `data-barcode="${item.barcode.replace(/"/g,'&quot;')}" data-override="${btoa(encodeURIComponent(JSON.stringify(item.makingOverride)))}" onclick="viewItemFromCart(this.dataset.barcode, this.dataset.override)"`;
                     }
 
                     cartHtml += `
@@ -3922,6 +4009,14 @@
         function removeFromCart(itemId) {
             showCustomConfirm('Are you sure you want to remove this item from the cart?', 'Confirm Removal', () => {
                 cart = cart.filter(item => item.id !== itemId);
+                // Safety: if the discount now exceeds what's left in the cart (or cart
+                // is empty), reset it — otherwise netPayable goes negative and checkout
+                // silently records a false refund in the ledger.
+                const newBase = cart.reduce((s, i) => s + i.finalPrice, 0)
+                              - oldGoldItems.reduce((s, i) => s + i.value, 0);
+                if (cart.length === 0 || cartAdjustment > newBase) {
+                    cartAdjustment = 0;
+                }
                 localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
                 updateCartIcon();
                 openCart(); // Re-render the cart modal
@@ -3929,9 +4024,18 @@
         }
 
         // NEW: Function to view item and restore its specific making charge
-        function viewItemFromCart(barcode, overrideData) {
+        function viewItemFromCart(barcode, encodedOverride) {
             closeModal('cart-modal');
             document.getElementById('barcode').value = barcode;
+
+            let overrideData = null;
+            if (encodedOverride && encodedOverride !== "undefined") {
+                try {
+                    overrideData = JSON.parse(decodeURIComponent(atob(encodedOverride)));
+                } catch(e) {
+                    console.error("Failed to parse cart item override metadata:", e);
+                }
+            }
             // Pass frozenMaking directly so lookupProduct doesn't wipe it
             lookupProduct(barcode, overrideData);
         }
@@ -3968,7 +4072,7 @@
                 return;
             }
 
-            oldGoldItems.push({ desc: desc, value: val, id: Date.now() });
+            oldGoldItems.push({ desc: desc, value: val, id: crypto.randomUUID() });
             localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
 
             // Clear inputs
@@ -3999,7 +4103,7 @@
                         <div class="old-gold-item-row">
                             <span>${item.desc}</span>
                             <span style="font-weight:bold; color: #f44336;">- ₹${item.value.toFixed(2)}</span>
-                            <button onclick="removeOldGoldItem(${item.id})" class="remove-old-gold-btn">&times;</button>
+                            <button onclick="removeOldGoldItem('${item.id}')" class="remove-old-gold-btn">&times;</button>
                         </div>
                     `;
                 });
@@ -4235,6 +4339,15 @@
                 if (document.getElementById('main-screen').style.display !== 'flex') {
                     return;
                 }
+
+                // Exit immediately if any other modal is currently open
+                const blockingModals = ['old-gold-modal', 'cart-modal', 'payment-modal', 'detail-modal', 'alter-modal', 'loose-alter-modal', 'preset-modal', 'ledger-entry-modal'];
+                const isModalOpen = blockingModals.some(id => {
+                    const el = document.getElementById(id);
+                    return el && (el.style.display === 'flex' || el.style.display === 'block' || el.classList.contains('show'));
+                });
+                if (isModalOpen) return;
+
                 if (document.activeElement === barcodeInput) {
                     return;
                 }
@@ -4421,7 +4534,7 @@
                 _editingProfileId = null;
             } else {
                 // Create mode — add new
-                makingProfiles.push({ id: 'prof_' + Date.now(), ...profileData });
+                makingProfiles.push({ id: 'prof_' + crypto.randomUUID(), ...profileData });
             }
             saveAllDataToCloudDebounced();
             if (currentBarcode) runPriceCalculation();
@@ -4446,6 +4559,11 @@
             if (id === 'default') return;
             if (!checkPin()) return;
             makingProfiles = makingProfiles.filter(p => p.id !== id);
+            if (window.dbUpdate && window.firebaseDB) {
+                const _delObj = {};
+                _delObj[`jewelryData/profiles/makingProfiles/${id}`] = null;
+                window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
+            }
             if (activeProfileId === id) {
                 activeProfileId = 'default';
                 localStorage.setItem('activeProfileId', 'default');
@@ -4545,15 +4663,6 @@
 
         function openCamera(target) {
             cameraTarget      = target || 'barcode';
-            // Lazy-load ZXing only when camera is first needed
-            if (typeof ZXing === 'undefined' && !window._zxingLoading) {
-                window._zxingLoading = true;
-                const s = document.createElement('script');
-                s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js';
-                s.onload  = () => { window._zxingLoading = false; };
-                s.onerror = () => { window._zxingLoading = false; };
-                document.head.appendChild(s);
-            }
             camLastValue      = '';
             camStableStart    = 0;
             camConfirmedValue = '';
@@ -4561,7 +4670,47 @@
             document.getElementById('camera-overlay').style.display = 'flex';
             document.getElementById('camera-status').textContent = 'Starting camera…';
             cameraActive = true;
-            startCameraStream();
+
+            // If native BarcodeDetector is available we don't need ZXing at all —
+            // start the stream immediately.
+            if ('BarcodeDetector' in window) {
+                startCameraStream();
+                return;
+            }
+
+            // ZXing fallback path: ensure the library is loaded before scanning.
+            if (typeof ZXing !== 'undefined') {
+                // Already loaded from a previous session.
+                startCameraStream();
+            } else if (window._zxingLoading) {
+                // Script tag already injected — poll until it resolves.
+                document.getElementById('camera-status').textContent = 'Loading scanner…';
+                const poll = setInterval(() => {
+                    if (!cameraActive) { clearInterval(poll); return; }
+                    if (typeof ZXing !== 'undefined') {
+                        clearInterval(poll);
+                        document.getElementById('camera-status').textContent = 'Starting camera…';
+                        startCameraStream();
+                    }
+                }, 100);
+            } else {
+                // First time: inject the script and wait for onload.
+                window._zxingLoading = true;
+                document.getElementById('camera-status').textContent = 'Loading scanner…';
+                const s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js';
+                s.onload = () => {
+                    window._zxingLoading = false;
+                    if (!cameraActive) return; // user closed overlay while loading
+                    document.getElementById('camera-status').textContent = 'Starting camera…';
+                    startCameraStream();
+                };
+                s.onerror = () => {
+                    window._zxingLoading = false;
+                    document.getElementById('camera-status').textContent = '⚠️ Scanner library failed to load';
+                };
+                document.head.appendChild(s);
+            }
         }
 
         function closeCamera() {
@@ -4862,6 +5011,7 @@
                 const cash = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
                 const upi  = parseFloat(document.getElementById('pay-upi-amt').value)  || 0;
                 const card = parseFloat(document.getElementById('pay-card-amt').value) || 0;
+                if (cash < 0 || upi < 0 || card < 0) { showCustomAlert('Payment amounts cannot be negative.'); return; }
                 if (cash + upi + card === 0) { showCustomAlert('Enter at least one amount.'); return; }
 
                 // Validate that split amounts equal net payable (allow ±1 rounding)
@@ -4894,7 +5044,7 @@
             if (mode === 'cash') cashPortion = netPayable > 0 ? Math.round(netPayable) : 0;
 
             const bill = {
-                id: Date.now(),
+                id: crypto.randomUUID(),
                 timestamp: new Date().toISOString(),
                 items: JSON.parse(JSON.stringify(cart)),
                 total,
@@ -4904,13 +5054,24 @@
                 payment
             };
             billHistory.unshift(bill);
-            if (billHistory.length > 500) billHistory = billHistory.slice(0, 500);
+            if (billHistory.length > 500) {
+                // Capture bills falling off the end before slicing them away.
+                // Firebase uses update()-per-record so old bills accumulate in the
+                // cloud forever unless we explicitly set their keys to null.
+                const droppedBills = billHistory.slice(500);
+                billHistory = billHistory.slice(0, 500);
+                if (window.dbUpdate && window.dbRef && window.firebaseDB) {
+                    const deletePayload = {};
+                    droppedBills.forEach(b => { deletePayload[`jewelryData/billHistory/${b.id}`] = null; });
+                    window.dbUpdate(window.dbRef(window.firebaseDB, '/'), deletePayload);
+                }
+            }
 
             // --- Record in ledger ---
             if (netPayable > 0) {
                 // Normal sale: customer pays us
                 ledgerEntries.push({
-                    id: Date.now() + Math.floor(Math.random() * 1000),
+                    id: crypto.randomUUID(),
                     type: 'sale',
                     amount: Math.round(netPayable),
                     cashPortion,
@@ -4923,7 +5084,7 @@
             } else if (netPayable < 0) {
                 // Old jewellery value exceeds item price: we pay the customer
                 ledgerEntries.push({
-                    id: Date.now() + Math.floor(Math.random() * 1000),
+                    id: crypto.randomUUID(),
                     type: 'out',
                     amount: Math.round(Math.abs(netPayable)),
                     cashPortion: Math.round(Math.abs(netPayable)),
@@ -4972,6 +5133,11 @@
         function deleteBill(id) {
             if (!checkPin()) return;
             billHistory = billHistory.filter(b => b.id !== id);
+            if (window.dbUpdate && window.firebaseDB) {
+                const _delObj = {};
+                _delObj[`jewelryData/billHistory/${id}`] = null;
+                window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
+            }
             saveAllDataToCloud();
             _renderBillHistoryInLedger();
         }
@@ -5163,11 +5329,9 @@
             window.dbOnValue(ledgerRef, (snapshot) => {
                 let cloudEntries = snapshot.val();
                 console.log('[Ledger] cloud snapshot received:', cloudEntries);
-                if (cloudEntries && !Array.isArray(cloudEntries) && typeof cloudEntries === 'object') {
-                    // Firebase sometimes returns objects with numeric-string keys instead of arrays
-                    cloudEntries = Object.values(cloudEntries);
-                }
-                if (Array.isArray(cloudEntries)) {
+                // _objToArray handles both keyed-object (new) and array (legacy) formats
+                cloudEntries = _objToArray(cloudEntries);
+                if (cloudEntries.length > 0) {
                     const seen = new Set(cloudEntries.map(e => String(e.id)));
                     const localOnly = ledgerEntries.filter(e => !seen.has(String(e.id)));
                     ledgerEntries = [...cloudEntries, ...localOnly];
@@ -5176,7 +5340,7 @@
                     if (localOnly.length) saveLedger();
                     const el = document.getElementById('ledger');
                     if (el && el.style.display !== 'none') renderLedger();
-                } else if (cloudEntries === null && ledgerEntries.length > 0) {
+                } else if (ledgerEntries.length > 0) {
                     // Cloud empty but we have local entries — push them up
                     console.log('[Ledger] cloud empty, pushing local entries up:', ledgerEntries.length);
                     saveLedger();
@@ -5185,20 +5349,33 @@
                 }
             }, (error) => {
                 console.error('[Ledger] Firebase read error:', error);
-                // Do NOT call showCustomAlert here — this is a persistent listener
-                // that can fire repeatedly on reconnect/disconnect, which would
-                // flood the UI with blocking dialogs. Log only.
+                // Do NOT showCustomAlert here — persistent listener fires on every
+                // reconnect/disconnect and would flood the UI with blocking dialogs.
                 setDataSourceBadge('pending');
             });
         }
 
         function saveLedger() {
             try {
-                localStorage.setItem('suhagLedger', JSON.stringify(ledgerEntries));
-            } catch(e) {}
-            if (window.dbSet && window.firebaseDB) {
+                // Keep only the most recent LEDGER_MAX_ENTRIES to avoid quota issues.
+                // Entries are stored newest-first after sort, so slice from the front.
+                const toSave = ledgerEntries.length > LEDGER_MAX_ENTRIES
+                    ? [...ledgerEntries].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, LEDGER_MAX_ENTRIES)
+                    : ledgerEntries;
+                localStorage.setItem('suhagLedger', JSON.stringify(toSave));
+                _checkStorageQuota();
+            } catch(e) {
+                console.warn('[Ledger] localStorage quota exceeded, skipping local save:', e);
+                _storageWarnShown = false;
+                _checkStorageQuota();
+            }
+            if (window.dbUpdate && window.dbRef && window.firebaseDB) {
+                // Write as a flat multi-path update (id → entry) so concurrent writes
+                // from multiple devices merge per-entry instead of overwriting each other.
+                const ledgerObj = {};
+                ledgerEntries.forEach(e => { ledgerObj[`jewelryData/ledgerEntries/${String(e.id)}`] = e; });
                 console.log('[Ledger] writing', ledgerEntries.length, 'entries to Firebase');
-                window.dbSet(window.dbRef(window.firebaseDB, 'jewelryData/ledgerEntries'), ledgerEntries)
+                window.dbUpdate(window.dbRef(window.firebaseDB, '/'), ledgerObj)
                     .then(() => console.log('[Ledger] write succeeded'))
                     .catch((e) => {
                         console.error("[Ledger] Firebase write failed:", e);
@@ -5212,16 +5389,13 @@
         function ledgerCashTotal() {
             return ledgerEntries.reduce((sum, e) => {
                 if (e.type === 'sale') {
-                    // cashPortion is set on all new bills.
-                    // For legacy bills saved before cashPortion was added, fall back to
-                    // checking the payment mode: UPI/Card sales don't affect physical cash.
                     if (e.cashPortion !== undefined) {
                         return sum + e.cashPortion;
                     }
                     // Legacy fallback: if note says UPI or Card, cash portion is 0
                     const note = (e.note || '').toLowerCase();
                     if (note.includes('upi') || note.includes('card')) {
-                        return sum; // no cash change for digital-only legacy sales
+                        return sum;
                     }
                     return sum + (e.amount || 0);
                 }
@@ -5264,7 +5438,7 @@
                 return;
             }
             // Sort newest first
-            const sorted = [...entries].sort((a,b) => b.id - a.id);
+            const sorted = [...entries].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
 
             // Group by date
             const groups = {};
@@ -5375,7 +5549,7 @@
                         ${bill.discount > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;color:#6a1b9a;"><span>Discount</span><span>-₹${bill.discount.toFixed(0)}</span></div>` : ''}
                         ${(bill.oldGoldTotal > 0 || bill.discount > 0) ? `<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;color:#1565C0;border-top:1px dashed #ccc;padding-top:6px;margin-top:4px;"><span>Net Payable</span><span>₹${bill.netPayable.toFixed(0)}</span></div>` : ''}
                         ${bill.payment ? `<div style="margin-top:8px;padding:8px 10px;background:#e3f2fd;border-radius:8px;font-size:12px;color:#1565C0;font-weight:600;">💳 ${_payLabel(bill.payment)}</div>` : ''}
-                        <button onclick="deleteBill(${bill.id})" style="margin-top:10px;background:#f44336;color:white;border:none;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;float:right;width:auto;box-shadow:none;">Delete Bill</button>
+                        <button onclick="deleteBill('${bill.id}')" style="margin-top:10px;background:#f44336;color:white;border:none;border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;float:right;width:auto;box-shadow:none;">Delete Bill</button>
                         <div style="clear:both;"></div>
                     </div>
                 </div>`;
@@ -5423,7 +5597,7 @@
             if (!amt || amt <= 0) { showCustomAlert('Please enter a valid amount.'); return; }
             const note = document.getElementById('ledger-entry-note').value.trim();
             ledgerEntries.push({
-                id: Date.now() + Math.floor(Math.random() * 1000),
+                id: crypto.randomUUID(),
                 type: _ledgerEntryType,
                 amount: amt,
                 note,
@@ -5439,6 +5613,11 @@
         function deleteLedgerEntry(id) {
             if (!checkPin()) return;
             ledgerEntries = ledgerEntries.filter(e => e.id !== id);
+            if (window.dbUpdate && window.firebaseDB) {
+                const _delObj = {};
+                _delObj[`jewelryData/ledgerEntries/${id}`] = null;
+                window.dbUpdate(window.dbRef(window.firebaseDB, '/'), _delObj).catch(() => {});
+            }
             saveLedger();
             renderLedger();
         }
