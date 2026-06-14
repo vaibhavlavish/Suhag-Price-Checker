@@ -191,31 +191,37 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            width: 100%;
-            background: none;
-            border: none;
-            padding: 10px 16px;
+            width: 100% !important;
+            max-width: none !important;
+            flex: none !important;
+            background: none !important;
+            border: none !important;
+            padding: 10px 16px !important;
             text-align: left;
             font-size: 14px;
             font-weight: 500;
-            color: var(--text);
+            color: var(--text) !important;
             cursor: pointer;
             transition: background 0.12s;
-            border-radius: 0;
+            border-radius: 0 !important;
             box-sizing: border-box;
             font-family: 'Inter', sans-serif;
+            margin: 0 !important;
+            box-shadow: none !important;
+            white-space: normal !important;
+            letter-spacing: normal !important;
         }
-        #options-menu button:hover { background: var(--bg); }
+        #options-menu button:hover { background: #F0EFEC !important; color: var(--text) !important; }
         #options-menu button .menu-icon {
             width: 28px; height: 28px;
             border-radius: 7px;
             display: flex; align-items: center; justify-content: center;
             font-size: 14px; flex-shrink: 0;
         }
-        #options-menu button.danger { color: #c62828; }
-        #options-menu button.danger:hover { background: #ffebee; }
-        #options-menu button.backup { color: #1565C0; }
-        #options-menu button.restore { color: #e65100; }
+        #options-menu button.danger { color: #c62828 !important; }
+        #options-menu button.danger:hover { background: #ffebee !important; }
+        #options-menu button.backup { color: #1565C0 !important; }
+        #options-menu button.restore { color: #e65100 !important; }
         #main-screen {
             flex: 1;
             display: flex;
@@ -1096,6 +1102,12 @@
         .ledger-entry-icon.in     { background: #e8f5e9; }
         .ledger-entry-icon.out    { background: #ffebee; }
         .ledger-entry-icon.expense{ background: #fff3e0; }
+        .ledger-bill-icon {
+            width: 28px; height: 28px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; flex-shrink: 0; margin-top: 2px;
+            background: #e3f2fd;
+        }
         .ledger-entry-body { flex: 1; min-width: 0; }
         .ledger-entry-title { font-size: 14px; font-weight: 700; color: #222; }
         .ledger-entry-meta  { font-size: 11px; color: #888; margin-top: 2px; }
@@ -1223,7 +1235,7 @@
 
         /* Preset button */
         #preset-btn {
-            background-color: var(--charcoal) !important;
+            background-color: #9c27b0 !important;
             border-radius: 10px !important;
             font-size: 13px !important;
             padding: 8px 14px !important;
@@ -1330,7 +1342,7 @@
 
             <div class="menu-divider"></div>
             <div class="menu-section-label">Actions</div>
-            <button onclick="location.reload()" style="color:#4CAF50; font-weight:700;">
+            <button onclick="location.reload()" style="color:#4CAF50 !important; font-weight:700;">
                 <span class="menu-icon" style="background:#F0FDF4;">🔄</span> Refresh App
             </button>
             <button onclick="clearAll()">
@@ -5265,7 +5277,23 @@
             }
             const warningHtml = billHistory.length >= 100
                 ? `<div style="background:#fff3e0; border:1.5px solid #FF9800; border-radius:10px; padding:10px 14px; margin-bottom:12px; font-size:13px; color:#e65100; font-weight:600;">⚠️ ${billHistory.length} bills saved. Consider clearing old ones.</div>` : '';
-            container.innerHTML = warningHtml + billHistory.map((bill, idx) => {
+
+            // Group bills by date (newest first, preserving existing order within each group)
+            const groups = {};
+            const groupOrder = [];
+            billHistory.forEach((bill, idx) => {
+                const d = new Date(bill.timestamp);
+                const key = d.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+                if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
+                groups[key].push({ bill, idx });
+            });
+
+            let html = warningHtml;
+            groupOrder.forEach(date => {
+                const items = groups[date];
+                const dayTotal = items.reduce((s, {bill}) => s + bill.netPayable, 0);
+                html += `<div class="ledger-day-header">${date} <span style="float:right; color:#2e7d32;">+₹${_fmt(dayTotal)}</span></div>`;
+                items.forEach(({bill, idx}) => {
                 const d = new Date(bill.timestamp);
                 const dateStr = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
                 const timeStr = d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
@@ -5275,14 +5303,17 @@
                         <span style="font-weight:600;">₹${it.finalPrice.toFixed(0)}</span>
                     </div>`
                 ).join('');
-                return `
+                html += `
                 <div style="background:white; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 6px rgba(0,0,0,0.08); overflow:hidden;">
-                    <div onclick="toggleLedgerBillDetail(${idx})" style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; cursor:pointer; background:#f9f9f9;">
-                        <div>
-                            <div style="font-size:14px; font-weight:700; color:#222;">${dateStr} &nbsp;<span style="color:#888; font-weight:400; font-size:12px;">${timeStr}</span></div>
-                            <div style="font-size:12px; color:#888; margin-top:2px;">${bill.items.length} item${bill.items.length!==1?'s':''}${bill.payment ? ' · <span style="font-weight:600;color:#1565C0;">'+_payLabel(bill.payment)+'</span>' : ''}</div>
+                    <div onclick="toggleLedgerBillDetail(${idx})" style="display:flex; align-items:center; gap:10px; justify-content:space-between; padding:12px 14px; cursor:pointer; background:#f9f9f9;">
+                        <div style="display:flex; align-items:flex-start; gap:10px; min-width:0;">
+                            <div class="ledger-bill-icon">🧾</div>
+                            <div style="min-width:0;">
+                                <div style="font-size:14px; font-weight:700; color:#222;">${dateStr} &nbsp;<span style="color:#888; font-weight:400; font-size:12px;">${timeStr}</span></div>
+                                <div style="font-size:12px; color:#888; margin-top:2px;">${bill.items.length} item${bill.items.length!==1?'s':''}${bill.payment ? ' · <span style="font-weight:600;color:#1565C0;">'+_payLabel(bill.payment)+'</span>' : ''}</div>
+                            </div>
                         </div>
-                        <div style="text-align:right;">
+                        <div style="text-align:right; flex-shrink:0;">
                             <div style="font-size:16px; font-weight:800; color:#1565C0;">₹${bill.netPayable.toFixed(0)}</div>
                             ${bill.oldGoldTotal > 0 ? `<div style="font-size:11px;color:#f44336;">-₹${bill.oldGoldTotal.toFixed(0)} old gold</div>` : ''}
                         </div>
@@ -5298,7 +5329,9 @@
                         <div style="clear:both;"></div>
                     </div>
                 </div>`;
-            }).join('');
+                });
+            });
+            container.innerHTML = html;
         }
 
         function toggleLedgerBillDetail(idx) {
@@ -5714,10 +5747,10 @@
             font-family: 'Inter', sans-serif;
         }
         .pay-mode-btn.selected {
-            border-color: #4CAF50;
-            background: linear-gradient(135deg, #4CAF50, #16A34A);
+            border-color: #E53935;
+            background: linear-gradient(135deg, #E53935, #C62828);
             color: #fff;
-            box-shadow: 0 4px 14px rgba(76,175,80,0.45);
+            box-shadow: 0 4px 14px rgba(229,57,53,0.45);
             transform: translateY(-1px);
         }
     </style>
