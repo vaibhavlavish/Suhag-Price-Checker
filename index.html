@@ -5472,7 +5472,7 @@
                             ${e.note ? `<div class="ledger-entry-note">${e.note}</div>` : ''}
                         </div>
                         <div class="ledger-entry-amount ${isPos ? 'positive' : 'negative'}">${isPos?'+':'-'}₹${_fmt(e.amount)}</div>
-                        <button class="ledger-entry-del" onclick="deleteLedgerEntry(${e.id})">✕</button>
+                        <button class="ledger-entry-del" onclick="deleteLedgerEntry('${e.id}')">✕</button>
                     </div>`;
                 });
             });
