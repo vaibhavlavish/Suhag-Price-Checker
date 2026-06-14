@@ -47,6 +47,19 @@
         window.SCHEMA_VERSION = 10;  // bump this when making breaking sync changes
         window._writeAllowed  = true; // set to false by version check below
 
+        // ── ORIGIN GUARD ──────────────────────────────────────────────
+        // Only allow writes when served from the official GitHub Pages URL.
+        // Running from a local file (file://) or any other origin is read-only.
+        const ALLOWED_ORIGIN = 'https://vaibhavlavish.github.io';
+        if (location.origin !== ALLOWED_ORIGIN) {
+            window._writeAllowed = false;
+            console.warn('[ORIGIN] Write blocked — not running from', ALLOWED_ORIGIN, '(got:', location.origin + ')');
+            setTimeout(() => {
+                alert('⚠️ This copy is running from:\n' + location.origin +
+                      '\n\nWrites are DISABLED to protect cloud data.\n\nOpen the official app instead:\nhttps://vaibhavlavish.github.io/Suhag-Price-Checker/');
+            }, 300);
+        }
+
         // Write a single safe helper used everywhere instead of dbUpdate / dbSet directly
         window.dbSafeUpdate = function(obj) {
             if (!window._writeAllowed) {
