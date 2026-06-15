@@ -2842,7 +2842,8 @@
             }
 
             if (section === 'ledger') {
-                loadLedger();
+                // Don't call loadLedger() here — it resets ledgerEntries to []
+                // every tab switch, causing ₹0 flash. loadLedger runs once at startup.
                 renderLedger();
                 document.getElementById('ledger-nav-btn').classList.add('active');
             }
@@ -5205,9 +5206,12 @@
             }
         }
 
+        let _confirmPaymentInProgress = false;
         function confirmPayment() {
+            if (_confirmPaymentInProgress) { console.warn('[Guard] confirmPayment double-submit blocked'); return; }
+            _confirmPaymentInProgress = true;
             const mode = window._selectedPayMode;
-            if (!mode) { showCustomAlert('Please select a payment method.'); return; }
+            if (!mode) { _confirmPaymentInProgress = false; showCustomAlert('Please select a payment method.'); return; }
 
             let payment = {};
             let cashPortion = 0;
@@ -5272,7 +5276,17 @@
             _saveBillRecord(bill); // single-record Firebase write — no full-array overwrite
 
             // --- Record in ledger ---
-            if (netPayable > 0) {
+            // Pre-write dedup: block if same sale amount was recorded in the last 10 seconds
+            // (guards against double-tap or same bill confirmed on two devices simultaneously)
+            const _now = Date.now();
+            const _recentDup = ledgerEntries.some(e =>
+                e.source === 'checkout' &&
+                Math.abs(e.amount - Math.abs(netPayable)) < 1 &&
+                Math.abs(new Date(e.timestamp).getTime() - _now) < 10000
+            );
+            if (_recentDup) {
+                console.warn('[Guard] Duplicate checkout ledger entry blocked within 10s window');
+            } else if (netPayable > 0) {
                 const entry = {
                     id: crypto.randomUUID(),
                     type: 'sale',
@@ -5315,6 +5329,7 @@
                 ? '\n\n⚠️ ' + billHistory.length + ' bills saved — consider clearing old ones.'
                 : '';
             showCustomAlert('Bill saved! ' + syncBadge + warningNote);
+            _confirmPaymentInProgress = false;
         }
 
 
@@ -5507,20 +5522,15 @@
         let _currentLedgerTab = 'all';
 
         function loadLedger() {
-            if (navigator.onLine) {
-                // Online: skip localStorage, let Firebase onValue be authoritative.
-                // This prevents stale cleared entries from reappearing after a refresh.
-                ledgerEntries = [];
-                console.log('[Ledger] online — skipping local cache, waiting for Firebase');
-            } else {
-                // Offline fallback only
-                try {
-                    const saved = localStorage.getItem('suhagLedger');
-                    if (saved) ledgerEntries = JSON.parse(saved);
-                } catch(e) { ledgerEntries = []; }
-                console.log('[Ledger] offline — loaded from local cache:', ledgerEntries.length, 'entries');
-            }
-            syncLedgerFromCloud();
+            // Always load from localStorage first for instant display.
+            // Firebase onValue will overwrite with authoritative cloud data within ~500ms.
+            // localStorage is wiped on clear, so stale-after-clear is no longer a risk.
+            try {
+                const saved = localStorage.getItem('suhagLedger');
+                if (saved) ledgerEntries = JSON.parse(saved);
+            } catch(e) { ledgerEntries = []; }
+            console.log('[Ledger] loaded from local cache:', ledgerEntries.length, 'entries');
+            syncLedgerFromCloud(); // Firebase overwrites this shortly after
         }
 
         // One-time Firebase listener so ledger entries sync across devices.
@@ -5566,8 +5576,10 @@
                 ledgerEntries = cloudEntries;
                 _saveLedgerLocal();
                 // (If cloud is empty because we just cleared, local is now empty too — correct.)
-                const el = document.getElementById('ledger');
-                if (el && el.style.display !== 'none') renderLedger();
+                // Always render after cloud sync — don't gate on visibility.
+                // showSection() calls renderLedger() on tab switch, but if the snapshot
+                // arrives after the switch, this ensures the UI reflects cloud data.
+                renderLedger();
             }, (error) => {
                 console.error('[Ledger] Firebase read error:', error);
                 setDataSourceBadge('pending');
@@ -5810,10 +5822,24 @@
             document.getElementById('ledger-modal-title').textContent = labels[type] || 'Add Entry';
         }
 
+        let _saveLedgerInProgress = false;
         function saveLedgerEntry() {
+            if (_saveLedgerInProgress) { console.warn('[Guard] saveLedgerEntry double-submit blocked'); return; }
+            _saveLedgerInProgress = true;
+            setTimeout(() => { _saveLedgerInProgress = false; }, 1500); // reset after 1.5s
             const amt = parseFloat(document.getElementById('ledger-entry-amount').value);
-            if (!amt || amt <= 0) { showCustomAlert('Please enter a valid amount.'); return; }
+            if (!amt || amt <= 0) { _saveLedgerInProgress = false; showCustomAlert('Please enter a valid amount.'); return; }
             const note = document.getElementById('ledger-entry-note').value.trim();
+            // Pre-write dedup: reject if a matching entry already exists within last 5 seconds
+            const now = Date.now();
+            const isDuplicate = ledgerEntries.some(e =>
+                e.source === 'manual' &&
+                e.type === _ledgerEntryType &&
+                Math.abs(e.amount - amt) < 0.01 &&
+                (e.note || '') === note &&
+                Math.abs(new Date(e.timestamp).getTime() - now) < 5000
+            );
+            if (isDuplicate) { _saveLedgerInProgress = false; showCustomAlert('Duplicate entry blocked.'); return; }
             const entry = {
                 id: crypto.randomUUID(),
                 type: _ledgerEntryType,
