@@ -2094,11 +2094,26 @@
             }
             if (!loosePresets || loosePresets.length === 0) {
                 loosePresets = JSON.parse(JSON.stringify(FACTORY_PRESETS));
+                // Persist factory presets to Firebase so they become real
+                // records — otherwise the next single-record write/delete
+                // (which triggers a fresh onValue read of the whole node)
+                // will wipe them out, since they never existed in Firebase.
+                if (window._writeAllowed) {
+                    loosePresets.forEach(p => _savePresetRecord(p));
+                }
             }
             if (!makingProfiles || makingProfiles.length === 0) {
                 makingProfiles = JSON.parse(JSON.stringify(FACTORY_PROFILES));
+                // Same reasoning as above: persist factory profiles so they
+                // survive subsequent per-record writes/deletes via onValue.
+                if (window._writeAllowed) {
+                    makingProfiles.forEach(p => _saveProfileRecord(p));
+                }
             } else if (!makingProfiles.find(p => p.id === 'default')) {
                 makingProfiles.unshift({ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 });
+                if (window._writeAllowed) {
+                    _saveProfileRecord(makingProfiles[0]);
+                }
             }
 
             // Defensive dedupe: collapse any duplicate ids (e.g. two "default"
