@@ -133,7 +133,10 @@
             flex-direction: column;
             touch-action: manipulation;
             overscroll-behavior-y: contain;
+            opacity: 0;
+            transition: opacity 0.18s ease;
         }
+        body.app-ready { opacity: 1; }
         #taskbar {
             background: #1a1a1a;
             color: white;
@@ -2532,6 +2535,10 @@
             setLooseDefaults();
             calculateLoosePrice();
             updateProfileBadge();
+            // Reveal the app after first real render — eliminates FOUC flash
+            if (!document.body.classList.contains('app-ready')) {
+                document.body.classList.add('app-ready');
+            }
         } // end _doRefreshUI
 
         // === FIREBASE SYNC FUNCTIONS ===
@@ -5827,6 +5834,10 @@
         });
 
         // === END LEDGER FUNCTIONS ===
+
+        // Safety fallback: reveal app after 1.5s even if Firebase is slow,
+        // so the screen never stays blank on a poor connection.
+        setTimeout(() => { document.body.classList.add('app-ready'); }, 1500);
 
         window.showSection = showSection;
         window.toggleOptions = toggleOptions;
