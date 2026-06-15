@@ -2297,6 +2297,24 @@
             if (hasPendingSync()) {
                 console.log('[Sync] flushing pending writes...');
                 saveConfig();
+                // Also flush presets and profiles — saveConfig() only writes rates/config/products.
+                // Preset and profile edits made offline are stored in loosePresets / makingProfiles
+                // (in-memory + local cache) but are only persisted to Firebase via their individual
+                // _savePresetRecord / _saveProfileRecord helpers, which were skipped while offline.
+                if (window._writeAllowed && window.firebaseDB) {
+                    const offlineFlush = {};
+                    (loosePresets || []).forEach(p => {
+                        if (p && p.id) offlineFlush[`jewelryData/profiles/presets/${p.id}`] = p;
+                    });
+                    (makingProfiles || []).forEach(p => {
+                        if (p && p.id) offlineFlush[`jewelryData/profiles/makingProfiles/${p.id}`] = p;
+                    });
+                    if (Object.keys(offlineFlush).length > 0) {
+                        window.dbSafeUpdate(offlineFlush)
+                            .then(() => console.log('[Sync] offline presets/profiles flushed'))
+                            .catch(e => console.error('[Sync] offline flush failed', e));
+                    }
+                }
             }
         });
 
@@ -3445,7 +3463,7 @@
             const item = {
                 type: 'repair',
                 id: crypto.randomUUID(),
-                itemName: 'Other ',
+                itemName: 'Other',
                 finalPrice: amount
             };
             cart.push(item);
@@ -3603,12 +3621,12 @@
                     else makingDisplay = `₹${preset.makingValue} Fixed`;
 
                     row.innerHTML = `
-                        <button class="preset-item-btn" onclick="loadPreset(${preset.id})">
+                        <button class="preset-item-btn" onclick="loadPreset('${preset.id}')">
                             <strong>${preset.name}</strong><br>
                             <span style="font-size:12px; color:#666;">${preset.metal} ${preset.stamp} | ${makingDisplay}</span>
                         </button>
-                        <button class="preset-edit-btn" onclick="editPreset(${preset.id})">✏</button>
-                        <button class="preset-del-btn" onclick="deletePreset(${preset.id})">&times;</button>
+                        <button class="preset-edit-btn" onclick="editPreset('${preset.id}')">✏</button>
+                        <button class="preset-del-btn" onclick="deletePreset('${preset.id}')">&times;</button>
                     `;
                     list.appendChild(row);
                 });
