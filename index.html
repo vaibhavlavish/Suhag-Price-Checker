@@ -5507,11 +5507,19 @@
         let _currentLedgerTab = 'all';
 
         function loadLedger() {
-            try {
-                const saved = localStorage.getItem('suhagLedger');
-                if (saved) ledgerEntries = JSON.parse(saved);
-            } catch(e) { ledgerEntries = []; }
-            console.log('[Ledger] loaded from local cache:', ledgerEntries.length, 'entries');
+            if (navigator.onLine) {
+                // Online: skip localStorage, let Firebase onValue be authoritative.
+                // This prevents stale cleared entries from reappearing after a refresh.
+                ledgerEntries = [];
+                console.log('[Ledger] online — skipping local cache, waiting for Firebase');
+            } else {
+                // Offline fallback only
+                try {
+                    const saved = localStorage.getItem('suhagLedger');
+                    if (saved) ledgerEntries = JSON.parse(saved);
+                } catch(e) { ledgerEntries = []; }
+                console.log('[Ledger] offline — loaded from local cache:', ledgerEntries.length, 'entries');
+            }
             syncLedgerFromCloud();
         }
 
@@ -5967,7 +5975,7 @@
             <div class="ledger-summary-card" id="ledger-summary-cards"></div>
             <div id="ledger-all-list"></div>
             <div style="display:flex; gap:8px; margin-top:8px;">
-                <button onclick="if(checkPin()) { showCustomConfirm('Clear entire ledger? Cannot undo.', 'Confirm Clear', () => { ledgerEntries=[]; _saveLedgerLocal(); renderLedger(); if(window.dbRemove && window.firebaseDB && window._writeAllowed){ window.dbRemove(window.dbRef(window.firebaseDB,'jewelryData/ledgerEntries')).catch(e=>console.error('[Ledger] clear failed',e)); } }); }"
+                <button onclick="if(checkPin()) { showCustomConfirm('Clear entire ledger? Cannot undo.', 'Confirm Clear', () => { ledgerEntries=[]; _saveLedgerLocal(); localStorage.removeItem('suhagLedger'); renderLedger(); if(window.dbRemove && window.firebaseDB && window._writeAllowed){ window.dbRemove(window.dbRef(window.firebaseDB,'jewelryData/ledgerEntries')).catch(e=>console.error('[Ledger] clear failed',e)); } }); }"
                     style="flex:1; background:#f44336; color:white; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none;">
                     🗑 Clear Entries
                 </button>
