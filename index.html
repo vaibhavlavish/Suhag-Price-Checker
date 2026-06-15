@@ -2761,23 +2761,31 @@
                 showCustomAlert('Cannot clear data while offline. Please reconnect and try again.');
                 return;
             }
-            showCustomConfirm('Clear ALL synced data (rates, tax, products, bills, presets)? This cannot be undone.', 'Confirm Clear', () => {
+            showCustomConfirm('Reset app to factory defaults? This clears ALL data — rates, products, bills, ledger, presets, profiles. Cannot be undone.', 'Confirm Reset', () => {
                 const clearUpdate = {
-                    'jewelryData/config':      null,
-                    'jewelryData/products':    null,
-                    'jewelryData/billHistory': null,
-                    'jewelryData/profiles':    null,
+                    'jewelryData/config':        null,
+                    'jewelryData/products':      null,
+                    'jewelryData/billHistory':   null,
+                    'jewelryData/profiles':      null,
                     'jewelryData/ledgerEntries': null
                 };
                 window.dbSafeUpdate(clearUpdate)
                 .then(() => {
+                    // Reset all in-memory state immediately so nothing leaks back
+                    ledgerEntries = [];
+                    billHistory   = [];
+                    loosePresets  = [];
+                    makingProfiles = [];
+                    productData   = [];
+                    rates         = {};
+                    taxRate       = 3;
                     localStorage.clear();
-                    showCustomAlert('All cloud data cleared. Reloading page.');
+                    showCustomAlert('App reset to defaults. Reloading...');
                     setTimeout(() => location.reload(), 1500);
                 })
                 .catch((error) => {
                     console.error("Firebase write failed:", error);
-                    showCustomAlert("Data clear failed. Check console.");
+                    showCustomAlert("Reset failed. Check console.");
                 });
             });
         }
@@ -5537,15 +5545,11 @@
                 }
                 const cloudEntries = deduped;
 
-                if (cloudEntries.length > 0) {
-                    // Cloud is authoritative — replace local in-memory state.
-                    // Individual writes go via _saveLedgerRecord; no need to push back.
-                    ledgerEntries = cloudEntries;
-                    _saveLedgerLocal();
-                }
-                // If cloud is empty but we have local entries that were written
-                // via _saveLedgerRecord while offline, they're already in Firebase
-                // once we're online — nothing extra needed.
+                // Cloud is always authoritative — replace local state regardless of
+                // whether cloud is empty (e.g. after a delete or clearAllData).
+                ledgerEntries = cloudEntries;
+                _saveLedgerLocal();
+                // (If cloud is empty because we just cleared, local is now empty too — correct.)
                 const el = document.getElementById('ledger');
                 if (el && el.style.display !== 'none') renderLedger();
             }, (error) => {
