@@ -17,7 +17,7 @@
     <script type="module">
         // Import the functions you need from the Firebase SDKs
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getDatabase, ref, set, update, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+        import { getDatabase, ref, set, update, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
         // Your web app's Firebase configuration
         const firebaseConfig = {
@@ -37,6 +37,7 @@
         window.firebaseDB = db;
         window.dbRef = ref;
         window.dbUpdate = update;
+        window.dbRemove = remove;
         window.dbOnValue = onValue;
 
         // ── ORIGIN GUARD ──────────────────────────────────────────────
@@ -2762,29 +2763,36 @@
                 return;
             }
             showCustomConfirm('Reset app to factory defaults? This clears ALL data — rates, products, bills, ledger, presets, profiles. Cannot be undone.', 'Confirm Reset', () => {
-                const clearUpdate = {
-                    'jewelryData/config':        null,
-                    'jewelryData/products':      null,
-                    'jewelryData/billHistory':   null,
-                    'jewelryData/profiles':      null,
-                    'jewelryData/ledgerEntries': null
-                };
-                window.dbSafeUpdate(clearUpdate)
+                if (!window.dbRemove || !window.firebaseDB || !window._writeAllowed) {
+                    showCustomAlert('Firebase not ready. Try again in a moment.');
+                    return;
+                }
+                // Must use remove() — not update(null) — to fully delete parent nodes in Firebase RTDB
+                const nodesToRemove = [
+                    'jewelryData/config',
+                    'jewelryData/products',
+                    'jewelryData/billHistory',
+                    'jewelryData/profiles',
+                    'jewelryData/ledgerEntries'
+                ];
+                Promise.all(nodesToRemove.map(path =>
+                    window.dbRemove(window.dbRef(window.firebaseDB, path))
+                ))
                 .then(() => {
                     // Reset all in-memory state immediately so nothing leaks back
-                    ledgerEntries = [];
-                    billHistory   = [];
-                    loosePresets  = [];
+                    ledgerEntries  = [];
+                    billHistory    = [];
+                    loosePresets   = [];
                     makingProfiles = [];
-                    productData   = [];
-                    rates         = {};
-                    taxRate       = 3;
+                    productData    = [];
+                    rates          = {};
+                    taxRate        = 3;
                     localStorage.clear();
                     showCustomAlert('App reset to defaults. Reloading...');
                     setTimeout(() => location.reload(), 1500);
                 })
                 .catch((error) => {
-                    console.error("Firebase write failed:", error);
+                    console.error("Firebase reset failed:", error);
                     showCustomAlert("Reset failed. Check console.");
                 });
             });
@@ -5959,7 +5967,7 @@
             <div class="ledger-summary-card" id="ledger-summary-cards"></div>
             <div id="ledger-all-list"></div>
             <div style="display:flex; gap:8px; margin-top:8px;">
-                <button onclick="if(checkPin()) { showCustomConfirm('Clear entire ledger? Cannot undo.', 'Confirm Clear', () => { const delObj={}; ledgerEntries.forEach(e=>{delObj['jewelryData/ledgerEntries/'+e.id]=null;}); ledgerEntries=[]; _saveLedgerLocal(); window.dbSafeUpdate(delObj); renderLedger(); }); }"
+                <button onclick="if(checkPin()) { showCustomConfirm('Clear entire ledger? Cannot undo.', 'Confirm Clear', () => { ledgerEntries=[]; _saveLedgerLocal(); renderLedger(); if(window.dbRemove && window.firebaseDB && window._writeAllowed){ window.dbRemove(window.dbRef(window.firebaseDB,'jewelryData/ledgerEntries')).catch(e=>console.error('[Ledger] clear failed',e)); } }); }"
                     style="flex:1; background:#f44336; color:white; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none;">
                     🗑 Clear Entries
                 </button>
