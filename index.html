@@ -4834,33 +4834,54 @@
             return cartTotal - oldGoldTotal; // base before discount
         }
 
+        // Tracks whether the last edit was from the "final amount" field,
+        // so applyAdjust can use the exact (unrounded) discount value.
+        let _exactDiscFromFinal = null; // null means use the discount field as-is
+
         function syncAdjustFromDiscount() {
+            _exactDiscFromFinal = null; // user is driving from discount side
             const disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
             const base = _getCartBase();
             document.getElementById('adjust-final').value = disc > 0 ? Math.max(0, base - disc).toFixed(0) : '';
         }
 
         function syncAdjustFromFinal() {
-            const final = parseFloat(document.getElementById('adjust-final').value);
-            if (isNaN(final)) { document.getElementById('adjust-discount').value = ''; return; }
+            const finalVal = parseFloat(document.getElementById('adjust-final').value);
+            if (isNaN(finalVal)) {
+                document.getElementById('adjust-discount').value = '';
+                _exactDiscFromFinal = null;
+                return;
+            }
             const base = _getCartBase();
-            const disc = Math.max(0, base - final);
-            document.getElementById('adjust-discount').value = disc > 0 ? disc.toFixed(0) : '';
+            const discExact = Math.max(0, base - finalVal); // exact, possibly fractional
+            _exactDiscFromFinal = discExact > 0 ? discExact : null;
+            // Show a rounded hint in the discount field (display only)
+            document.getElementById('adjust-discount').value = discExact > 0 ? discExact.toFixed(2) : '';
         }
 
         function applyAdjust() {
-            const disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
             const base = _getCartBase();
             if (cart.length === 0) { showCustomAlert('Cart is empty.'); return; }
+
+            let disc;
+            if (_exactDiscFromFinal !== null) {
+                // Final-amount was typed: use exact discount so net payable == what user typed
+                disc = _exactDiscFromFinal;
+            } else {
+                disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
+            }
+
             if (disc < 0) { showCustomAlert('Discount cannot be negative.'); return; }
             if (disc > base) { showCustomAlert('Discount cannot exceed payable amount (₹' + base.toFixed(0) + ').'); return; }
             cartAdjustment = disc;
+            _exactDiscFromFinal = null;
             document.getElementById('adjust-panel').style.display = 'none';
             openCart(); // re-render summary
         }
 
         function clearAdjust() {
             cartAdjustment = 0;
+            _exactDiscFromFinal = null;
             document.getElementById('adjust-discount').value = '';
             document.getElementById('adjust-final').value = '';
             document.getElementById('adjust-panel').style.display = 'none';
