@@ -5766,14 +5766,15 @@
             const warningHtml = billHistory.length >= 100
                 ? `<div style="background:#fff3e0; border:1.5px solid #FF9800; border-radius:10px; padding:10px 14px; margin-bottom:12px; font-size:13px; color:#e65100; font-weight:600;">⚠️ ${billHistory.length} bills saved. Consider clearing old ones.</div>` : '';
 
-            // Group bills by date (newest first, preserving existing order within each group)
+            // Sort newest first, then group by date
+            const sortedBills = [...billHistory].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
             const groups = {};
             const groupOrder = [];
-            billHistory.forEach((bill, idx) => {
+            sortedBills.forEach((bill) => {
                 const d = new Date(bill.timestamp);
                 const key = d.toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
                 if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
-                groups[key].push({ bill, idx });
+                groups[key].push({ bill });
             });
 
             let html = warningHtml;
@@ -5783,10 +5784,11 @@
                 const daySign  = dayTotal >= 0 ? '+' : '-';
                 const dayColor = dayTotal >= 0 ? '#2e7d32' : '#c62828';
                 html += `<div class="ledger-day-header">${date} <span style="float:right; color:${dayColor};">${daySign}₹${_fmt(Math.abs(dayTotal))}</span></div>`;
-                items.forEach(({bill, idx}) => {
+                items.forEach(({bill}) => {
                 const d = new Date(bill.timestamp);
                 const dateStr = d.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
                 const timeStr = d.toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit' });
+                const safeId = String(bill.id).replace(/[^a-zA-Z0-9-_]/g, '_');
                 const itemsHtml = bill.items.map(it =>
                     `<div style="display:flex; justify-content:space-between; font-size:12px; padding:3px 0; border-bottom:1px dotted #eee;">
                         <span style="color:#444;">${it.itemName}${it.barcode ? ' <span style="color:#aaa;">('+it.barcode+')</span>' : ''}</span>
@@ -5795,7 +5797,7 @@
                 ).join('');
                 html += `
                 <div style="background:white; border-radius:12px; margin-bottom:10px; box-shadow:0 1px 6px rgba(0,0,0,0.08); overflow:hidden;">
-                    <div onclick="toggleLedgerBillDetail(${idx})" style="display:flex; align-items:center; gap:10px; justify-content:space-between; padding:12px 14px; cursor:pointer; background:#f9f9f9;">
+                    <div onclick="toggleLedgerBillDetail('${safeId}')" style="display:flex; align-items:center; gap:10px; justify-content:space-between; padding:12px 14px; cursor:pointer; background:#f9f9f9;">
                         <div style="display:flex; align-items:flex-start; gap:10px; min-width:0;">
                             <div class="ledger-bill-icon">🧾</div>
                             <div style="min-width:0;">
@@ -5808,7 +5810,7 @@
                             ${bill.oldGoldTotal > 0 ? `<div style="font-size:11px;color:#f44336;">-₹${bill.oldGoldTotal.toFixed(0)} old gold</div>` : ''}
                         </div>
                     </div>
-                    <div id="lbill-detail-${idx}" style="display:none; padding:10px 14px 12px; border-top:1px solid #eee;">
+                    <div id="lbill-detail-${safeId}" style="display:none; padding:10px 14px 12px; border-top:1px solid #eee;">
                         ${itemsHtml}
                         <div style="display:flex; justify-content:space-between; margin-top:8px; font-size:13px; font-weight:700; color:#333;"><span>Total</span><span>₹${bill.total.toFixed(0)}</span></div>
                         ${bill.oldGoldTotal > 0 ? `<div style="display:flex;justify-content:space-between;font-size:12px;color:#f44336;"><span>Less Old Gold</span><span>-₹${bill.oldGoldTotal.toFixed(0)}</span></div>` : ''}
@@ -5824,8 +5826,9 @@
             container.innerHTML = html;
         }
 
-        function toggleLedgerBillDetail(idx) {
-            const el = document.getElementById('lbill-detail-' + idx);
+        function toggleLedgerBillDetail(id) {
+            const safeId = String(id).replace(/[^a-zA-Z0-9-_]/g, '_');
+            const el = document.getElementById('lbill-detail-' + safeId);
             if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
         }
         window.toggleLedgerBillDetail = toggleLedgerBillDetail;
