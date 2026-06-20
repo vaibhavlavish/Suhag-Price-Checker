@@ -2457,12 +2457,8 @@
             // flight, applying it here would clobber the in-progress edit with the
             // stale pre-edit value. So we skip overwriting packagingWeights during
             // that window — the pending save will land moments later anyway.
-            console.log('[StockCalc DEBUG] applyDataSnapshot called. dirty flag:', !!window._packagingWeightsDirty, 'incoming cloudData.packagingWeights:', JSON.parse(JSON.stringify(cloudData.packagingWeights || {})));
             if (!window._packagingWeightsDirty) {
                 packagingWeights = cloudData.packagingWeights || {};
-                console.log('[StockCalc DEBUG] packagingWeights SET from cloud snapshot:', JSON.parse(JSON.stringify(packagingWeights)));
-            } else {
-                console.warn('[StockCalc DEBUG] packagingWeights SKIPPED (dirty flag set) — keeping in-memory edit.');
             }
             looseDefaultsCloud = cloudData.looseDefaults || null;
             baseCalcDefaults = cloudData.baseCalcDefaults || {};
@@ -2590,11 +2586,9 @@
         function readSplitKeys(snapshot) {
             const val = snapshot.val();
             if (!val) return null;
-            console.log('[StockCalc DEBUG] readSplitKeys raw val.config:', val.config ? JSON.parse(JSON.stringify(val.config)) : '(no config node)');
 
             // Detect old flat format: if val.rates exists directly it's the old shape
             if (val.rates) {
-                console.warn('[StockCalc DEBUG] OLD FLAT FORMAT branch taken — val.rates exists at root. packagingWeights would come from val.packagingWeights:', val.packagingWeights);
                 // Old flat format — return as-is so applyDataSnapshot works unchanged
                 return val;
             }
@@ -2780,12 +2774,9 @@
                 presets: loosePresets, makingProfiles, billHistory
             };
             saveDataToLocalCache(dataToSave);
-            console.log('[StockCalc DEBUG] saveConfig() called. packagingWeights to save:', JSON.parse(JSON.stringify(packagingWeights)));
-            console.log('[StockCalc DEBUG] writeAllowed:', window._writeAllowed, 'firebaseDB:', !!window.firebaseDB, 'online:', navigator.onLine);
             if (!window._writeAllowed || !window.firebaseDB || !navigator.onLine) {
                 markPendingSync();
                 window._packagingWeightsDirty = false; // nothing in flight; safe to accept next snapshot
-                console.warn('[StockCalc DEBUG] Write SKIPPED (writeAllowed/firebaseDB/online check failed). Only saved to localStorage.');
                 return;
             }
             const update = {};
@@ -2796,27 +2787,16 @@
             update['jewelryData/config/packagingWeights'] = packagingWeights || {};
             update['jewelryData/products']                = productData || {};
             window.dbSafeUpdate(update)
-                .then(() => {
-                    clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false;
-                    console.log('[StockCalc DEBUG] Multi-path update() SUCCEEDED.');
-                })
+                .then(() => { clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false; })
                 .catch((err) => {
                     markPendingSync(); window._packagingWeightsDirty = false;
-                    console.error('[StockCalc DEBUG] Multi-path update() FAILED:', err);
+                    // A single invalid key anywhere in this payload (e.g. a
+                    // Firebase-illegal character in an item name) aborts the
+                    // WHOLE update — surface that loudly instead of failing
+                    // silently, since it previously masked a real data bug.
+                    console.error('[Save] Cloud write failed — changes are saved locally but NOT synced:', err);
+                    window._showDebugBanner && window._showDebugBanner('⚠️ Cloud save failed: ' + (err && err.message ? err.message : err));
                 });
-
-            // DIAGNOSTIC: also write packagingWeights via an isolated direct
-            // set() call, independent of the multi-path update above. If this
-            // one succeeds but the field still doesn't persist, the bug is in
-            // how it's being READ back, not written.
-            window.dbSafeSet('jewelryData/config/packagingWeights', packagingWeights || {})
-                .then(() => console.log('[StockCalc DEBUG] Isolated set() on packagingWeights SUCCEEDED.'))
-                .catch((err) => console.error('[StockCalc DEBUG] Isolated set() on packagingWeights FAILED:', err));
-
-            // AUTO-DIAGNOSTIC: 3 seconds after saving, do a forced fresh read
-            // straight from the server and show it on-screen — no console or
-            // typing needed.
-            setTimeout(() => { if (window.debugCheckPackagingWeights) window.debugCheckPackagingWeights(); }, 3000);
         }
 
         // Save a single bill record
@@ -3075,8 +3055,17 @@
         }
 
         // Per-category packaging settings, created on first access and persisted.
+        // Firebase RTDB keys can NEVER contain . # $ / [ ] — item names like
+        // "S PAYAL 5/5.5" break this rule, and Firebase rejects the ENTIRE
+        // multi-path update() if even one key anywhere in the payload is
+        // invalid. That one bad key was silently failing every single save of
+        // packagingWeights for ALL items, which is why nothing ever persisted.
+        function _sanitizeFirebaseKey(name) {
+            return name.trim().toUpperCase().replace(/[.#$\/\[\]]/g, '_');
+        }
+
         function getPackaging(name) {
-            const key = name.trim().toUpperCase();
+            const key = _sanitizeFirebaseKey(name);
             if (!packagingWeights[key]) packagingWeights[key] = { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false };
             if (packagingWeights[key].hidden === undefined) packagingWeights[key].hidden = false; // backfill for older saved data
             return packagingWeights[key];
