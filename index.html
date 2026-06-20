@@ -17,7 +17,7 @@
     <script type="module">
         // Import the functions you need from the Firebase SDKs
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getDatabase, ref, set, update, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+        import { getDatabase, ref, set, update, remove, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
         // Your web app's Firebase configuration
         const firebaseConfig = {
@@ -36,9 +36,24 @@
         // Expose Firebase functions to the global scope for the main script
         window.firebaseDB = db;
         window.dbRef = ref;
+        window.dbSet = set;
         window.dbUpdate = update;
         window.dbRemove = remove;
         window.dbOnValue = onValue;
+        window.dbGet = get;
+
+        // Manual diagnostic — run this in the browser console at any time:
+        //   debugCheckPackagingWeights()
+        // It does a ONE-SHOT read straight from the Firebase server (bypassing
+        // any local cache/listener) and prints exactly what's stored right now.
+        window.debugCheckPackagingWeights = function() {
+            if (!window.dbGet || !window.firebaseDB) { console.warn('[DEBUG] Firebase not ready yet.'); return; }
+            window.dbGet(window.dbRef(window.firebaseDB, 'jewelryData/config/packagingWeights'))
+                .then(snap => {
+                    console.log('[DEBUG] Server-side packagingWeights RIGHT NOW (forced fresh read):', snap.exists() ? snap.val() : '(path does not exist)');
+                })
+                .catch(err => console.error('[DEBUG] Server read failed:', err));
+        };
 
         // ── ORIGIN GUARD ──────────────────────────────────────────────
         // Writes are ONLY allowed when the app is served from the official
@@ -70,6 +85,18 @@
             if (!window.dbUpdate || !window.firebaseDB) return Promise.resolve();
             if (!obj || Object.keys(obj).length === 0) return Promise.resolve();
             return window.dbUpdate(window.dbRef(window.firebaseDB, '/'), obj);
+        };
+
+        // Direct, isolated set() at a single path — bypasses the multi-path
+        // update() mechanism entirely. Used as a diagnostic/fallback write
+        // for packagingWeights so we can rule out multi-path update quirks.
+        window.dbSafeSet = function(path, value) {
+            if (!window._writeAllowed) {
+                console.warn('[BLOCKED] Write rejected — not running from the official GitHub Pages URL.');
+                return Promise.resolve();
+            }
+            if (!window.dbSet || !window.firebaseDB) return Promise.resolve();
+            return window.dbSet(window.dbRef(window.firebaseDB, path), value);
         };
 
 
@@ -2750,12 +2777,20 @@
             window.dbSafeUpdate(update)
                 .then(() => {
                     clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false;
-                    console.log('[StockCalc DEBUG] Firebase write SUCCEEDED for packagingWeights.');
+                    console.log('[StockCalc DEBUG] Multi-path update() SUCCEEDED.');
                 })
                 .catch((err) => {
                     markPendingSync(); window._packagingWeightsDirty = false;
-                    console.error('[StockCalc DEBUG] Firebase write FAILED:', err);
+                    console.error('[StockCalc DEBUG] Multi-path update() FAILED:', err);
                 });
+
+            // DIAGNOSTIC: also write packagingWeights via an isolated direct
+            // set() call, independent of the multi-path update above. If this
+            // one succeeds but the field still doesn't persist, the bug is in
+            // how it's being READ back, not written.
+            window.dbSafeSet('jewelryData/config/packagingWeights', packagingWeights || {})
+                .then(() => console.log('[StockCalc DEBUG] Isolated set() on packagingWeights SUCCEEDED.'))
+                .catch((err) => console.error('[StockCalc DEBUG] Isolated set() on packagingWeights FAILED:', err));
         }
 
         // Save a single bill record
