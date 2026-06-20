@@ -1363,6 +1363,9 @@
             <button onclick="showStockSection()">
                 <span class="menu-icon" style="background:#e8f5e9;">📦</span> Stock View
             </button>
+            <button onclick="showStockCalcSection()">
+                <span class="menu-icon" style="background:#fff3e0;">⚖️</span> Stock Weight Calc
+            </button>
             <button onclick="openProfileModal()">
                 <span class="menu-icon" style="background:#e3f2fd;">⚙️</span> Making Profiles
             </button>
@@ -1851,6 +1854,60 @@
         <div id="stock-body"></div>
     </div>
 
+    <div id="stock-calc" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:480px; margin:0 auto; min-height:0;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
+            <h2 style="margin:0; font-size:20px;">⚖️ Stock Weight Calc</h2>
+            <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:20px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap;">← Back</button>
+        </div>
+
+        <!-- STEP 1: Metal picker -->
+        <div id="stock-calc-metal-picker" style="display:flex; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:14px; padding:20px 0;">
+            <div style="font-size:14px; color:#777; margin-bottom:4px;">Choose which stock to view</div>
+            <button onclick="selectStockCalcMetal('gold')"
+                style="width:100%; max-width:280px; padding:22px; border:none; border-radius:16px; background:linear-gradient(135deg,#D4AF37,#B8922E); color:white; font-size:18px; font-weight:800; cursor:pointer; box-shadow:0 4px 14px rgba(184,146,46,0.4); display:flex; align-items:center; justify-content:center; gap:10px;">
+                🟡 Gold
+            </button>
+            <button onclick="selectStockCalcMetal('silver')"
+                style="width:100%; max-width:280px; padding:22px; border:none; border-radius:16px; background:linear-gradient(135deg,#B0B7BD,#8A9197); color:white; font-size:18px; font-weight:800; cursor:pointer; box-shadow:0 4px 14px rgba(138,145,151,0.4); display:flex; align-items:center; justify-content:center; gap:10px;">
+                ⚪ Silver
+            </button>
+        </div>
+
+        <!-- STEP 2: Table view (hidden until a metal is chosen) -->
+        <div id="stock-calc-table-view" style="display:none; flex-direction:column;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
+                <button onclick="backToStockCalcMetalPicker()" style="background:#eee; color:#333; border:none; border-radius:20px; padding:8px 13px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;">‹ Change Metal</button>
+                <span id="stock-calc-metal-label" style="font-weight:800; font-size:15px;"></span>
+            </div>
+            <input type="text" id="stock-calc-search" placeholder="Search item..." oninput="renderStockCalc()"
+                style="width:100%; padding:9px 13px; margin-bottom:10px; border:1px solid #ddd; border-radius:20px; font-size:14px; background:white; box-shadow:0 1px 4px rgba(0,0,0,0.08); box-sizing:border-box;">
+            <div style="background-color:#e3f2fd; border:1px solid #2196F3; color:#0d47a1; padding:10px 12px; margin-bottom:10px; border-radius:8px; font-size:12px;">
+                Sold/checked-out tags are excluded automatically. Gross Wt = (Pieces × Packaging/pc) + Box Wt + Net Gross Wt + Other Wt.
+            </div>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
+                <div id="stock-calc-summary" style="flex:1; background:white; border-radius:10px; padding:10px 14px; font-size:13px; color:#555; box-shadow:0 1px 4px rgba(0,0,0,0.08);"></div>
+                <button id="stock-calc-hidden-toggle-btn" onclick="toggleStockCalcShowHidden()"
+                    style="background:white; border:1px solid #ddd; border-radius:10px; padding:10px 12px; font-size:12px; font-weight:700; color:#333; cursor:pointer; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,0.08);">🙈 Hidden (0)</button>
+            </div>
+            <div id="stock-calc-table-wrap" style="background:white; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow-x:auto; -webkit-overflow-scrolling:touch;">
+                <table id="stock-calc-table" style="width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap;">
+                    <thead>
+                        <tr style="background:#1a1a1a; color:white;">
+                            <th style="padding:9px 8px; text-align:left; position:sticky; left:0; background:#1a1a1a; z-index:2;">Item</th>
+                            <th style="padding:9px 8px; text-align:right;">Gross Wt</th>
+                            <th style="padding:9px 8px; text-align:right;">Pc</th>
+                            <th style="padding:9px 8px; text-align:right;">P.WEIGHT</th>
+                            <th style="padding:9px 8px; text-align:right;">B WEIGHT</th>
+                            <th style="padding:9px 8px; text-align:right;">EXTRA BAG</th>
+                            <th style="padding:9px 8px; text-align:center;">Hide</th>
+                        </tr>
+                    </thead>
+                    <tbody id="stock-calc-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <div id="excel-upload">
         <h2>Upload Excel Sheet</h2>
         <p style="font-size:14px; text-align:center; color:#666;">
@@ -2134,6 +2191,9 @@
         let rates = JSON.parse(JSON.stringify(defaultRates));
         let taxRate = 3; // factory default — overwritten by Firebase on load
         let productData = {};
+        // Stock Weight Calculator: per-category packaging weights, manually editable.
+        // Keyed by item name (trimmed, uppercase) -> { pWeight, bWeight, extraBag }
+        let packagingWeights = {};
 
         let currentProduct = null;
         let currentFinalPrice = 0;
@@ -2343,6 +2403,7 @@
             rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
             taxRate = cloudData.taxRate ?? 3;
             productData = cloudData.products || {};
+            packagingWeights = cloudData.packagingWeights || {};
             looseDefaultsCloud = cloudData.looseDefaults || null;
             baseCalcDefaults = cloudData.baseCalcDefaults || {};
             loosePresets = cloudData.presets || [];
@@ -2651,7 +2712,7 @@
         // Save config (rates, tax, loose defaults, base calc)
         function saveConfig() {
             const dataToSave = {
-                rates, taxRate, products: productData,
+                rates, taxRate, products: productData, packagingWeights,
                 looseDefaults: looseDefaultsCloud, baseCalcDefaults,
                 presets: loosePresets, makingProfiles, billHistory
             };
@@ -2664,6 +2725,7 @@
             update['jewelryData/config/taxRate']          = taxRate;
             update['jewelryData/config/looseDefaults']    = looseDefaultsCloud || null;
             update['jewelryData/config/baseCalcDefaults'] = baseCalcDefaults || {};
+            update['jewelryData/config/packagingWeights'] = packagingWeights || {};
             update['jewelryData/products']                = productData || {};
             window.dbSafeUpdate(update)
                 .then(() => { clearPendingSync(); setDataSourceBadge('live'); })
@@ -2749,7 +2811,7 @@
         // Write current full state to localStorage (bills+ledger+config in one shot)
         function _persistLocalCache() {
             const dataToSave = {
-                rates, taxRate, products: productData,
+                rates, taxRate, products: productData, packagingWeights,
                 looseDefaults: looseDefaultsCloud, baseCalcDefaults,
                 presets: loosePresets, makingProfiles, billHistory
             };
@@ -2800,6 +2862,7 @@
                     loosePresets   = [];
                     makingProfiles = [];
                     productData    = [];
+                    packagingWeights = {};
                     rates          = {};
                     taxRate        = 3;
                     localStorage.clear();
@@ -2829,6 +2892,7 @@
             document.getElementById('excel-upload').style.display = 'none';
             document.getElementById('loose-calculator').style.display = 'none';
             document.getElementById('stock-view').style.display = 'none';
+            document.getElementById('stock-calc').style.display = 'none';
             document.getElementById('profiles-section').style.display = 'none';
             document.getElementById('bulk-check').style.display = 'none';
             document.getElementById('ledger').style.display = 'none';
@@ -2853,7 +2917,7 @@
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = section === 'stock-view' ? 'flex' : 'block';
+                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc') ? 'flex' : 'block';
             }
 
             if (section === 'ledger') {
@@ -2897,6 +2961,213 @@
             showSection('stock-view');
             renderStockView();
         }
+
+        // ================= STOCK WEIGHT CALCULATOR =================
+        // Groups remaining (non-sold) tags by item name and computes a
+        // packaging-inclusive final weight per category, mirroring the
+        // logic of the standalone "Stock Calculator" spreadsheet:
+        //   Final Weight = (Pieces × Packaging/pc) + Box Wt + Gross Wt + Other Wt
+
+        function escHtml(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        // Tags that have left the shop: any barcode found inside a saved bill's
+        // item list (loose/repair entries have no barcode, so they're naturally excluded).
+        function getSoldBarcodes() {
+            const sold = new Set();
+            (billHistory || []).forEach(bill => {
+                (bill.items || []).forEach(item => {
+                    if (item && item.barcode) sold.add(String(item.barcode).trim().toUpperCase());
+                });
+            });
+            return sold;
+        }
+
+        // Per-category packaging settings, created on first access and persisted.
+        function getPackaging(name) {
+            const key = name.trim().toUpperCase();
+            if (!packagingWeights[key]) packagingWeights[key] = { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false };
+            if (packagingWeights[key].hidden === undefined) packagingWeights[key].hidden = false; // backfill for older saved data
+            return packagingWeights[key];
+        }
+
+        let stockCalcRows = []; // [{ name, pc, grossWt, totalValue }] for the current render, used by input handlers
+        let stockCalcMetal = null;        // 'gold' | 'silver'
+        let stockCalcShowHidden = false;  // toggle to reveal hidden rows for un-hiding
+
+        function showStockCalcSection() {
+            closeOptions();
+            showSection('stock-calc');
+            // Always start at the metal picker when the feature is opened
+            stockCalcMetal = null;
+            stockCalcShowHidden = false;
+            document.getElementById('stock-calc-metal-picker').style.display = 'flex';
+            document.getElementById('stock-calc-table-view').style.display = 'none';
+        }
+
+        function selectStockCalcMetal(metal) {
+            stockCalcMetal = metal;
+            stockCalcShowHidden = false;
+            document.getElementById('stock-calc-metal-picker').style.display = 'none';
+            document.getElementById('stock-calc-table-view').style.display = 'flex';
+            const label = document.getElementById('stock-calc-metal-label');
+            label.textContent = metal === 'gold' ? '🟡 Gold Stock' : '⚪ Silver Stock';
+            label.style.color = metal === 'gold' ? '#B8922E' : '#6B7177';
+            const search = document.getElementById('stock-calc-search');
+            if (search) search.value = '';
+            renderStockCalc();
+        }
+
+        function backToStockCalcMetalPicker() {
+            stockCalcMetal = null;
+            document.getElementById('stock-calc-table-view').style.display = 'none';
+            document.getElementById('stock-calc-metal-picker').style.display = 'flex';
+        }
+
+        function toggleStockCalcShowHidden() {
+            stockCalcShowHidden = !stockCalcShowHidden;
+            renderStockCalc();
+        }
+
+        function renderStockCalc() {
+            if (!stockCalcMetal) return; // nothing to render until a metal is picked
+            const searchVal = (document.getElementById('stock-calc-search')?.value || '').toLowerCase();
+            const tbody = document.getElementById('stock-calc-tbody');
+            const summary = document.getElementById('stock-calc-summary');
+            tbody.innerHTML = '';
+
+            const sold = getSoldBarcodes();
+            const groups = {}; // name -> { pc, grossWt, totalValue }
+            let hiddenCount = 0;
+
+            for (const barcode in productData) {
+                if (sold.has(String(barcode).trim().toUpperCase())) continue; // checked-out tag — excluded
+                const d = productData[barcode];
+                const metalKey = (d.metal || '').toLowerCase();
+                if (metalKey !== stockCalcMetal) continue; // only the chosen metal
+                const name = (d.itemName || '').trim();
+                if (!name) continue;
+                if (searchVal && !name.toLowerCase().includes(searchVal)) continue;
+                if (!groups[name]) groups[name] = { pc: 0, grossWt: 0, totalValue: 0 };
+                groups[name].pc += 1;
+                groups[name].grossWt += (d.grossWeight || d.netWeight || 0);
+                const priceResult = calcProductFinalPrice(barcode);
+                if (priceResult && priceResult.final) groups[name].totalValue += priceResult.final;
+            }
+
+            const allNames = Object.keys(groups).sort();
+            const visibleNames = allNames.filter(n => {
+                const isHidden = !!getPackaging(n).hidden;
+                if (isHidden) hiddenCount++;
+                return stockCalcShowHidden ? true : !isHidden;
+            });
+
+            const hiddenBtn = document.getElementById('stock-calc-hidden-toggle-btn');
+            if (hiddenBtn) {
+                hiddenBtn.textContent = (stockCalcShowHidden ? '🙉 Showing hidden (' : '🙈 Hidden (') + hiddenCount + ')';
+                hiddenBtn.style.background = stockCalcShowHidden ? '#fff3e0' : 'white';
+            }
+
+            stockCalcRows = visibleNames.map(name => ({
+                name,
+                pc: groups[name].pc,
+                grossWt: groups[name].grossWt,
+                totalValue: groups[name].totalValue
+            }));
+
+            if (allNames.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:40px; color:#999; font-size:14px;">No ${stockCalcMetal} stock found.</td></tr>`;
+                summary.innerHTML = '0 products';
+                return;
+            }
+            if (stockCalcRows.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding:40px; color:#999; font-size:14px;">All matching items are hidden. Tap "Hidden" above to view &amp; unhide.</td></tr>`;
+                recalcStockCalcSummary();
+                return;
+            }
+
+            stockCalcRows.forEach((row, idx) => {
+                const pkg = getPackaging(row.name);
+                const total = (row.pc * pkg.pWeight) + pkg.bWeight + row.grossWt + pkg.extraBag;
+                const isHidden = !!pkg.hidden;
+
+                const tr = document.createElement('tr');
+                tr.style.cssText = `background:${isHidden ? '#fafafa' : (idx % 2 === 1 ? '#fbfbfb' : 'white')}; opacity:${isHidden ? '0.55' : '1'}; border-bottom:1px solid #f0f0f0;`;
+                tr.innerHTML = `
+                    <td style="padding:8px 8px; font-weight:700; color:#333; position:sticky; left:0; background:${isHidden ? '#fafafa' : (idx % 2 === 1 ? '#fbfbfb' : 'white')};">${escHtml(row.name)}</td>
+                    <td id="stock-calc-tot-${idx}" style="padding:8px 8px; text-align:right; font-weight:800; color:#4CAF50;">${total.toFixed(2)}</td>
+                    <td style="padding:8px 8px; text-align:right; font-weight:600;">${row.pc}</td>
+                    <td style="padding:8px 6px; text-align:right;">
+                        <input type="number" step="0.01" min="0" inputmode="decimal" value="${pkg.pWeight}"
+                            data-idx="${idx}" data-field="pWeight"
+                            style="width:58px; padding:5px 6px; border:1px solid #ddd; border-radius:6px; font-size:12px; text-align:right; box-sizing:border-box;"
+                            oninput="handlePackagingInput(this)">
+                    </td>
+                    <td style="padding:8px 6px; text-align:right;">
+                        <input type="number" step="0.01" min="0" inputmode="decimal" value="${pkg.bWeight}"
+                            data-idx="${idx}" data-field="bWeight"
+                            style="width:58px; padding:5px 6px; border:1px solid #ddd; border-radius:6px; font-size:12px; text-align:right; box-sizing:border-box;"
+                            oninput="handlePackagingInput(this)">
+                    </td>
+                    <td style="padding:8px 6px; text-align:right;">
+                        <input type="number" step="0.01" min="0" inputmode="decimal" value="${pkg.extraBag}"
+                            data-idx="${idx}" data-field="extraBag"
+                            style="width:58px; padding:5px 6px; border:1px solid #ddd; border-radius:6px; font-size:12px; text-align:right; box-sizing:border-box;"
+                            oninput="handlePackagingInput(this)">
+                    </td>
+                    <td style="padding:8px 8px; text-align:center;">
+                        <button onclick="toggleStockCalcHidden(${idx})" title="${isHidden ? 'Unhide' : 'Hide from stock check'}"
+                            style="background:none; border:none; font-size:16px; cursor:pointer; padding:2px 4px;">${isHidden ? '🙈' : '👁️'}</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            recalcStockCalcSummary();
+        }
+
+        function handlePackagingInput(inputEl) {
+            const idx = parseInt(inputEl.dataset.idx, 10);
+            const field = inputEl.dataset.field;
+            const row = stockCalcRows[idx];
+            if (!row) return;
+            const pkg = getPackaging(row.name);
+            let v = parseFloat(inputEl.value);
+            if (isNaN(v) || v < 0) v = 0;
+            pkg[field] = v;
+            saveAllDataToCloudDebounced();
+
+            const total = (row.pc * pkg.pWeight) + pkg.bWeight + row.grossWt + pkg.extraBag;
+            const totEl = document.getElementById('stock-calc-tot-' + idx);
+            if (totEl) totEl.textContent = total.toFixed(2);
+            recalcStockCalcSummary();
+        }
+
+        function toggleStockCalcHidden(idx) {
+            const row = stockCalcRows[idx];
+            if (!row) return;
+            const pkg = getPackaging(row.name);
+            pkg.hidden = !pkg.hidden;
+            saveAllDataToCloudDebounced();
+            renderStockCalc(); // re-render so hidden item drops out (or reappears) immediately
+        }
+
+        function recalcStockCalcSummary() {
+            const summary = document.getElementById('stock-calc-summary');
+            if (!summary) return;
+            let grandPc = 0, grandWeight = 0, grandValue = 0;
+            stockCalcRows.forEach(row => {
+                const pkg = getPackaging(row.name);
+                grandPc += row.pc;
+                grandWeight += (row.pc * pkg.pWeight) + pkg.bWeight + row.grossWt + pkg.extraBag;
+                grandValue += row.totalValue;
+            });
+            summary.innerHTML = `<strong>${stockCalcRows.length}</strong> items &nbsp;|&nbsp; <strong>${grandPc}</strong> pcs &nbsp;|&nbsp; <strong style="color:#4CAF50;">${grandWeight.toFixed(2)} g</strong>${grandValue > 0 ? ` &nbsp;|&nbsp; <strong style="color:#1E7A3E;">₹${grandValue.toFixed(2)}</strong>` : ''}`;
+        }
+        // =============== END STOCK WEIGHT CALCULATOR ===============
 
         function calcProductFinalPrice(barcode) {
             const d = productData[barcode];
