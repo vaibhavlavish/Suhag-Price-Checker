@@ -3015,6 +3015,8 @@
             document.getElementById('profiles-section').style.display = 'none';
             document.getElementById('bulk-check').style.display = 'none';
             document.getElementById('ledger').style.display = 'none';
+            const brandHeaderEl = document.getElementById('brand-header');
+            if (brandHeaderEl) brandHeaderEl.style.display = 'none';
 
             document.querySelectorAll('#taskbar button').forEach(btn => {
                 btn.classList.remove('active');
@@ -3025,6 +3027,7 @@
 
             if (section === 'main') {
                 document.getElementById('main-screen').style.display = 'flex';
+                if (brandHeaderEl) brandHeaderEl.style.display = 'flex';
                 document.querySelector('#taskbar button[onclick="showSection(\'main\')"]').classList.add('active');
                 if(oldGoldBtn) oldGoldBtn.style.display = 'flex'; // Show button on main
                 clearAll();
