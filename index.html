@@ -46,13 +46,34 @@
         //   debugCheckPackagingWeights()
         // It does a ONE-SHOT read straight from the Firebase server (bypassing
         // any local cache/listener) and prints exactly what's stored right now.
+        // It ALSO writes the result into a visible on-page banner (top-left,
+        // fixed position) so it's impossible to miss even without DevTools.
         window.debugCheckPackagingWeights = function() {
             if (!window.dbGet || !window.firebaseDB) { console.warn('[DEBUG] Firebase not ready yet.'); return; }
             window.dbGet(window.dbRef(window.firebaseDB, 'jewelryData/config/packagingWeights'))
                 .then(snap => {
-                    console.log('[DEBUG] Server-side packagingWeights RIGHT NOW (forced fresh read):', snap.exists() ? snap.val() : '(path does not exist)');
+                    const result = snap.exists() ? snap.val() : '(path does not exist on server)';
+                    console.log('[DEBUG] Server-side packagingWeights RIGHT NOW (forced fresh read):', result);
+                    window._showDebugBanner('Server packagingWeights:\n' + JSON.stringify(result, null, 1).slice(0, 600));
                 })
-                .catch(err => console.error('[DEBUG] Server read failed:', err));
+                .catch(err => {
+                    console.error('[DEBUG] Server read failed:', err);
+                    window._showDebugBanner('Server READ FAILED: ' + (err && err.message ? err.message : err));
+                });
+        };
+
+        // Lightweight on-page banner so diagnostic output is visible without
+        // needing to find the right DevTools panel/input box.
+        window._showDebugBanner = function(text) {
+            let el = document.getElementById('_debugBanner');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = '_debugBanner';
+                el.style.cssText = 'position:fixed; top:8px; left:8px; right:8px; z-index:999999; background:#1a1a1a; color:#7CFC7C; font:11px/1.4 monospace; padding:10px 12px; border-radius:10px; max-height:40vh; overflow:auto; white-space:pre-wrap; box-shadow:0 4px 18px rgba(0,0,0,0.5); border:1px solid #4CAF50;';
+                document.body.appendChild(el);
+            }
+            const stamp = new Date().toLocaleTimeString();
+            el.textContent = '[' + stamp + '] ' + text;
         };
 
         // ── ORIGIN GUARD ──────────────────────────────────────────────
@@ -2791,6 +2812,11 @@
             window.dbSafeSet('jewelryData/config/packagingWeights', packagingWeights || {})
                 .then(() => console.log('[StockCalc DEBUG] Isolated set() on packagingWeights SUCCEEDED.'))
                 .catch((err) => console.error('[StockCalc DEBUG] Isolated set() on packagingWeights FAILED:', err));
+
+            // AUTO-DIAGNOSTIC: 3 seconds after saving, do a forced fresh read
+            // straight from the server and show it on-screen — no console or
+            // typing needed.
+            setTimeout(() => { if (window.debugCheckPackagingWeights) window.debugCheckPackagingWeights(); }, 3000);
         }
 
         // Save a single bill record
