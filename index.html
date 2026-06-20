@@ -124,7 +124,7 @@
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
     <style>
         /* ============================================================
            SUHAG DESIGN SYSTEM — Jewelry-grade UI
@@ -186,6 +186,39 @@
             transition: opacity 0.18s ease;
         }
         body.app-ready { opacity: 1; }
+        #brand-header {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            padding: 4px 0 16px;
+            width: 100%;
+        }
+        #brand-header img {
+            width: 36px;
+            height: 36px;
+            object-fit: contain;
+            flex-shrink: 0;
+        }
+        #brand-header .brand-text {
+            font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
+            line-height: 1.04;
+        }
+        #brand-header .brand-text .brand-line1 {
+            display: block;
+            font-size: 19px;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            color: #1a1a1a;
+        }
+        #brand-header .brand-text .brand-line2 {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.18em;
+            color: #B8922E;
+            margin-top: 1px;
+        }
         #taskbar {
             background: #1a1a1a;
             color: white;
@@ -1467,6 +1500,14 @@
     <input type="file" id="restore-file-input" accept=".json" style="display: none;" onchange="processRestoreFile()">
 
     <div id="main-screen">
+        <div id="brand-header">
+            <img src="icon-192.png" alt="Suhag Jewellers" width="34" height="34" loading="eager">
+            <span class="brand-text">
+                <span class="brand-line1">SUHAG</span>
+                <span class="brand-line2">JEWELLERS</span>
+            </span>
+        </div>
+
         <div style="display:flex; gap:8px; align-items:center;">
             <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus maxlength="50" style="flex:1; margin-bottom:0;">
             <button onclick="openCamera('barcode')" id="cam-btn-main" title="Scan with camera"
