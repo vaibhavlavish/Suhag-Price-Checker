@@ -2409,8 +2409,12 @@
             // flight, applying it here would clobber the in-progress edit with the
             // stale pre-edit value. So we skip overwriting packagingWeights during
             // that window — the pending save will land moments later anyway.
+            console.log('[StockCalc DEBUG] applyDataSnapshot called. dirty flag:', !!window._packagingWeightsDirty, 'incoming cloudData.packagingWeights:', JSON.parse(JSON.stringify(cloudData.packagingWeights || {})));
             if (!window._packagingWeightsDirty) {
                 packagingWeights = cloudData.packagingWeights || {};
+                console.log('[StockCalc DEBUG] packagingWeights SET from cloud snapshot:', JSON.parse(JSON.stringify(packagingWeights)));
+            } else {
+                console.warn('[StockCalc DEBUG] packagingWeights SKIPPED (dirty flag set) — keeping in-memory edit.');
             }
             looseDefaultsCloud = cloudData.looseDefaults || null;
             baseCalcDefaults = cloudData.baseCalcDefaults || {};
@@ -2538,9 +2542,11 @@
         function readSplitKeys(snapshot) {
             const val = snapshot.val();
             if (!val) return null;
+            console.log('[StockCalc DEBUG] readSplitKeys raw val.config:', val.config ? JSON.parse(JSON.stringify(val.config)) : '(no config node)');
 
             // Detect old flat format: if val.rates exists directly it's the old shape
             if (val.rates) {
+                console.warn('[StockCalc DEBUG] OLD FLAT FORMAT branch taken — val.rates exists at root. packagingWeights would come from val.packagingWeights:', val.packagingWeights);
                 // Old flat format — return as-is so applyDataSnapshot works unchanged
                 return val;
             }
@@ -2726,9 +2732,12 @@
                 presets: loosePresets, makingProfiles, billHistory
             };
             saveDataToLocalCache(dataToSave);
+            console.log('[StockCalc DEBUG] saveConfig() called. packagingWeights to save:', JSON.parse(JSON.stringify(packagingWeights)));
+            console.log('[StockCalc DEBUG] writeAllowed:', window._writeAllowed, 'firebaseDB:', !!window.firebaseDB, 'online:', navigator.onLine);
             if (!window._writeAllowed || !window.firebaseDB || !navigator.onLine) {
                 markPendingSync();
                 window._packagingWeightsDirty = false; // nothing in flight; safe to accept next snapshot
+                console.warn('[StockCalc DEBUG] Write SKIPPED (writeAllowed/firebaseDB/online check failed). Only saved to localStorage.');
                 return;
             }
             const update = {};
@@ -2739,8 +2748,14 @@
             update['jewelryData/config/packagingWeights'] = packagingWeights || {};
             update['jewelryData/products']                = productData || {};
             window.dbSafeUpdate(update)
-                .then(() => { clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false; })
-                .catch(() => { markPendingSync(); window._packagingWeightsDirty = false; });
+                .then(() => {
+                    clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false;
+                    console.log('[StockCalc DEBUG] Firebase write SUCCEEDED for packagingWeights.');
+                })
+                .catch((err) => {
+                    markPendingSync(); window._packagingWeightsDirty = false;
+                    console.error('[StockCalc DEBUG] Firebase write FAILED:', err);
+                });
         }
 
         // Save a single bill record
