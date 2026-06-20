@@ -2403,7 +2403,15 @@
             rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
             taxRate = cloudData.taxRate ?? 3;
             productData = cloudData.products || {};
-            packagingWeights = cloudData.packagingWeights || {};
+            // packagingWeights (P.WEIGHT/B WEIGHT/EXTRA BAG + hide flags from Stock
+            // Weight Calc) is edited locally with a debounce before it's written to
+            // Firebase. If an onValue snapshot arrives WHILE an edit is pending/in
+            // flight, applying it here would clobber the in-progress edit with the
+            // stale pre-edit value. So we skip overwriting packagingWeights during
+            // that window — the pending save will land moments later anyway.
+            if (!window._packagingWeightsDirty) {
+                packagingWeights = cloudData.packagingWeights || {};
+            }
             looseDefaultsCloud = cloudData.looseDefaults || null;
             baseCalcDefaults = cloudData.baseCalcDefaults || {};
             loosePresets = cloudData.presets || [];
@@ -2719,7 +2727,9 @@
             };
             saveDataToLocalCache(dataToSave);
             if (!window._writeAllowed || !window.firebaseDB || !navigator.onLine) {
-                markPendingSync(); return;
+                markPendingSync();
+                window._packagingWeightsDirty = false; // nothing in flight; safe to accept next snapshot
+                return;
             }
             const update = {};
             update['jewelryData/config/rates']            = rates;
@@ -2729,8 +2739,8 @@
             update['jewelryData/config/packagingWeights'] = packagingWeights || {};
             update['jewelryData/products']                = productData || {};
             window.dbSafeUpdate(update)
-                .then(() => { clearPendingSync(); setDataSourceBadge('live'); })
-                .catch(() => markPendingSync());
+                .then(() => { clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false; })
+                .catch(() => { markPendingSync(); window._packagingWeightsDirty = false; });
         }
 
         // Save a single bill record
@@ -2828,6 +2838,7 @@
         // Debounced wrapper for rapid-fire edits
         let _saveDebounceTimer = null;
         function saveAllDataToCloudDebounced() {
+            window._packagingWeightsDirty = true; // guards packagingWeights against being overwritten by a stale cloud snapshot until this save lands
             _persistLocalCache();
             clearTimeout(_saveDebounceTimer);
             _saveDebounceTimer = setTimeout(() => saveConfig(), 500);
