@@ -1882,7 +1882,7 @@
             <input type="text" id="stock-calc-search" placeholder="Search item..." oninput="renderStockCalc()"
                 style="width:100%; padding:9px 13px; margin-bottom:10px; border:1px solid #ddd; border-radius:20px; font-size:14px; background:white; box-shadow:0 1px 4px rgba(0,0,0,0.08); box-sizing:border-box;">
             <div style="background-color:#e3f2fd; border:1px solid #2196F3; color:#0d47a1; padding:10px 12px; margin-bottom:10px; border-radius:8px; font-size:12px;">
-                Sold/checked-out tags are excluded automatically. Gross Wt = (Pieces × Packaging/pc) + Box Wt + Net Gross Wt + Other Wt.
+                Sold/checked-out tags are excluded automatically.
             </div>
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
                 <div id="stock-calc-summary" style="flex:1; background:white; border-radius:10px; padding:10px 14px; font-size:13px; color:#555; box-shadow:0 1px 4px rgba(0,0,0,0.08);"></div>
@@ -1892,14 +1892,14 @@
             <div id="stock-calc-table-wrap" style="background:white; border-radius:12px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow-x:auto; -webkit-overflow-scrolling:touch;">
                 <table id="stock-calc-table" style="width:100%; border-collapse:collapse; font-size:12.5px; white-space:nowrap;">
                     <thead>
-                        <tr style="background:#1a1a1a; color:white;">
-                            <th style="padding:9px 8px; text-align:left; position:sticky; left:0; background:#1a1a1a; z-index:2;">Item</th>
-                            <th style="padding:9px 8px; text-align:right;">Gross Wt</th>
-                            <th style="padding:9px 8px; text-align:right;">Pc</th>
-                            <th style="padding:9px 8px; text-align:right;">P.WEIGHT</th>
-                            <th style="padding:9px 8px; text-align:right;">B WEIGHT</th>
-                            <th style="padding:9px 8px; text-align:right;">EXTRA BAG</th>
-                            <th style="padding:9px 8px; text-align:center;">Hide</th>
+                        <tr style="background:#F0EFEC; color:#333;">
+                            <th style="padding:9px 8px; text-align:left; position:sticky; left:0; background:#F0EFEC; z-index:2; border-bottom:2px solid #ddd;">Item</th>
+                            <th style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">Gross Wt</th>
+                            <th style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">Pc</th>
+                            <th style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">P.WEIGHT</th>
+                            <th style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">B WEIGHT</th>
+                            <th style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">EXTRA BAG</th>
+                            <th style="padding:9px 8px; text-align:center; border-bottom:2px solid #ddd;">Hide</th>
                         </tr>
                     </thead>
                     <tbody id="stock-calc-tbody"></tbody>
@@ -2583,6 +2583,7 @@
                 taxRate:          config.taxRate          ?? 3,
                 looseDefaults:    config.looseDefaults    || null,
                 baseCalcDefaults: config.baseCalcDefaults || {},
+                packagingWeights: config.packagingWeights || {},
                 products:         val.products            || {},
                 // billHistory and profiles may be keyed objects (new) or arrays (old)
                 billHistory,
@@ -3165,7 +3166,7 @@
                 grandWeight += (row.pc * pkg.pWeight) + pkg.bWeight + row.grossWt + pkg.extraBag;
                 grandValue += row.totalValue;
             });
-            summary.innerHTML = `<strong>${stockCalcRows.length}</strong> items &nbsp;|&nbsp; <strong>${grandPc}</strong> pcs &nbsp;|&nbsp; <strong style="color:#4CAF50;">${grandWeight.toFixed(2)} g</strong>${grandValue > 0 ? ` &nbsp;|&nbsp; <strong style="color:#1E7A3E;">₹${grandValue.toFixed(2)}</strong>` : ''}`;
+            summary.innerHTML = `<strong>${stockCalcRows.length}</strong> items &nbsp;|&nbsp; <strong>${grandPc}</strong> pcs`;
         }
         // =============== END STOCK WEIGHT CALCULATOR ===============
 
