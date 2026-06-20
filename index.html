@@ -188,36 +188,38 @@
         body.app-ready { opacity: 1; }
         #brand-header {
             display: flex;
+            flex: 0 0 auto;
             justify-content: center;
-            align-items: center;
-            gap: 10px;
-            padding: 4px 0 16px;
-            width: 100%;
+            align-items: flex-end;
+            gap: 16px;
+            height: 130px;
+            padding: 0 16px 14px;
+            background: #FFFFFF;
         }
         #brand-header img {
-            width: 36px;
-            height: 36px;
+            width: 64px;
+            height: 64px;
             object-fit: contain;
             flex-shrink: 0;
         }
         #brand-header .brand-text {
             font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
-            line-height: 1.04;
+            line-height: 1.05;
         }
         #brand-header .brand-text .brand-line1 {
             display: block;
-            font-size: 19px;
+            font-size: 32px;
             font-weight: 800;
             letter-spacing: 0.1em;
             color: #1a1a1a;
         }
         #brand-header .brand-text .brand-line2 {
             display: block;
-            font-size: 12px;
+            font-size: 19px;
             font-weight: 600;
             letter-spacing: 0.18em;
             color: #B8922E;
-            margin-top: 1px;
+            margin-top: 2px;
         }
         #taskbar {
             background: #1a1a1a;
@@ -1499,15 +1501,15 @@
 
     <input type="file" id="restore-file-input" accept=".json" style="display: none;" onchange="processRestoreFile()">
 
-    <div id="main-screen">
-        <div id="brand-header">
-            <img src="icon-192.png" alt="Suhag Jewellers" width="34" height="34" loading="eager">
-            <span class="brand-text">
-                <span class="brand-line1">SUHAG</span>
-                <span class="brand-line2">JEWELLERS</span>
-            </span>
-        </div>
+    <div id="brand-header">
+        <img src="icon-192.png" alt="Suhag Jewellers" width="34" height="34" loading="eager" onerror="this.style.display='none'">
+        <span class="brand-text">
+            <span class="brand-line1">SUHAG</span>
+            <span class="brand-line2">JEWELLERS</span>
+        </span>
+    </div>
 
+    <div id="main-screen">
         <div style="display:flex; gap:8px; align-items:center;">
             <input type="text" id="barcode" placeholder="Scan or enter barcode..." autofocus maxlength="50" style="flex:1; margin-bottom:0;">
             <button onclick="openCamera('barcode')" id="cam-btn-main" title="Scan with camera"
