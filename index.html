@@ -1934,6 +1934,8 @@
             </div>
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
                 <div id="stock-calc-summary" style="flex:1; background:white; border-radius:10px; padding:10px 14px; font-size:13px; color:#555; box-shadow:0 1px 4px rgba(0,0,0,0.08);"></div>
+                <button id="stock-calc-simplify-toggle-btn" onclick="toggleStockCalcSimplify()" title="Show/hide extra columns — does not change any data"
+                    style="background:white; border:1px solid #ddd; border-radius:10px; padding:10px 12px; font-size:12px; font-weight:700; color:#333; cursor:pointer; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,0.08);">🧩 Simplify</button>
                 <button id="stock-calc-hidden-toggle-btn" onclick="toggleStockCalcShowHidden()"
                     style="background:white; border:1px solid #ddd; border-radius:10px; padding:10px 12px; font-size:12px; font-weight:700; color:#333; cursor:pointer; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,0.08);">🙈 Hidden (0)</button>
             </div>
@@ -1944,10 +1946,10 @@
                             <th style="padding:9px 8px; text-align:left; position:sticky; left:0; background:#F0EFEC; z-index:2; border-bottom:2px solid #ddd;">Item</th>
                             <th style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">Gross Wt</th>
                             <th style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">Pc</th>
-                            <th style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">P.WEIGHT</th>
-                            <th style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">B WEIGHT</th>
-                            <th style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">EXTRA BAG</th>
-                            <th style="padding:9px 8px; text-align:center; border-bottom:2px solid #ddd;">Hide</th>
+                            <th class="stockcalc-detail-col" style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">P.WEIGHT</th>
+                            <th class="stockcalc-detail-col" style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">B WEIGHT</th>
+                            <th class="stockcalc-detail-col" style="padding:9px 8px; text-align:right; border-bottom:2px solid #ddd;">EXTRA BAG</th>
+                            <th class="stockcalc-detail-col" style="padding:9px 8px; text-align:center; border-bottom:2px solid #ddd;">Hide</th>
                         </tr>
                     </thead>
                     <tbody id="stock-calc-tbody"></tbody>
@@ -1955,6 +1957,12 @@
             </div>
         </div>
     </div>
+
+    <style>
+        /* Simplify mode for Stock Weight Calc — purely visual column hide,
+           never touches any stored value or data. */
+        #stock-calc-table.stockcalc-simplified .stockcalc-detail-col { display: none; }
+    </style>
 
     <div id="excel-upload">
         <h2>Upload Excel Sheet</h2>
@@ -3074,6 +3082,7 @@
         let stockCalcRows = []; // [{ name, pc, grossWt, totalValue }] for the current render, used by input handlers
         let stockCalcMetal = null;        // 'gold' | 'silver'
         let stockCalcShowHidden = false;  // toggle to reveal hidden rows for un-hiding
+        let stockCalcSimplify = true;     // ON by default — shows only Item / Gross Wt / Pc columns. Visual-only, never touches data.
 
         function showStockCalcSection() {
             closeOptions();
@@ -3109,8 +3118,28 @@
             renderStockCalc();
         }
 
+        // Visual-only toggle: shows/hides the P.WEIGHT, B WEIGHT, EXTRA BAG and
+        // Hide columns. Never reads, writes, or recalculates any value — it
+        // just adds/removes a CSS class, identical data stays underneath.
+        function toggleStockCalcSimplify() {
+            stockCalcSimplify = !stockCalcSimplify;
+            _applyStockCalcSimplifyUI();
+        }
+
+        function _applyStockCalcSimplifyUI() {
+            const table = document.getElementById('stock-calc-table');
+            const btn = document.getElementById('stock-calc-simplify-toggle-btn');
+            if (table) table.classList.toggle('stockcalc-simplified', stockCalcSimplify);
+            if (btn) {
+                btn.textContent = stockCalcSimplify ? '🧩 Simplify ✓' : '🧩 Simplify';
+                btn.style.background = stockCalcSimplify ? '#e8f5e9' : 'white';
+                btn.style.borderColor = stockCalcSimplify ? '#4CAF50' : '#ddd';
+            }
+        }
+
         function renderStockCalc() {
             if (!stockCalcMetal) return; // nothing to render until a metal is picked
+            _applyStockCalcSimplifyUI();
             const searchVal = (document.getElementById('stock-calc-search')?.value || '').toLowerCase();
             const tbody = document.getElementById('stock-calc-tbody');
             const summary = document.getElementById('stock-calc-summary');
@@ -3177,25 +3206,25 @@
                     <td style="padding:8px 8px; font-weight:700; color:#333; position:sticky; left:0; background:${isHidden ? '#fafafa' : (idx % 2 === 1 ? '#fbfbfb' : 'white')};">${escHtml(row.name)}</td>
                     <td id="stock-calc-tot-${idx}" style="padding:8px 8px; text-align:right; font-weight:800; color:#4CAF50;">${total.toFixed(2)}</td>
                     <td style="padding:8px 8px; text-align:right; font-weight:600;">${row.pc}</td>
-                    <td style="padding:8px 6px; text-align:right;">
+                    <td class="stockcalc-detail-col" style="padding:8px 6px; text-align:right;">
                         <input type="number" step="0.01" min="0" inputmode="decimal" value="${pkg.pWeight}"
                             data-idx="${idx}" data-field="pWeight"
                             style="width:58px; padding:5px 6px; border:1px solid #ddd; border-radius:6px; font-size:12px; text-align:right; box-sizing:border-box;"
                             oninput="handlePackagingInput(this)">
                     </td>
-                    <td style="padding:8px 6px; text-align:right;">
+                    <td class="stockcalc-detail-col" style="padding:8px 6px; text-align:right;">
                         <input type="number" step="0.01" min="0" inputmode="decimal" value="${pkg.bWeight}"
                             data-idx="${idx}" data-field="bWeight"
                             style="width:58px; padding:5px 6px; border:1px solid #ddd; border-radius:6px; font-size:12px; text-align:right; box-sizing:border-box;"
                             oninput="handlePackagingInput(this)">
                     </td>
-                    <td style="padding:8px 6px; text-align:right;">
+                    <td class="stockcalc-detail-col" style="padding:8px 6px; text-align:right;">
                         <input type="number" step="0.01" min="0" inputmode="decimal" value="${pkg.extraBag}"
                             data-idx="${idx}" data-field="extraBag"
                             style="width:58px; padding:5px 6px; border:1px solid #ddd; border-radius:6px; font-size:12px; text-align:right; box-sizing:border-box;"
                             oninput="handlePackagingInput(this)">
                     </td>
-                    <td style="padding:8px 8px; text-align:center;">
+                    <td class="stockcalc-detail-col" style="padding:8px 8px; text-align:center;">
                         <button onclick="toggleStockCalcHidden(${idx})" title="${isHidden ? 'Unhide' : 'Hide from stock check'}"
                             style="background:none; border:none; font-size:16px; cursor:pointer; padding:2px 4px;">${isHidden ? '🙈' : '👁️'}</button>
                     </td>
