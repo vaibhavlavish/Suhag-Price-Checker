@@ -1490,7 +1490,7 @@
             </button>
 
             <div class="menu-divider"></div>
-            <button onclick="showSection('menu-settings')">
+            <button onclick="showMenuSettingsSection()">
                 <span class="menu-icon" style="background:#ECEFF1;">🧽</span> Clean
             </button>
         </div>
@@ -2269,6 +2269,15 @@
             closeOptions();
             if (!checkPin()) return;
             showSection('device-access');
+        }
+
+        // Clean (More-menu visibility toggles) is now PIN-gated too — same
+        // reasoning as Device Access: staff shouldn't be able to hide/show
+        // admin-facing menu items without the owner's PIN.
+        function showMenuSettingsSection() {
+            closeOptions();
+            if (!checkPin()) return;
+            showSection('menu-settings');
         }
 
         function renderDeviceAccessSection() {
