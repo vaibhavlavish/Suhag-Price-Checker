@@ -1104,7 +1104,7 @@
         }
 
         /* All top-level page sections that scroll independently */
-        #update-rates, #excel-upload, #profiles-section, #bulk-check {
+        #update-rates, #excel-upload, #profiles-section, #bulk-check, #menu-settings {
             flex: 1;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
@@ -1387,7 +1387,7 @@
         }
 
         /* Section headings */
-        #update-rates h2, #excel-upload h2, #loose-calculator h2 {
+        #update-rates h2, #excel-upload h2, #loose-calculator h2, #menu-settings h2 {
             color: var(--text);
             font-weight: 800;
             letter-spacing: -0.4px;
@@ -1437,50 +1437,55 @@
 
         <div id="options-menu">
             <div class="menu-section-label">Navigate</div>
-            <button onclick="showSection('update-rates')">
+            <button onclick="showSection('update-rates')" data-menu-key="update-rates">
                 <span class="menu-icon" style="background:#e3f2fd;">💰</span> Update Rates
             </button>
-            <button onclick="showSection('excel-upload')">
+            <button onclick="showSection('excel-upload')" data-menu-key="excel-upload">
                 <span class="menu-icon" style="background:#e8f5e9;">📂</span> Upload Excel
             </button>
-            <button onclick="showStockSection()">
+            <button onclick="showStockSection()" data-menu-key="stock-view">
                 <span class="menu-icon" style="background:#e8f5e9;">📦</span> Stock View
             </button>
-            <button onclick="showStockCalcSection()">
+            <button onclick="showStockCalcSection()" data-menu-key="stock-calc">
                 <span class="menu-icon" style="background:#fff3e0;">⚖️</span> Stock Weight Calc
             </button>
-            <button onclick="openProfileModal()">
+            <button onclick="openProfileModal()" data-menu-key="profiles">
                 <span class="menu-icon" style="background:#e3f2fd;">⚙️</span> Making Profiles
             </button>
-            <button onclick="showSection('ledger'); closeOptions();">
+            <button onclick="showSection('ledger'); closeOptions();" data-menu-key="ledger">
                 <span class="menu-icon" style="background:#e8f5e9;">💰</span> Cash Ledger
             </button>
-            <button onclick="showSection('bulk-check')">
+            <button onclick="showSection('bulk-check')" data-menu-key="bulk-check">
                 <span class="menu-icon" style="background:#f3e5f5;">📋</span> Bulk Price Check
             </button>
 
             <div class="menu-divider"></div>
             <div class="menu-section-label">Data</div>
-            <button onclick="downloadBackup()" class="backup">
+            <button onclick="downloadBackup()" class="backup" data-menu-key="backup">
                 <span class="menu-icon" style="background:#e3f2fd;">💾</span> Download Backup
             </button>
-            <button onclick="triggerRestore()" class="restore">
+            <button onclick="triggerRestore()" class="restore" data-menu-key="restore">
                 <span class="menu-icon" style="background:#fff3e0;">📥</span> Restore Backup
             </button>
 
             <div class="menu-divider"></div>
             <div class="menu-section-label">Actions</div>
-            <button onclick="location.reload()" style="color:#4CAF50 !important; font-weight:700;">
+            <button onclick="location.reload()" style="color:#4CAF50 !important; font-weight:700;" data-menu-key="refresh">
                 <span class="menu-icon" style="background:#F0FDF4;">🔄</span> Refresh App
             </button>
-            <button onclick="clearAll()">
+            <button onclick="clearAll()" data-menu-key="clear-screen">
                 <span class="menu-icon" style="background:#f5f5f5;">🧹</span> Clear Screen
             </button>
-            <button onclick="clearCart(); closeOptions();" class="danger">
+            <button onclick="clearCart(); closeOptions();" class="danger" data-menu-key="clear-cart">
                 <span class="menu-icon" style="background:#fff3e0;">🛒</span> Clear Cart
             </button>
-            <button onclick="clearAllDataWrapper()" class="danger">
+            <button onclick="clearAllDataWrapper()" class="danger" data-menu-key="clear-all-data">
                 <span class="menu-icon" style="background:#ffebee;">⚠️</span> Clear All Data
+            </button>
+
+            <div class="menu-divider"></div>
+            <button onclick="showSection('menu-settings')">
+                <span class="menu-icon" style="background:#ECEFF1;">🧽</span> Clean
             </button>
         </div>
     </div>
@@ -1842,6 +1847,19 @@
     </div>
 
 
+    <!-- Clean — toggle which More-menu items are visible -->
+    <div id="menu-settings" style="display:none;">
+        <h2>🧽 Clean</h2>
+        <p style="font-size:13px; text-align:center; color:#888; margin-top:-10px;">Choose which options appear in the More menu</p>
+
+        <div id="menu-settings-list" style="display:flex; flex-direction:column; gap:10px; margin-top:16px;"></div>
+
+        <hr>
+        <button onclick="resetMenuPrefs()" style="background:#ECEFF1; color:#333;">Show All Options</button>
+        <button onclick="showSection('main')">&#8592; Back to Main</button>
+    </div>
+
+
     <div id="update-rates">
         <h2>Update Stamp-Wise Rates</h2>
         <p style="font-size:14px; text-align:center; color:#666;"><em>Enter market rate per gram for purity</em></p>
@@ -2095,6 +2113,7 @@
                 makingProfiles: makingProfiles,
                 activeProfileId: activeProfileId,
                 billHistory: billHistory,
+                menuPrefs: menuPrefs,
                 backupTimestamp: new Date().toISOString()
             };
             const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
@@ -2144,7 +2163,8 @@
                                 baseCalcDefaults: jsonContent.baseCalcDefaults || {},
                                 presets: jsonContent.presets || [], // Restore presets
                                 makingProfiles: jsonContent.makingProfiles || [{ id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 }],
-                                billHistory: jsonContent.billHistory || []
+                                billHistory: jsonContent.billHistory || [],
+                                menuPrefs: jsonContent.menuPrefs || {}
                             };
 
                             if (jsonContent.activeProfileId) {
@@ -2160,6 +2180,7 @@
                                 restoreUpdate['jewelryData/config/taxRate']          = dataToRestore.taxRate;
                                 restoreUpdate['jewelryData/config/looseDefaults']    = dataToRestore.looseDefaults;
                                 restoreUpdate['jewelryData/config/baseCalcDefaults'] = dataToRestore.baseCalcDefaults;
+                                restoreUpdate['jewelryData/config/menuPrefs']        = dataToRestore.menuPrefs || {};
                                 restoreUpdate['jewelryData/products']                = dataToRestore.products || {};
                                                 // Bills
                                 (dataToRestore.billHistory || []).forEach(b => {
@@ -2290,6 +2311,7 @@
         let rates = JSON.parse(JSON.stringify(defaultRates));
         let taxRate = 3; // factory default — overwritten by Firebase on load
         let productData = {};
+        let menuPrefs = {}; // which More-menu items are hidden — cloud-synced like other config
         // Stock Weight Calculator: per-category packaging weights, manually editable.
         // Keyed by item name (trimmed, uppercase) -> { pWeight, bWeight, extraBag }
         let packagingWeights = {};
@@ -2515,6 +2537,10 @@
             baseCalcDefaults = cloudData.baseCalcDefaults || {};
             loosePresets = cloudData.presets || [];
             makingProfiles = cloudData.makingProfiles || [];
+            // Menu visibility prefs — synced like other config so the same
+            // hidden/shown More-menu state follows across devices/profiles.
+            menuPrefs = cloudData.menuPrefs || {};
+            applyMenuPrefs();
             // billHistory: cloud is authoritative — simply replace.
             // Each bill is written individually via _saveBillRecord so there are
             // no races; the onValue callback sees the canonical state.
@@ -2691,6 +2717,7 @@
                 looseDefaults:    config.looseDefaults    || null,
                 baseCalcDefaults: config.baseCalcDefaults || {},
                 packagingWeights: config.packagingWeights || {},
+                menuPrefs:        config.menuPrefs        || {},
                 products:         val.products            || {},
                 // billHistory and profiles may be keyed objects (new) or arrays (old)
                 billHistory,
@@ -2747,6 +2774,7 @@
                     looseDefaultsCloud = null;
                     baseCalcDefaults = {}; loosePresets = [];
                     makingProfiles = [];
+                    menuPrefs = {};
                     activeProfileId = 'default';
                     applyFactoryDefaults();
                     setDataSourceBadge('cached', null);
@@ -2822,7 +2850,7 @@
             const dataToSave = {
                 rates, taxRate, products: productData, packagingWeights,
                 looseDefaults: looseDefaultsCloud, baseCalcDefaults,
-                presets: loosePresets, makingProfiles, billHistory
+                presets: loosePresets, makingProfiles, billHistory, menuPrefs
             };
             saveDataToLocalCache(dataToSave);
             if (!window._writeAllowed || !window.firebaseDB || !navigator.onLine) {
@@ -2836,6 +2864,7 @@
             update['jewelryData/config/looseDefaults']    = looseDefaultsCloud || null;
             update['jewelryData/config/baseCalcDefaults'] = baseCalcDefaults || {};
             update['jewelryData/config/packagingWeights'] = packagingWeights || {};
+            update['jewelryData/config/menuPrefs']        = menuPrefs || {};
             update['jewelryData/products']                = productData || {};
             window.dbSafeUpdate(update)
                 .then(() => { clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false; })
@@ -2931,7 +2960,7 @@
             const dataToSave = {
                 rates, taxRate, products: productData, packagingWeights,
                 looseDefaults: looseDefaultsCloud, baseCalcDefaults,
-                presets: loosePresets, makingProfiles, billHistory
+                presets: loosePresets, makingProfiles, billHistory, menuPrefs
             };
             saveDataToLocalCache(dataToSave);
             _saveLedgerLocal();
@@ -3015,6 +3044,7 @@
             document.getElementById('profiles-section').style.display = 'none';
             document.getElementById('bulk-check').style.display = 'none';
             document.getElementById('ledger').style.display = 'none';
+            document.getElementById('menu-settings').style.display = 'none';
             const brandHeaderEl = document.getElementById('brand-header');
             if (brandHeaderEl) brandHeaderEl.style.display = 'none';
 
@@ -3066,6 +3096,9 @@
                 renderBaseRateCalc();
                 // Refresh the calc view
             }
+            if (section === 'menu-settings') {
+                renderMenuSettings();
+            }
             closeOptions();
         }
 
@@ -3076,6 +3109,66 @@
 
         function closeOptions() {
             document.getElementById('options-menu').classList.remove('show');
+        }
+
+        // ================= CUSTOMIZE MENU (show/hide More-menu items) =================
+        // Synced like any other config (rates, tax, etc.) — same hidden/shown
+        // More-menu state follows across devices signed into the same profile.
+        const MENU_ITEMS_REGISTRY = [
+            { key: 'update-rates',   label: 'Update Rates',       icon: '💰' },
+            { key: 'excel-upload',   label: 'Upload Excel',       icon: '📂' },
+            { key: 'stock-view',     label: 'Stock View',         icon: '📦' },
+            { key: 'stock-calc',     label: 'Stock Weight Calc',  icon: '⚖️' },
+            { key: 'profiles',       label: 'Making Profiles',    icon: '⚙️' },
+            { key: 'ledger',         label: 'Cash Ledger',        icon: '💰' },
+            { key: 'bulk-check',     label: 'Bulk Price Check',   icon: '📋' },
+            { key: 'backup',         label: 'Download Backup',    icon: '💾' },
+            { key: 'restore',        label: 'Restore Backup',     icon: '📥' },
+            { key: 'refresh',        label: 'Refresh App',        icon: '🔄' },
+            { key: 'clear-screen',   label: 'Clear Screen',       icon: '🧹' },
+            { key: 'clear-cart',     label: 'Clear Cart',         icon: '🛒' },
+            { key: 'clear-all-data', label: 'Clear All Data',     icon: '⚠️' }
+        ];
+
+        // Hides/shows the actual buttons in #options-menu based on saved prefs.
+        // A key with value `false` means hidden; missing/true means visible (default-on).
+        function applyMenuPrefs() {
+            MENU_ITEMS_REGISTRY.forEach(item => {
+                const btn = document.querySelector(`#options-menu button[data-menu-key="${item.key}"]`);
+                if (btn) btn.style.display = (menuPrefs[item.key] === false) ? 'none' : 'flex';
+            });
+        }
+
+        function toggleMenuItemPref(key, visible) {
+            menuPrefs[key] = visible;
+            applyMenuPrefs();
+            _persistLocalCache();
+            saveConfig(); // syncs menuPrefs to the cloud like any other config value
+        }
+
+        function resetMenuPrefs() {
+            menuPrefs = {};
+            applyMenuPrefs();
+            renderMenuSettings();
+            _persistLocalCache();
+            saveConfig();
+        }
+
+        function renderMenuSettings() {
+            const container = document.getElementById('menu-settings-list');
+            if (!container) return;
+            container.innerHTML = MENU_ITEMS_REGISTRY.map(item => {
+                const checked = menuPrefs[item.key] === false ? '' : 'checked';
+                return `
+                    <label style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:#F7F7F5; border:1px solid var(--border); border-radius:12px; padding:12px 14px; cursor:pointer;">
+                        <span style="display:flex; align-items:center; gap:10px; font-size:14px; font-weight:600; color:var(--text);">
+                            <span style="width:28px; height:28px; border-radius:7px; background:#ECEFF1; display:flex; align-items:center; justify-content:center; font-size:14px;">${item.icon}</span>
+                            ${item.label}
+                        </span>
+                        <input type="checkbox" ${checked} onchange="toggleMenuItemPref('${item.key}', this.checked)" style="width:20px; height:20px; accent-color:#4CAF50; margin:0; flex-shrink:0;">
+                    </label>
+                `;
+            }).join('');
         }
 
         function showStockSection() {
@@ -4964,6 +5057,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            applyMenuPrefs();
             const metalSelect = document.getElementById('metal-select');
             metalSelect.addEventListener('change', () => {
                 const value = metalSelect.value;
