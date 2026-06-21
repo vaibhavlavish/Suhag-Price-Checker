@@ -5321,8 +5321,8 @@
             if (!badge) return;
             const profile = getActiveProfile();
             if (!profile || profile.id === 'default') {
-                badge.style.display = 'none';
-                badge.textContent = '';
+                badge.style.display = 'block';
+                badge.textContent = '⚙';
             } else {
                 badge.style.display = 'block';
                 badge.textContent = '⚙ ' + profile.name;
