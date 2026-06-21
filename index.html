@@ -17,7 +17,7 @@
     <script type="module">
         // Import the functions you need from the Firebase SDKs
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getDatabase, ref, set, update, remove, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+        import { getDatabase, ref, set, update, remove, onValue, get, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
         // Your web app's Firebase configuration
         const firebaseConfig = {
@@ -41,6 +41,7 @@
         window.dbRemove = remove;
         window.dbOnValue = onValue;
         window.dbGet = get;
+        window.dbRunTransaction = runTransaction;
 
         // Manual diagnostic — run this in the browser console at any time:
         //   debugCheckPackagingWeights()
@@ -1454,6 +1455,9 @@
             <button onclick="openProfileModal()" data-menu-key="profiles">
                 <span class="menu-icon" style="background:#e3f2fd;">⚙️</span> Making Profiles
             </button>
+            <button onclick="showDeviceAccessSection()" data-menu-key="device-access">
+                <span class="menu-icon" style="background:#ffebee;">🔒</span> Device Access
+            </button>
             <button onclick="showSection('ledger'); closeOptions();" data-menu-key="ledger">
                 <span class="menu-icon" style="background:#e8f5e9;">💰</span> Cash Ledger
             </button>
@@ -1861,6 +1865,30 @@
         <button onclick="showSection('main')">&#8592; Back to Main</button>
     </div>
 
+    <!-- Device Access — limit + manage how many devices can use this app -->
+    <div id="device-access" style="display:none;">
+        <h2>🔒 Device Access</h2>
+        <p style="font-size:13px; text-align:center; color:#888; margin-top:-10px;">Control how many devices can use this app at once</p>
+
+        <div style="display:flex; align-items:center; gap:10px; background:#F7F7F5; border:1px solid var(--border); border-radius:12px; padding:14px; margin-top:16px;">
+            <label style="font-size:14px; font-weight:700; color:var(--text); flex:1;">Device limit</label>
+            <input id="device-limit-input" type="number" min="1" max="50" style="width:70px; text-align:center; padding:8px; border-radius:8px; border:1px solid var(--border);">
+            <button onclick="saveDeviceLimit()" style="background:#4CAF50; color:white; padding:8px 14px; font-size:13px;">Save</button>
+        </div>
+
+        <div id="device-access-count" style="font-size:13px; font-weight:700; color:#888; text-align:center; margin-top:14px;"></div>
+        <div id="device-access-list" style="display:flex; flex-direction:column; gap:10px; margin-top:10px;"></div>
+
+        <p style="font-size:11.5px; color:#999; text-align:center; margin-top:14px; line-height:1.5;">
+            New devices beyond the limit will see "Access Denied" when they open the app link.
+            A device only frees its slot when you remove it here — clearing browser data on a device also makes it look new on next open.
+        </p>
+
+        <hr>
+        <button onclick="renderDeviceAccessSection()" style="background:#ECEFF1; color:#333;">🔄 Refresh List</button>
+        <button onclick="showSection('main')">&#8592; Back to Main</button>
+    </div>
+
 
     <div id="update-rates">
         <h2>Update Stamp-Wise Rates</h2>
@@ -2093,6 +2121,214 @@
                 showCustomAlert("Incorrect PIN. Access denied.");
             }
             return false;
+        }
+
+        // ================= DEVICE ACCESS LIMIT =================
+        // Caps how many devices can use this app. A "device" here really
+        // means "this browser's local storage" — the only identity a static
+        // HTML file can check without a login system. Clearing site data,
+        // using a different browser, or opening an incognito window will
+        // look like a brand-new device and use up another slot. There's no
+        // way around that without adding real user accounts.
+        //
+        // How it works:
+        //  - Each browser gets a permanent random ID, saved in localStorage.
+        //  - On load, that ID is registered in Firebase under
+        //    jewelryData/config/devices (capped at jewelryData/config/deviceLimit,
+        //    default 5) using a transaction so two brand-new devices opening
+        //    the link at the exact same moment can't both slip in over the cap.
+        //  - A device that's already registered is always let back in.
+        //  - A device that's NOT registered and the cap is already full sees
+        //    a plain "Access Denied" screen instead of the app — no app code,
+        //    no data, nothing else loads.
+        //  - If the owner removes a device from the Device Access panel while
+        //    that device is open, it gets kicked to the denied screen live.
+        const DEVICE_ID_KEY = 'suhagDeviceId';
+        const DEFAULT_DEVICE_LIMIT = 5;
+
+        function getDeviceId() {
+            try {
+                let id = localStorage.getItem(DEVICE_ID_KEY);
+                if (!id) {
+                    id = (crypto.randomUUID ? crypto.randomUUID() : ('dev_' + Date.now() + '_' + Math.random().toString(16).slice(2)));
+                    localStorage.setItem(DEVICE_ID_KEY, id);
+                }
+                return id;
+            } catch (e) {
+                // localStorage blocked (rare private-mode edge case) — this
+                // device will look new on every visit, which is the safest
+                // failure mode (it just won't "remember" its slot).
+                return 'dev_' + Date.now() + '_' + Math.random().toString(16).slice(2);
+            }
+        }
+
+        function getDeviceLabel() {
+            const ua = navigator.userAgent || '';
+            if (/iPad/.test(ua)) return 'iPad';
+            if (/iPhone/.test(ua)) return 'iPhone';
+            if (/Android/.test(ua)) return /Mobile/.test(ua) ? 'Android Phone' : 'Android Tablet';
+            if (/Macintosh/.test(ua)) return 'Mac';
+            if (/Windows/.test(ua)) return 'Windows PC';
+            if (/Linux/.test(ua)) return 'Linux PC';
+            return 'Unknown Device';
+        }
+
+        // Wipes the page and shows a plain, non-technical "Access Denied"
+        // screen. Nothing else from the app renders after this.
+        function showDeviceDeniedScreen() {
+            document.body.innerHTML =
+                '<div style="min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:30px; font-family:\'Inter\',sans-serif; background:#1a1a1a; color:#fff;">' +
+                    '<div style="font-size:56px; margin-bottom:14px;">🔒</div>' +
+                    '<div style="font-size:22px; font-weight:800; margin-bottom:12px;">Access Denied</div>' +
+                    '<div style="font-size:15px; color:#ccc; max-width:340px; line-height:1.6;">This app is already in use on its maximum number of devices.<br><br>Please contact the shop owner if you need access.</div>' +
+                '</div>';
+            document.body.classList.add('app-ready');
+        }
+
+        // Returns a Promise<boolean>. Resolves true if this device may use
+        // the app, false if it's been shown the denied screen already.
+        function checkDeviceAccess() {
+            const deviceId = getDeviceId();
+
+            if (!window.firebaseDB || !window.dbGet || !window.dbRef) {
+                // SDK not ready yet / no connection on first paint — don't
+                // lock anyone out over a connectivity hiccup.
+                return Promise.resolve(true);
+            }
+
+            if (!window._writeAllowed || !window.dbRunTransaction) {
+                // Read-only origin (a stray copy of this file, not the
+                // official link) — the existing origin guard already blocks
+                // every write it could make, so it's not worth gating here.
+                return Promise.resolve(true);
+            }
+
+            const limitRef   = window.dbRef(window.firebaseDB, 'jewelryData/config/deviceLimit');
+            const devicesRef = window.dbRef(window.firebaseDB, 'jewelryData/config/devices');
+
+            return window.dbGet(limitRef).then(limitSnap => {
+                const limit = limitSnap.exists() ? (Number(limitSnap.val()) || DEFAULT_DEVICE_LIMIT) : DEFAULT_DEVICE_LIMIT;
+
+                return window.dbRunTransaction(devicesRef, (current) => {
+                    current = current || {};
+                    if (current[deviceId]) {
+                        return current; // already registered — let it through unchanged
+                    }
+                    if (Object.keys(current).length >= limit) {
+                        return; // returning undefined aborts the transaction — deny
+                    }
+                    current[deviceId] = {
+                        firstSeen: Date.now(),
+                        lastSeen: Date.now(),
+                        label: getDeviceLabel(),
+                        ua: (navigator.userAgent || '').slice(0, 180)
+                    };
+                    return current;
+                }).then(result => {
+                    const data = (result && result.snapshot && result.snapshot.val()) || {};
+                    const allowed = !!data[deviceId];
+                    if (!allowed) {
+                        showDeviceDeniedScreen();
+                        return false;
+                    }
+                    // Keep "last used" fresh — fire-and-forget, doesn't gate access.
+                    window.dbUpdate(
+                        window.dbRef(window.firebaseDB, 'jewelryData/config/devices/' + deviceId),
+                        { lastSeen: Date.now(), label: getDeviceLabel() }
+                    ).catch(() => {});
+                    // Live "remote kick" — if the owner removes this device
+                    // from the Device Access panel later, this tab gets
+                    // bounced to the denied screen immediately.
+                    window.dbOnValue(window.dbRef(window.firebaseDB, 'jewelryData/config/devices/' + deviceId), (snap) => {
+                        if (!snap.exists()) showDeviceDeniedScreen();
+                    });
+                    return true;
+                });
+            }).catch(err => {
+                console.error('[DeviceGate] check failed', err);
+                return true; // fail open — a network error shouldn't lock the owner out
+            });
+        }
+
+        // Kicked off as soon as this script runs, in parallel with the rest
+        // of page load — both DOMContentLoaded handlers below await this
+        // before doing anything visible.
+        window._deviceAccessPromise = checkDeviceAccess();
+
+        // --- Device Access admin panel ---
+        function showDeviceAccessSection() {
+            closeOptions();
+            if (!checkPin()) return;
+            showSection('device-access');
+        }
+
+        function renderDeviceAccessSection() {
+            const listEl  = document.getElementById('device-access-list');
+            const countEl = document.getElementById('device-access-count');
+            const limitInput = document.getElementById('device-limit-input');
+            if (!listEl) return;
+            listEl.innerHTML = '<p style="text-align:center;color:#888;">Loading…</p>';
+            if (countEl) countEl.textContent = '';
+
+            if (!window.firebaseDB || !window.dbGet) {
+                listEl.innerHTML = '<p style="text-align:center;color:#888;">Offline — connect to manage devices.</p>';
+                return;
+            }
+
+            Promise.all([
+                window.dbGet(window.dbRef(window.firebaseDB, 'jewelryData/config/deviceLimit')),
+                window.dbGet(window.dbRef(window.firebaseDB, 'jewelryData/config/devices'))
+            ]).then(([limitSnap, devicesSnap]) => {
+                const limit = limitSnap.exists() ? (Number(limitSnap.val()) || DEFAULT_DEVICE_LIMIT) : DEFAULT_DEVICE_LIMIT;
+                const devices = devicesSnap.val() || {};
+                const myId = getDeviceId();
+                if (limitInput) limitInput.value = limit;
+
+                const entries = Object.entries(devices).sort((a, b) => (b[1].lastSeen || 0) - (a[1].lastSeen || 0));
+                if (countEl) countEl.textContent = entries.length + ' / ' + limit + ' devices used';
+
+                if (entries.length === 0) {
+                    listEl.innerHTML = '<p style="text-align:center;color:#888;">No devices registered yet.</p>';
+                    return;
+                }
+
+                listEl.innerHTML = entries.map(([id, d]) => {
+                    const isMe = id === myId;
+                    const last = d.lastSeen ? new Date(d.lastSeen).toLocaleString() : '—';
+                    return '' +
+                        '<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:#F7F7F5; border:1px solid var(--border); border-radius:12px; padding:12px 14px;">' +
+                            '<div>' +
+                                '<div style="font-weight:700; font-size:14px; color:var(--text);">' + escHtml(d.label || 'Unknown Device') + (isMe ? ' <span style="color:#4CAF50;">(This device)</span>' : '') + '</div>' +
+                                '<div style="font-size:12px; color:#888; margin-top:2px;">Last used: ' + escHtml(last) + '</div>' +
+                            '</div>' +
+                            '<button onclick="removeRegisteredDevice(\'' + id + '\')" style="background:#f44336; color:white; padding:8px 12px; font-size:13px; flex-shrink:0;">Remove</button>' +
+                        '</div>';
+                }).join('');
+            }).catch(err => {
+                console.error('[DeviceAccess] load failed', err);
+                listEl.innerHTML = '<p style="text-align:center;color:#888;">Failed to load devices.</p>';
+            });
+        }
+
+        function saveDeviceLimit() {
+            if (!checkPin()) return;
+            const input = document.getElementById('device-limit-input');
+            const val = Math.max(1, Math.min(50, parseInt(input.value, 10) || DEFAULT_DEVICE_LIMIT));
+            input.value = val;
+            window.dbSafeUpdate({ 'jewelryData/config/deviceLimit': val })
+                .then(() => { showCustomAlert('Device limit updated to ' + val + '.'); renderDeviceAccessSection(); })
+                .catch(() => showCustomAlert('Failed to update — check your connection.'));
+        }
+
+        function removeRegisteredDevice(id) {
+            if (!checkPin()) return;
+            showCustomConfirm('Remove this device? It will need to reconnect next time, and will count against the device limit again.', 'Remove Device', () => {
+                const update = {};
+                update['jewelryData/config/devices/' + id] = null;
+                window.dbSafeUpdate(update)
+                    .then(() => { showCustomAlert('Device removed.'); renderDeviceAccessSection(); })
+                    .catch(() => showCustomAlert('Failed to remove — check your connection.'));
+            });
         }
 
         function clearAllDataWrapper() {
@@ -3047,6 +3283,7 @@
             document.getElementById('bulk-check').style.display = 'none';
             document.getElementById('ledger').style.display = 'none';
             document.getElementById('menu-settings').style.display = 'none';
+            document.getElementById('device-access').style.display = 'none';
             const brandHeaderEl = document.getElementById('brand-header');
             if (brandHeaderEl) brandHeaderEl.style.display = 'none';
 
@@ -3101,6 +3338,9 @@
             if (section === 'menu-settings') {
                 renderMenuSettings();
             }
+            if (section === 'device-access') {
+                renderDeviceAccessSection();
+            }
             closeOptions();
         }
 
@@ -3122,6 +3362,7 @@
             { key: 'stock-view',     label: 'Stock View',         icon: '📦' },
             { key: 'stock-calc',     label: 'Stock Weight Calc',  icon: '⚖️' },
             { key: 'profiles',       label: 'Making Profiles',    icon: '⚙️' },
+            { key: 'device-access',  label: 'Device Access',      icon: '🔒' },
             { key: 'ledger',         label: 'Cash Ledger',        icon: '💰' },
             { key: 'bulk-check',     label: 'Bulk Price Check',   icon: '📋' },
             { key: 'backup',         label: 'Download Backup',    icon: '💾' },
@@ -5058,7 +5299,10 @@
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
+            const allowed = await window._deviceAccessPromise;
+            if (!allowed) return; // denied screen already shown by checkDeviceAccess()
+
             applyMenuPrefs();
             const metalSelect = document.getElementById('metal-select');
             metalSelect.addEventListener('change', () => {
@@ -6432,7 +6676,9 @@
         window.renderLedger          = renderLedger;
 
         // Load ledger on init (will be called after DOMContentLoaded)
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
+            const allowed = await window._deviceAccessPromise;
+            if (!allowed) return; // denied screen already shown by checkDeviceAccess()
             loadLedger();
             renderLedger();
         });
@@ -6440,8 +6686,13 @@
         // === END LEDGER FUNCTIONS ===
 
         // Safety fallback: reveal app after 1.5s even if Firebase is slow,
-        // so the screen never stays blank on a poor connection.
-        setTimeout(() => { document.body.classList.add('app-ready'); }, 1500);
+        // so the screen never stays blank on a poor connection — but only
+        // once the device access check has actually cleared this device.
+        setTimeout(() => {
+            Promise.resolve(window._deviceAccessPromise).then(allowed => {
+                if (allowed) document.body.classList.add('app-ready');
+            });
+        }, 1500);
 
         window.showSection = showSection;
         window.toggleOptions = toggleOptions;
