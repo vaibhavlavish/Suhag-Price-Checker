@@ -2250,10 +2250,19 @@
             });
         }
 
-        // Kicked off as soon as this script runs, in parallel with the rest
-        // of page load — both DOMContentLoaded handlers below await this
-        // before doing anything visible.
-        window._deviceAccessPromise = checkDeviceAccess();
+        // Lazily kicked off the first time it's awaited — NOT at script
+        // parse time. The Firebase module script (type="module") is always
+        // deferred, so window.firebaseDB/dbGet/etc. are only guaranteed to
+        // exist once DOMContentLoaded fires. Calling checkDeviceAccess()
+        // any earlier than that would find Firebase not ready yet and
+        // silently fail open (which is exactly what was happening before).
+        window._deviceAccessPromise = null;
+        function getDeviceAccessPromise() {
+            if (!window._deviceAccessPromise) {
+                window._deviceAccessPromise = checkDeviceAccess();
+            }
+            return window._deviceAccessPromise;
+        }
 
         // --- Device Access admin panel ---
         function showDeviceAccessSection() {
@@ -5300,7 +5309,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
-            const allowed = await window._deviceAccessPromise;
+            const allowed = await getDeviceAccessPromise();
             if (!allowed) return; // denied screen already shown by checkDeviceAccess()
 
             applyMenuPrefs();
@@ -6677,7 +6686,7 @@
 
         // Load ledger on init (will be called after DOMContentLoaded)
         document.addEventListener('DOMContentLoaded', async function() {
-            const allowed = await window._deviceAccessPromise;
+            const allowed = await getDeviceAccessPromise();
             if (!allowed) return; // denied screen already shown by checkDeviceAccess()
             loadLedger();
             renderLedger();
@@ -6689,7 +6698,7 @@
         // so the screen never stays blank on a poor connection — but only
         // once the device access check has actually cleared this device.
         setTimeout(() => {
-            Promise.resolve(window._deviceAccessPromise).then(allowed => {
+            Promise.resolve(getDeviceAccessPromise()).then(allowed => {
                 if (allowed) document.body.classList.add('app-ready');
             });
         }, 1500);
