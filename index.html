@@ -5760,6 +5760,9 @@
         let cameraAnimFrame   = null;
         let zxingReader       = null; // canvas-based, no instance needed on iOS
         let cameraActive      = false;
+        // Session-only: resets to rear camera on refresh/close (sessionStorage clears on tab close).
+        // Within a session, remembers last flip so re-opening scanner keeps the preference.
+        let cameraFacingMode  = sessionStorage.getItem('suhagCameraFacing') || 'environment';
         // Stability detection state
         let camLastValue      = '';
         let camStableStart    = 0;
@@ -5868,9 +5871,14 @@
 
         async function startCameraStream() {
             const video = document.getElementById('camera-video');
+            // Mirror video horizontally when using front camera so it feels natural
+            video.style.transform = cameraFacingMode === 'user' ? 'scaleX(-1)' : '';
+            // Update flip button icon to reflect current state
+            const flipBtn = document.getElementById('cam-flip-btn');
+            if (flipBtn) flipBtn.textContent = cameraFacingMode === 'user' ? '📷 Rear' : '🤳 Front';
             try {
                 cameraStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+                    video: { facingMode: cameraFacingMode, width: { ideal: 1280 }, height: { ideal: 720 } }
                 });
                 video.srcObject = cameraStream;
                 await video.play();
@@ -5883,6 +5891,20 @@
             } catch (err) {
                 document.getElementById('camera-status').textContent = '⚠️ Camera access denied';
             }
+        }
+
+        async function flipCamera() {
+            if (!cameraActive) return;
+            // Toggle facing mode
+            cameraFacingMode = cameraFacingMode === 'environment' ? 'user' : 'environment';
+            // Save within session (sessionStorage clears on tab close/refresh = rear camera reset)
+            sessionStorage.setItem('suhagCameraFacing', cameraFacingMode);
+            // Stop current stream
+            if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+            if (cameraAnimFrame) { cancelAnimationFrame(cameraAnimFrame); cameraAnimFrame = null; }
+            document.getElementById('camera-status').textContent = 'Switching camera…';
+            // Restart with new facing mode
+            await startCameraStream();
         }
 
         // ── BarcodeDetector (native) ───────────────────────────────
@@ -6031,6 +6053,7 @@
         window.openCamera     = openCamera;
         window.closeCamera    = closeCamera;
         window.confirmBarcode = confirmBarcode;
+        window.flipCamera     = flipCamera;
 
         // =============================================
         // === BILL HISTORY FUNCTIONS ==================
@@ -7045,6 +7068,7 @@
             <!-- Buttons row -->
             <div style="display:flex; gap:10px; margin-top:14px;">
                 <button onclick="closeCamera()" style="flex:1; background:rgba(255,255,255,0.1); color:white; border:1.5px solid rgba(255,255,255,0.2); border-radius:10px; padding:11px; font-size:14px; cursor:pointer;">✕ Cancel</button>
+                <button id="cam-flip-btn" onclick="flipCamera()" style="flex:1; background:rgba(255,255,255,0.1); color:white; border:1.5px solid rgba(255,255,255,0.2); border-radius:10px; padding:11px; font-size:14px; cursor:pointer;">🤳 Front</button>
                 <button id="cam-confirm-btn" onclick="confirmBarcode()" style="display:none; flex:2; background:#4CAF50; color:white; border:none; border-radius:10px; padding:11px; font-size:15px; font-weight:700; cursor:pointer;">✓ Use this barcode</button>
             </div>
         </div>
