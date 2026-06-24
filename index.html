@@ -2235,13 +2235,26 @@
                     // Keep "last used" fresh — fire-and-forget, doesn't gate access.
                     window.dbUpdate(
                         window.dbRef(window.firebaseDB, 'jewelryData/config/devices/' + deviceId),
-                        { lastSeen: Date.now(), label: getDeviceLabel(), profileId: localStorage.getItem('activeProfileId') || 'default' }
+                        { lastSeen: Date.now(), label: getDeviceLabel(), profileId: localStorage.getItem('activeProfileId') || 'default', profileUpdatedAt: parseInt(localStorage.getItem('profileUpdatedAt') || '0', 10) || Date.now() }
                     ).catch(() => {});
-                    // Live "remote kick" — if the owner removes this device
-                    // from the Device Access panel later, this tab gets
-                    // bounced to the denied screen immediately.
+                    // Live "remote kick" AND remote profile update listener.
+                    // Fires immediately on connect, then on every change to this device's record.
                     window.dbOnValue(window.dbRef(window.firebaseDB, 'jewelryData/config/devices/' + deviceId), (snap) => {
-                        if (!snap.exists()) showDeviceDeniedScreen();
+                        if (!snap.exists()) { showDeviceDeniedScreen(); return; }
+                        const rec = snap.val() || {};
+                        // Remote profile push: apply if remote timestamp is newer than local
+                        if (rec.profileId) {
+                            const remoteTs = rec.profileUpdatedAt || 0;
+                            const localTs  = parseInt(localStorage.getItem('profileUpdatedAt') || '0', 10);
+                            if (remoteTs > localTs) {
+                                activeProfileId = rec.profileId;
+                                localStorage.setItem('activeProfileId', rec.profileId);
+                                localStorage.setItem('profileUpdatedAt', String(remoteTs));
+                                updateProfileBadge();
+                                if (typeof renderProfileList === 'function') renderProfileList();
+                                if (currentBarcode) runPriceCalculation();
+                            }
+                        }
                     });
                     return true;
                 });
@@ -2401,6 +2414,8 @@
             document.querySelectorAll('[data-devsheet]').forEach(el => el.remove());
             const upd = {};
             upd['jewelryData/config/devices/' + deviceId + '/profileId'] = profileId;
+            // Timestamp so the device listener knows this remote change is authoritative
+            upd['jewelryData/config/devices/' + deviceId + '/profileUpdatedAt'] = Date.now();
             window.dbSafeUpdate(upd)
                 .then(() => renderDeviceAccessSection())
                 .catch(() => showCustomAlert('Failed to update — check your connection.'));
@@ -5523,16 +5538,19 @@
 
         function setActiveProfile(id) {
             activeProfileId = id;
+            const ts = Date.now();
             localStorage.setItem('activeProfileId', id);
+            localStorage.setItem('profileUpdatedAt', String(ts));
             saveAllDataToCloudDebounced();
             updateProfileBadge();
             renderProfileList();
             if (currentBarcode) runPriceCalculation();
-            // Sync this device's active profile to Firebase so Device Access panel shows it correctly
+            // Sync to Firebase with timestamp so remote listener knows user made this change locally
             try {
                 const devId = getDeviceId();
                 if (window.firebaseDB && window.dbUpdate && window.dbRef && window._writeAllowed) {
-                    window.dbUpdate(window.dbRef(window.firebaseDB, 'jewelryData/config/devices/' + devId), { profileId: id }).catch(() => {});
+                    window.dbUpdate(window.dbRef(window.firebaseDB, 'jewelryData/config/devices/' + devId),
+                        { profileId: id, profileUpdatedAt: ts }).catch(() => {});
                 }
             } catch(e) {}
             showSection('main');
