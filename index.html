@@ -1866,7 +1866,7 @@
     </div>
 
     <!-- Device Access — limit + manage how many devices can use this app -->
-    <div id="device-access" style="display:none;">
+    <div id="device-access" style="display:none; flex:1; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:16px; width:100%; max-width:480px; margin:0 auto; min-height:0; box-sizing:border-box;">
         <h2>🔒 Device Access</h2>
         <p style="font-size:13px; text-align:center; color:#888; margin-top:-10px;">Control how many devices can use this app at once</p>
 
@@ -1887,6 +1887,7 @@
         <hr>
         <button onclick="renderDeviceAccessSection()" style="background:#ECEFF1; color:#333;">🔄 Refresh List</button>
         <button onclick="showSection('main')">&#8592; Back to Main</button>
+        <div style="height:20px;"></div>
     </div>
 
 
@@ -2234,7 +2235,7 @@
                     // Keep "last used" fresh — fire-and-forget, doesn't gate access.
                     window.dbUpdate(
                         window.dbRef(window.firebaseDB, 'jewelryData/config/devices/' + deviceId),
-                        { lastSeen: Date.now(), label: getDeviceLabel() }
+                        { lastSeen: Date.now(), label: getDeviceLabel(), profileId: localStorage.getItem('activeProfileId') || 'default' }
                     ).catch(() => {});
                     // Live "remote kick" — if the owner removes this device
                     // from the Device Access panel later, this tab gets
@@ -3382,7 +3383,7 @@
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc') ? 'flex' : 'block';
+                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access') ? 'flex' : 'block';
             }
 
             if (section === 'ledger') {
@@ -5527,6 +5528,13 @@
             updateProfileBadge();
             renderProfileList();
             if (currentBarcode) runPriceCalculation();
+            // Sync this device's active profile to Firebase so Device Access panel shows it correctly
+            try {
+                const devId = getDeviceId();
+                if (window.firebaseDB && window.dbUpdate && window.dbRef && window._writeAllowed) {
+                    window.dbUpdate(window.dbRef(window.firebaseDB, 'jewelryData/config/devices/' + devId), { profileId: id }).catch(() => {});
+                }
+            } catch(e) {}
             showSection('main');
         }
 
