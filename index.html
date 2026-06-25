@@ -124,6 +124,7 @@
 
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
     <style>
@@ -1468,6 +1469,9 @@
             <button onclick="showDeviceAccessSection()" data-menu-key="device-access">
                 <span class="menu-icon" style="background:#ffebee;">🔒</span> Device Access
             </button>
+            <button onclick="openUpiIdSetting(); closeOptions();" data-menu-key="upi-setting">
+                <span class="menu-icon" style="background:#e8f5e9;">📱</span> Set UPI ID
+            </button>
             <button onclick="showSection('ledger'); closeOptions();" data-menu-key="ledger">
                 <span class="menu-icon" style="background:#e8f5e9;">💰</span> Cash Ledger
             </button>
@@ -2523,6 +2527,7 @@
                                 restoreUpdate['jewelryData/config/looseDefaults']    = dataToRestore.looseDefaults;
                                 restoreUpdate['jewelryData/config/baseCalcDefaults'] = dataToRestore.baseCalcDefaults;
                                 restoreUpdate['jewelryData/config/menuPrefs']        = dataToRestore.menuPrefs || {};
+                                restoreUpdate['jewelryData/config/upiId']            = dataToRestore.upiId || null;
                                 restoreUpdate['jewelryData/products']                = dataToRestore.products || {};
                                                 // Bills
                                 (dataToRestore.billHistory || []).forEach(b => {
@@ -2654,6 +2659,7 @@
         let taxRate = 3; // factory default — overwritten by Firebase on load
         let productData = {};
         let menuPrefs = {}; // which More-menu items are hidden — cloud-synced like other config
+        let shopUpiId  = ''; // UPI ID for payment QR — cloud-synced, falls back to localStorage
         // Stock Weight Calculator: per-category packaging weights, manually editable.
         // Keyed by item name (trimmed, uppercase) -> { pWeight, bWeight, extraBag }
         let packagingWeights = {};
@@ -2881,8 +2887,16 @@
             makingProfiles = cloudData.makingProfiles || [];
             // Menu visibility prefs — synced like other config so the same
             // hidden/shown More-menu state follows across devices/profiles.
-            menuPrefs = cloudData.menuPrefs || {};
+            menuPrefs  = cloudData.menuPrefs || {};
             applyMenuPrefs();
+            // UPI ID — sync from cloud, keep localStorage as write-through cache for offline
+            if (cloudData.upiId !== undefined && cloudData.upiId !== null) {
+                shopUpiId = cloudData.upiId;
+                localStorage.setItem('suhagUpiId', shopUpiId);
+            } else {
+                // Cloud has no value yet — use whatever is in localStorage (migration path)
+                shopUpiId = localStorage.getItem('suhagUpiId') || '';
+            }
             // billHistory: cloud is authoritative — simply replace.
             // Each bill is written individually via _saveBillRecord so there are
             // no races; the onValue callback sees the canonical state.
@@ -3060,6 +3074,7 @@
                 baseCalcDefaults: config.baseCalcDefaults || {},
                 packagingWeights: config.packagingWeights || {},
                 menuPrefs:        config.menuPrefs        || {},
+                upiId:            config.upiId            || null,
                 products:         val.products            || {},
                 // billHistory and profiles may be keyed objects (new) or arrays (old)
                 billHistory,
@@ -3207,6 +3222,7 @@
             update['jewelryData/config/baseCalcDefaults'] = baseCalcDefaults || {};
             update['jewelryData/config/packagingWeights'] = packagingWeights || {};
             update['jewelryData/config/menuPrefs']        = menuPrefs || {};
+            update['jewelryData/config/upiId']            = shopUpiId || null;
             update['jewelryData/products']                = productData || {};
             window.dbSafeUpdate(update)
                 .then(() => { clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false; })
@@ -6177,7 +6193,12 @@
             document.querySelectorAll('.pay-mode-btn').forEach(b => b.classList.remove('selected'));
             document.getElementById('pay-btn-' + mode).classList.add('selected');
             const isPartial = mode === 'partial';
+            const isUpi = mode === 'upi';
             document.getElementById('pay-partial-section').style.display = isPartial ? 'block' : 'none';
+            document.getElementById('pay-upi-qr-section').style.display = isUpi ? 'block' : 'none';
+            if (isUpi) {
+                _renderUpiQr();
+            }
             if (isPartial) {
                 // Pre-fill cash with full amount as starting point
                 let total = 0; cart.forEach(i => total += i.finalPrice);
@@ -6188,6 +6209,50 @@
                 document.getElementById('pay-card-amt').value = '';
                 syncPartialPayment('cash');
                 setTimeout(() => document.getElementById('pay-cash-amt').focus(), 50);
+            }
+        }
+
+        function _renderUpiQr() {
+            const upiId = getUpiId();
+            const qrBox = document.getElementById('pay-upi-qr-box');
+            const qrLabel = document.getElementById('pay-upi-qr-label');
+            const missingEl = document.getElementById('pay-upi-id-missing');
+
+            if (!upiId) {
+                qrBox.style.display = 'none';
+                missingEl.style.display = 'block';
+                qrLabel.textContent = '';
+                return;
+            }
+
+            qrBox.style.display = 'inline-block';
+            missingEl.style.display = 'none';
+            qrBox.innerHTML = ''; // clear previous QR
+
+            // Calculate net payable
+            let total = 0; cart.forEach(i => total += i.finalPrice);
+            let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
+            const net = Math.max(0, total - oldGoldTotal - cartAdjustment);
+            const amount = net.toFixed(2);
+
+            // UPI deep link format
+            const upiUrl = 'upi://pay?pa=' + encodeURIComponent(upiId)
+                + '&pn=' + encodeURIComponent('Suhag Jewellers')
+                + '&am=' + amount
+                + '&cu=INR';
+
+            try {
+                new QRCode(qrBox, {
+                    text: upiUrl,
+                    width: 200,
+                    height: 200,
+                    colorDark: '#1a1a1a',
+                    colorLight: '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
+                qrLabel.innerHTML = '<strong>' + upiId + '</strong><br>₹' + Number(amount).toLocaleString('en-IN', {minimumFractionDigits:2});
+            } catch(e) {
+                qrBox.innerHTML = '<div style="color:#e53935;font-size:12px;">QR generation failed</div>';
             }
         }
 
@@ -6970,6 +7035,25 @@
         // Expose makingProfiles so device access panel can read it
         Object.defineProperty(window, 'makingProfiles', { get: () => makingProfiles, configurable: true });
         // Bill History
+        // UPI ID setting
+        function getUpiId() {
+            // In-memory var (synced from cloud) is primary; localStorage is offline fallback
+            return shopUpiId || localStorage.getItem('suhagUpiId') || '';
+        }
+        function openUpiIdSetting() {
+            closeModal('payment-modal');
+            const current = getUpiId();
+            const val = prompt('Enter your UPI ID (e.g. name@upi or 9876543210@paytm):', current);
+            if (val === null) return;
+            shopUpiId = val.trim();
+            localStorage.setItem('suhagUpiId', shopUpiId); // immediate offline cache
+            // Save to cloud so all devices get it automatically
+            window.dbSafeUpdate({ 'jewelryData/config/upiId': shopUpiId || null })
+                .then(() => showCustomAlert(shopUpiId ? 'UPI ID saved & synced: ' + shopUpiId : 'UPI ID cleared.'))
+                .catch(() => showCustomAlert(shopUpiId ? 'UPI ID saved locally (will sync when online).' : 'UPI ID cleared locally.'));
+        }
+        window.openUpiIdSetting = openUpiIdSetting;
+
         window.checkoutCart = checkoutCart;
         window.selectPayMode = selectPayMode;
         window.syncPartialPayment = syncPartialPayment;
@@ -7190,6 +7274,15 @@
                 <button onclick="selectPayMode('upi')"    id="pay-btn-upi"     class="pay-mode-btn">📱 UPI</button>
                 <button onclick="selectPayMode('card')"   id="pay-btn-card"    class="pay-mode-btn">💳 Card</button>
                 <button onclick="selectPayMode('partial')" id="pay-btn-partial" class="pay-mode-btn">🔀 Partial</button>
+            </div>
+
+            <!-- UPI QR panel (shown only when UPI selected) -->
+            <div id="pay-upi-qr-section" style="display:none; text-align:center; margin-bottom:16px;">
+                <div id="pay-upi-qr-box" style="display:inline-block; background:white; padding:12px; border-radius:12px; border:2px solid #e0e0e0; margin-bottom:8px;"></div>
+                <div id="pay-upi-qr-label" style="font-size:12px; color:#888; margin-top:4px;"></div>
+                <div id="pay-upi-id-missing" style="display:none; font-size:13px; color:#e65100; background:#fff3e0; border-radius:8px; padding:10px; margin-top:4px;">
+                    ⚠️ No UPI ID set. <span style="text-decoration:underline; cursor:pointer; color:#1565C0;" onclick="openUpiIdSetting()">Add it in More → Settings</span>
+                </div>
             </div>
 
             <!-- Partial split inputs (shown only for partial) -->
