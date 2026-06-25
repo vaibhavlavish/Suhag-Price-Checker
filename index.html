@@ -3476,22 +3476,26 @@
         // ================= CUSTOMIZE MENU (show/hide More-menu items) =================
         // Synced like any other config (rates, tax, etc.) — same hidden/shown
         // More-menu state follows across devices signed into the same profile.
+        // `action` mirrors the exact onclick of the matching button in #options-menu,
+        // so tapping the label in Clean opens/runs the same thing — no need to
+        // unhide it first. Destructive/one-shot actions (backup, restore, refresh,
+        // clear-*) are included too since "open" for them just means "run it".
         const MENU_ITEMS_REGISTRY = [
-            { key: 'update-rates',   label: 'Update Rates',       icon: '💰' },
-            { key: 'excel-upload',   label: 'Upload Excel',       icon: '📂' },
-            { key: 'stock-view',     label: 'Stock View',         icon: '📦' },
-            { key: 'stock-calc',     label: 'Stock Weight Calc',  icon: '⚖️' },
-            { key: 'profiles',       label: 'Making Profiles',    icon: '⚙️' },
-            { key: 'device-access',  label: 'Device Access',      icon: '🔒' },
-            { key: 'upi-setting',    label: 'Set UPI ID',         icon: '📱' },
-            { key: 'ledger',         label: 'Cash Ledger',        icon: '💰' },
-            { key: 'bulk-check',     label: 'Bulk Price Check',   icon: '📋' },
-            { key: 'backup',         label: 'Download Backup',    icon: '💾' },
-            { key: 'restore',        label: 'Restore Backup',     icon: '📥' },
-            { key: 'refresh',        label: 'Refresh App',        icon: '🔄' },
-            { key: 'clear-screen',   label: 'Clear Screen',       icon: '🧹' },
-            { key: 'clear-cart',     label: 'Clear Cart',         icon: '🛒' },
-            { key: 'clear-all-data', label: 'Clear All Data',     icon: '⚠️' }
+            { key: 'update-rates',   label: 'Update Rates',       icon: '💰', action: () => showSection('update-rates') },
+            { key: 'excel-upload',   label: 'Upload Excel',       icon: '📂', action: () => showSection('excel-upload') },
+            { key: 'stock-view',     label: 'Stock View',         icon: '📦', action: () => showStockSection() },
+            { key: 'stock-calc',     label: 'Stock Weight Calc',  icon: '⚖️', action: () => showStockCalcSection() },
+            { key: 'profiles',       label: 'Making Profiles',    icon: '⚙️', action: () => openProfileModal() },
+            { key: 'device-access',  label: 'Device Access',      icon: '🔒', action: () => showDeviceAccessSection() },
+            { key: 'upi-setting',    label: 'Set UPI ID',         icon: '📱', action: () => openUpiIdSetting() },
+            { key: 'ledger',         label: 'Cash Ledger',        icon: '💰', action: () => showSection('ledger') },
+            { key: 'bulk-check',     label: 'Bulk Price Check',   icon: '📋', action: () => showSection('bulk-check') },
+            { key: 'backup',         label: 'Download Backup',    icon: '💾', action: () => downloadBackup() },
+            { key: 'restore',        label: 'Restore Backup',     icon: '📥', action: () => triggerRestore() },
+            { key: 'refresh',        label: 'Refresh App',        icon: '🔄', action: () => location.reload() },
+            { key: 'clear-screen',   label: 'Clear Screen',       icon: '🧹', action: () => clearAll() },
+            { key: 'clear-cart',     label: 'Clear Cart',         icon: '🛒', action: () => clearCart() },
+            { key: 'clear-all-data', label: 'Clear All Data',     icon: '⚠️', action: () => clearAllDataWrapper() }
         ];
 
         // Hides/shows the actual buttons in #options-menu based on saved prefs.
@@ -3521,18 +3525,25 @@
         function renderMenuSettings() {
             const container = document.getElementById('menu-settings-list');
             if (!container) return;
-            container.innerHTML = MENU_ITEMS_REGISTRY.map(item => {
+            container.innerHTML = MENU_ITEMS_REGISTRY.map((item, idx) => {
                 const checked = menuPrefs[item.key] === false ? '' : 'checked';
                 return `
-                    <label style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:#F7F7F5; border:1px solid var(--border); border-radius:12px; padding:12px 14px; cursor:pointer;">
+                    <div onclick="runMenuSettingsAction(${idx})" style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:#F7F7F5; border:1px solid var(--border); border-radius:12px; padding:12px 14px; cursor:pointer;">
                         <span style="display:flex; align-items:center; gap:10px; font-size:14px; font-weight:600; color:var(--text);">
                             <span style="width:28px; height:28px; border-radius:7px; background:#ECEFF1; display:flex; align-items:center; justify-content:center; font-size:14px;">${item.icon}</span>
                             ${item.label}
                         </span>
-                        <input type="checkbox" ${checked} onchange="toggleMenuItemPref('${item.key}', this.checked)" style="width:20px; height:20px; accent-color:#4CAF50; margin:0; flex-shrink:0;">
-                    </label>
+                        <input type="checkbox" ${checked} onclick="event.stopPropagation();" onchange="toggleMenuItemPref('${item.key}', this.checked)" style="width:20px; height:20px; accent-color:#4CAF50; margin:0; flex-shrink:0;">
+                    </div>
                 `;
             }).join('');
+        }
+
+        // Opens/runs the item the same way its More-menu button would —
+        // tapping the name in Clean shouldn't require unhiding it first.
+        function runMenuSettingsAction(idx) {
+            const item = MENU_ITEMS_REGISTRY[idx];
+            if (item && typeof item.action === 'function') item.action();
         }
 
         function showStockSection() {
