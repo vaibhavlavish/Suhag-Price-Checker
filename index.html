@@ -1478,9 +1478,6 @@
             <button onclick="showSection('bulk-check')" data-menu-key="bulk-check">
                 <span class="menu-icon" style="background:#f3e5f5;">📋</span> Bulk Price Check
             </button>
-            <button onclick="showSection('returns')" data-menu-key="returns">
-                <span class="menu-icon" style="background:#fce4ec;">↩️</span> Item Returns
-            </button>
 
             <div class="menu-divider"></div>
             <div class="menu-section-label">Data</div>
@@ -1773,7 +1770,7 @@
                     </div>
                     <div>
                         <label style="font-size:11px; color:#555; display:block; margin-bottom:3px;">Final Amount (₹)</label>
-                        <input type="number" id="adjust-final" placeholder="e.g. 9500" min="0" step="1"
+                        <input type="number" id="adjust-final" placeholder="e.g. -100" step="1"
                                oninput="syncAdjustFromFinal(); autoApplyAdjust();"
                                style="width:100%; padding:8px; border:1px solid #ce93d8; border-radius:8px; font-size:14px; box-sizing:border-box; background:white;">
                     </div>
@@ -2924,13 +2921,6 @@
             billHistory   = dedupeById(billHistory);
             makingProfiles = dedupeById(makingProfiles);
 
-            // Returned barcodes — items that were sold but physically returned to stock.
-            // These are excluded from getSoldBarcodes() so stock view shows them again.
-            // Bills are NOT modified; only this lightweight set is maintained.
-            if (cloudData.returnedBarcodes !== undefined) {
-                window._returnedBarcodes = cloudData.returnedBarcodes || {};
-            }
-
             if (typeof _renderBillHistoryInLedger === 'function') {
                 _renderBillHistoryInLedger();
             }
@@ -3085,7 +3075,6 @@
                 packagingWeights: config.packagingWeights || {},
                 menuPrefs:        config.menuPrefs        || {},
                 upiId:            config.upiId            || null,
-                returnedBarcodes: config.returnedBarcodes || {},
                 products:         val.products            || {},
                 // billHistory and profiles may be keyed objects (new) or arrays (old)
                 billHistory,
@@ -3415,7 +3404,6 @@
             document.getElementById('ledger').style.display = 'none';
             document.getElementById('menu-settings').style.display = 'none';
             document.getElementById('device-access').style.display = 'none';
-            document.getElementById('returns').style.display = 'none';
             const brandHeaderEl = document.getElementById('brand-header');
             if (brandHeaderEl) brandHeaderEl.style.display = 'none';
 
@@ -3457,10 +3445,6 @@
             } else {
                 const bc = document.getElementById('bulk-check');
                 if (bc) bc.removeEventListener('keydown', bulkKeyRouter, true);
-            }
-            if (section === 'returns') {
-                resetReturnSection();
-                setTimeout(() => document.getElementById('return-barcode').focus(), 100);
             }
             if (section === 'update-rates') {
                 renderRatesTable();
@@ -3506,7 +3490,6 @@
             { key: 'upi-setting',    label: 'Set UPI ID',         icon: '📱', action: () => openUpiIdSetting() },
             { key: 'ledger',         label: 'Cash Ledger',        icon: '💰', action: () => showSection('ledger') },
             { key: 'bulk-check',     label: 'Bulk Price Check',   icon: '📋', action: () => showSection('bulk-check') },
-            { key: 'returns',        label: 'Item Returns',        icon: '↩️', action: () => showSection('returns') },
             { key: 'backup',         label: 'Download Backup',    icon: '💾', action: () => downloadBackup() },
             { key: 'restore',        label: 'Restore Backup',     icon: '📥', action: () => triggerRestore() },
             { key: 'refresh',        label: 'Refresh App',        icon: '🔄', action: () => location.reload() },
@@ -3590,10 +3573,6 @@
                     if (item && item.barcode) sold.add(String(item.barcode).trim().toUpperCase());
                 });
             });
-            // Remove any barcodes that have been formally returned — those items
-            // are back in stock. Bills are NOT changed; only the effective sold-set is.
-            const returned = window._returnedBarcodes || {};
-            Object.keys(returned).forEach(bc => sold.delete(bc.toUpperCase()));
             return sold;
         }
 
@@ -5125,16 +5104,26 @@
                     </div>
                 `;
             }
-            if (cartAdjustment > 0) {
-                summaryHtml += `
-                    <div style="display:flex; justify-content:space-between; color:#6a1b9a;">
-                        <span>Discount:</span><span>- ₹${cartAdjustment.toFixed(2)}</span>
-                    </div>
-                `;
+            if (cartAdjustment !== 0) {
+                if (cartAdjustment > 0) {
+                    summaryHtml += `
+                        <div style="display:flex; justify-content:space-between; color:#6a1b9a;">
+                            <span>Discount:</span><span>- ₹${cartAdjustment.toFixed(2)}</span>
+                        </div>
+                    `;
+                } else {
+                    // Negative adjustment = extra refund to customer beyond old-gold
+                    summaryHtml += `
+                        <div style="display:flex; justify-content:space-between; color:#e65100;">
+                            <span>Extra Refund:</span><span>+ ₹${Math.abs(cartAdjustment).toFixed(2)}</span>
+                        </div>
+                    `;
+                }
             }
+            const netColor = netPayable < 0 ? '#c62828' : (cartAdjustment !== 0 ? '#6a1b9a' : '#222');
             summaryHtml += `
                 <div style="display:flex; justify-content:space-between; font-size:1.2em; font-weight:bold; border-top:1px dashed #ccc; padding-top:5px; margin-top:5px;">
-                    <span>Net Payable:</span><span style="color:${cartAdjustment > 0 ? '#6a1b9a' : '#222'};">₹${netPayable.toFixed(2)}</span>
+                    <span>Net Payable:</span><span style="color:${netColor};">₹${netPayable.toFixed(2)}</span>
                 </div>
             `;
 
@@ -5795,7 +5784,7 @@
                 const ceiled = Math.ceil(current / 10) * 10;
                 newVal = (current === ceiled) ? ceiled + 10 : ceiled;
             }
-            newVal = Math.max(0, newVal);
+            // No floor clamp — final amount can be negative (refund scenario)
             finalInput.value = newVal.toFixed(0);
             syncAdjustFromFinal();
             autoApplyAdjust();
@@ -5815,7 +5804,7 @@
             _exactDiscFromFinal = null; // user is driving from discount side
             const disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
             const base = _getCartBase();
-            document.getElementById('adjust-final').value = disc > 0 ? Math.max(0, base - disc).toFixed(0) : '';
+            document.getElementById('adjust-final').value = disc > 0 ? (base - disc).toFixed(0) : '';
         }
 
         function syncAdjustFromFinal() {
@@ -5826,10 +5815,13 @@
                 return;
             }
             const base = _getCartBase();
-            const discExact = Math.max(0, base - finalVal); // exact, possibly fractional
-            _exactDiscFromFinal = discExact > 0 ? discExact : null;
-            // Show a rounded hint in the discount field (display only)
-            document.getElementById('adjust-discount').value = discExact > 0 ? discExact.toFixed(2) : '';
+            // discExact = how much extra to subtract from base to reach finalVal
+            // Can be negative (meaning base is already below finalVal — no extra needed)
+            // When base is already negative, finalVal may be more negative → discExact > 0
+            const discExact = base - finalVal;
+            _exactDiscFromFinal = discExact !== 0 ? discExact : null;
+            // Show hint in discount field — negative means "you're giving more back"
+            document.getElementById('adjust-discount').value = discExact !== 0 ? discExact.toFixed(2) : '';
         }
 
         // Auto-apply: called on every keystroke in the adjust inputs.
@@ -5846,7 +5838,6 @@
                 } else {
                     disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
                 }
-                if (disc < 0 || disc > base) return; // silent guard
                 cartAdjustment = disc;
                 // Re-render just the summary (not full cart) to update Net Payable live
                 openCart();
@@ -5862,14 +5853,12 @@
 
             let disc;
             if (_exactDiscFromFinal !== null) {
-                // Final-amount was typed: use exact discount so net payable == what user typed
+                // Final-amount was typed: use exact adjustment so net payable == what user typed
                 disc = _exactDiscFromFinal;
             } else {
                 disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
             }
 
-            if (disc < 0) { showCustomAlert('Discount cannot be negative.'); return; }
-            if (disc > base) { showCustomAlert('Discount cannot exceed payable amount (₹' + base.toFixed(0) + ').'); return; }
             cartAdjustment = disc;
             _exactDiscFromFinal = null;
             document.getElementById('adjust-panel').style.display = 'none';
@@ -6175,9 +6164,6 @@
             if (cameraTarget === 'bulk') {
                 document.getElementById('bulk-barcode').value = value;
                 bulkAddItem();
-            } else if (cameraTarget === 'return') {
-                document.getElementById('return-barcode').value = value;
-                returnLookup();
             } else {
                 const inp = document.getElementById('barcode');
                 inp.value = value;
@@ -6906,123 +6892,6 @@
         window.toggleLedgerBillDetail = toggleLedgerBillDetail;
         window._renderBillHistoryInLedger = _renderBillHistoryInLedger;
 
-        // =============================================
-        // === RETURNS SECTION =========================
-        // =============================================
-        // Tracks barcodes returned in this session (for the on-screen log only).
-        // Does NOT touch billHistory — bills remain intact, ledger is unaffected.
-        let _returnSessionLog = [];
-        let _returnPendingBarcode = null; // barcode currently previewed
-
-        function resetReturnSection() {
-            _returnPendingBarcode = null;
-            document.getElementById('return-barcode').value = '';
-            document.getElementById('return-preview').style.display = 'none';
-            document.getElementById('return-error').style.display = 'none';
-        }
-
-        function returnLookup() {
-            const inp = document.getElementById('return-barcode');
-            const barcode = (inp.value || '').trim().toUpperCase();
-            if (!barcode) return;
-
-            // Hide any previous state
-            document.getElementById('return-preview').style.display = 'none';
-            document.getElementById('return-error').style.display = 'none';
-            _returnPendingBarcode = null;
-
-            const d = productData[barcode];
-            if (!d) {
-                const errEl = document.getElementById('return-error');
-                errEl.textContent = '❌ Barcode "' + barcode + '" not found in product database.';
-                errEl.style.display = 'block';
-                return;
-            }
-
-            // Build preview
-            _returnPendingBarcode = barcode;
-            document.getElementById('return-preview-name').textContent = d.itemName || '(No name)';
-            document.getElementById('return-preview-barcode').textContent = barcode;
-
-            const weight = d.netWeight ? d.netWeight + 'g' : '—';
-            const metal  = d.metal ? d.metal.charAt(0).toUpperCase() + d.metal.slice(1) : '—';
-            const stamp  = d.stamp || '—';
-            document.getElementById('return-preview-details').innerHTML =
-                'Metal: <strong>' + metal + '</strong> &nbsp;|&nbsp; ' +
-                'Stamp: <strong>' + stamp + '</strong> &nbsp;|&nbsp; ' +
-                'Weight: <strong>' + weight + '</strong>';
-
-            // Warn if barcode is already in stock (not in any sold bill)
-            const soldBarcodes = getSoldBarcodes();
-            const alreadyWarn = document.getElementById('return-already-warn');
-            alreadyWarn.style.display = soldBarcodes.has(barcode) ? 'none' : 'block';
-
-            document.getElementById('return-preview').style.display = 'block';
-        }
-
-        function confirmReturn() {
-            const barcode = _returnPendingBarcode;
-            if (!barcode) return;
-            const d = productData[barcode];
-            if (!d) {
-                alert('Product not found. Please re-scan.');
-                return;
-            }
-
-            // ── THE ONLY THING WE DO: mark the product as back in stock ──
-            // We achieve this by removing the barcode from the sold-tags set.
-            // In this app's model, "sold" means "barcode appears in a bill".
-            // We DO NOT delete or modify any bill. Instead we add a lightweight
-            // returnedBarcodes set in config so getSoldBarcodes() can exclude them.
-            // This means the item will appear in Stock View and be scannable again.
-
-            if (!window._returnedBarcodes) window._returnedBarcodes = {};
-            window._returnedBarcodes[barcode] = true;
-
-            // Persist returned barcodes to Firebase config so all devices see it
-            const update = {};
-            update['jewelryData/config/returnedBarcodes'] = window._returnedBarcodes;
-            window.dbSafeUpdate(update).catch(e => console.error('[Return] save failed', e));
-
-            // Add to session log
-            _returnSessionLog.unshift({ barcode, name: d.itemName || barcode, ts: Date.now() });
-            _renderReturnLog();
-
-            // Reset for next scan
-            _returnPendingBarcode = null;
-            document.getElementById('return-barcode').value = '';
-            document.getElementById('return-preview').style.display = 'none';
-            document.getElementById('return-error').style.display = 'none';
-            setTimeout(() => document.getElementById('return-barcode').focus(), 80);
-
-            // Refresh stock views so the item shows up immediately
-            if (typeof renderStockView === 'function') renderStockView();
-        }
-
-        function _renderReturnLog() {
-            const wrap = document.getElementById('return-log-wrap');
-            const list = document.getElementById('return-log-list');
-            if (!_returnSessionLog.length) { wrap.style.display = 'none'; return; }
-            wrap.style.display = 'block';
-            list.innerHTML = _returnSessionLog.map(entry => {
-                const t = new Date(entry.ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-                return `<div style="background:white; border-radius:10px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 4px rgba(0,0,0,0.07);">
-                    <div>
-                        <div style="font-size:14px; font-weight:700; color:#222;">${escHtml(entry.name)}</div>
-                        <div style="font-size:11px; color:#aaa; font-family:monospace;">${escHtml(entry.barcode)}</div>
-                    </div>
-                    <div style="font-size:12px; color:#4CAF50; font-weight:700;">${t} ✓</div>
-                </div>`;
-            }).join('');
-        }
-
-        window.returnLookup  = returnLookup;
-        window.confirmReturn = confirmReturn;
-        window.resetReturnSection = resetReturnSection;
-        // =============================================
-        // === END RETURNS SECTION =====================
-        // =============================================
-
         function openLedgerEntryModal(type) {
             setLedgerEntryType(type || 'in');
             document.getElementById('ledger-entry-amount').value = '';
@@ -7352,46 +7221,6 @@
         <button onclick="showSection('main')">← Back to Main</button>
     </div>
 
-
-    <!-- ==================== RETURNS SECTION ==================== -->
-    <div id="returns" style="display:none; padding:16px; background:#f5f5f5; min-height:100%; box-sizing:border-box; max-width:480px; margin:0 auto;">
-        <h2 style="margin:0 0 4px; font-size:18px; font-weight:800; color:#222;">↩️ Item Returns</h2>
-        <p style="font-size:13px; color:#888; margin:0 0 14px;">Scan a returned barcode to add it back to stock. Bills are NOT affected.</p>
-
-        <div style="display:flex; gap:8px; align-items:center; margin-bottom:14px;">
-            <input type="text" id="return-barcode" placeholder="Scan or type barcode, press Enter…"
-                   autocomplete="off" maxlength="50"
-                   onkeydown="if(event.key==='Enter') returnLookup()"
-                   style="font-size:16px; flex:1; margin:0;">
-            <button onclick="openCamera('return')" style="background:#c62828; color:white; border:none; border-radius:10px; padding:12px 14px; font-size:20px; cursor:pointer; flex-shrink:0; width:auto; margin:0; box-shadow:none;">📷</button>
-        </div>
-
-        <!-- Preview card — hidden until a valid barcode is found -->
-        <div id="return-preview" style="display:none; background:white; border-radius:14px; box-shadow:0 2px 10px rgba(0,0,0,0.10); padding:16px; margin-bottom:14px;">
-            <div style="font-size:12px; color:#888; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; margin-bottom:6px;">Item Found</div>
-            <div id="return-preview-name" style="font-size:17px; font-weight:800; color:#222; margin-bottom:2px;"></div>
-            <div id="return-preview-barcode" style="font-size:12px; color:#aaa; margin-bottom:10px; font-family:monospace;"></div>
-            <div id="return-preview-details" style="font-size:13px; color:#555; margin-bottom:14px; line-height:1.6;"></div>
-            <div id="return-already-warn" style="display:none; background:#fff3e0; border:1.5px solid #FF9800; border-radius:8px; padding:8px 12px; font-size:13px; color:#e65100; font-weight:600; margin-bottom:10px;">
-                ⚠️ This barcode is already in stock. Adding again will duplicate it.
-            </div>
-            <button onclick="confirmReturn()" style="background:#2e7d32; color:white; border:none; border-radius:10px; padding:12px 18px; font-size:15px; font-weight:700; cursor:pointer; width:100%; box-shadow:none;">
-                ✅ Add Back to Stock
-            </button>
-        </div>
-
-        <!-- Error message -->
-        <div id="return-error" style="display:none; background:#ffebee; border:1.5px solid #f44336; border-radius:10px; padding:10px 14px; font-size:13px; color:#c62828; font-weight:600; margin-bottom:14px;"></div>
-
-        <!-- Return log for this session -->
-        <div id="return-log-wrap" style="display:none;">
-            <div style="font-size:12px; color:#888; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Returned this session</div>
-            <div id="return-log-list"></div>
-        </div>
-
-        <button onclick="showSection('main')" style="margin-top:10px;">← Back to Main</button>
-    </div>
-    <!-- ==================== END RETURNS SECTION ==================== -->
 
     <!-- Camera Scanner Overlay -->
     <div id="camera-overlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:9999; flex-direction:column; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;">
