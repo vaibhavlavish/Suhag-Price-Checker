@@ -1728,13 +1728,41 @@
     </div>
 
     <div id="old-gold-modal" class="modal">
-        <div id="old-gold-content">
+        <div id="old-gold-content" style="position:relative;">
             <h3>Old Jewellery Exchange</h3>
             <div id="old-gold-list"></div> <label style="margin-top:0;">Add New Item:</label>
             <div class="input-with-stepper" style="margin-top:5px;">
-                 <input type="text" id="old-gold-desc" placeholder="Desc (e.g. Ring)" style="flex: 1.5; text-align: left;">
+                 <button id="old-gold-type-btn" onclick="openOldGoldTypeDialogue()"
+                     style="flex:1.5; text-align:left; background:#f5f5f5; border:1px solid #ddd; border-radius:8px; padding:10px 12px; font-size:14px; color:#333; cursor:pointer; display:flex; align-items:center; justify-content:space-between; box-shadow:none; margin:0; font-weight:600;">
+                     <span id="old-gold-type-label">🪙 Old Jewellery</span>
+                     <span style="color:#aaa; font-size:11px;">▼</span>
+                 </button>
                  <input type="number" id="old-gold-value" placeholder="Value (₹)" style="flex: 1;">
             </div>
+            <input type="hidden" id="old-gold-desc" value="Old Jewellery">
+
+            <!-- Type Dialogue -->
+            <div id="old-gold-type-dialogue" style="display:none; position:absolute; z-index:9999; background:white; border-radius:14px; box-shadow:0 8px 32px rgba(0,0,0,0.18); padding:10px; min-width:200px; left:50%; transform:translateX(-50%); margin-top:4px;">
+                <div onclick="selectOldGoldType('Old Jewellery','🪙 Old Jewellery')" id="og-type-opt-0"
+                     style="display:flex; align-items:center; gap:10px; padding:11px 14px; border-radius:10px; cursor:pointer; font-size:14px; font-weight:700; background:#f0fdf4; color:#2e7d32; margin-bottom:4px;">
+                    🪙 Old Jewellery <span id="og-check-0" style="margin-left:auto; color:#2e7d32;">✓</span>
+                </div>
+                <div onclick="selectOldGoldType('Exchange','🔄 Exchange')" id="og-type-opt-1"
+                     style="display:flex; align-items:center; gap:10px; padding:11px 14px; border-radius:10px; cursor:pointer; font-size:14px; font-weight:600; color:#333; margin-bottom:4px;">
+                    🔄 Exchange <span id="og-check-1" style="margin-left:auto; display:none; color:#2e7d32;">✓</span>
+                </div>
+                <div onclick="selectOldGoldType('Custom','✏️ Custom')" id="og-type-opt-2"
+                     style="display:flex; align-items:center; gap:10px; padding:11px 14px; border-radius:10px; cursor:pointer; font-size:14px; font-weight:600; color:#333;">
+                    ✏️ Custom <span id="og-check-2" style="margin-left:auto; display:none; color:#2e7d32;">✓</span>
+                </div>
+            </div>
+
+            <!-- Custom text input — shown only when Custom is selected -->
+            <div id="old-gold-custom-wrap" style="display:none; margin-top:8px;">
+                <input type="text" id="old-gold-custom-text" placeholder="Enter custom description…"
+                       style="width:100%; box-sizing:border-box; font-size:14px; padding:9px 12px; border:1px solid #ddd; border-radius:8px;">
+            </div>
+
             <button onclick="addOldGoldItem()" style="background-color: #4CAF50; margin-top: 10px;">Add Item</button>
 
             <div style="margin-top: 20px; font-weight: bold; text-align: right; border-top: 1px solid #ccc; padding-top: 10px;">
@@ -1770,7 +1798,7 @@
                     </div>
                     <div>
                         <label style="font-size:11px; color:#555; display:block; margin-bottom:3px;">Final Amount (₹)</label>
-                        <input type="number" id="adjust-final" placeholder="e.g. -100" step="1"
+                        <input type="number" id="adjust-final" placeholder="e.g. 9500" min="0" step="1"
                                oninput="syncAdjustFromFinal(); autoApplyAdjust();"
                                style="width:100%; padding:8px; border:1px solid #ce93d8; border-radius:8px; font-size:14px; box-sizing:border-box; background:white;">
                     </div>
@@ -5098,32 +5126,24 @@
                 </div>
             `;
             if (oldGoldTotal > 0) {
+                const descs = [...new Set(oldGoldItems.map(i => i.desc))];
+                const oldGoldLabel = descs.length === 1 ? `Less ${descs[0]}:` : 'Less Old Jewellery:';
                 summaryHtml += `
                     <div style="display:flex; justify-content:space-between; color: #f44336;">
-                        <span>Less Old jewellery:</span><span>- ₹${oldGoldTotal.toFixed(2)}</span>
+                        <span>${oldGoldLabel}</span><span>- ₹${oldGoldTotal.toFixed(2)}</span>
                     </div>
                 `;
             }
-            if (cartAdjustment !== 0) {
-                if (cartAdjustment > 0) {
-                    summaryHtml += `
-                        <div style="display:flex; justify-content:space-between; color:#6a1b9a;">
-                            <span>Discount:</span><span>- ₹${cartAdjustment.toFixed(2)}</span>
-                        </div>
-                    `;
-                } else {
-                    // Negative adjustment = extra refund to customer beyond old-gold
-                    summaryHtml += `
-                        <div style="display:flex; justify-content:space-between; color:#e65100;">
-                            <span>Extra Refund:</span><span>+ ₹${Math.abs(cartAdjustment).toFixed(2)}</span>
-                        </div>
-                    `;
-                }
+            if (cartAdjustment > 0) {
+                summaryHtml += `
+                    <div style="display:flex; justify-content:space-between; color:#6a1b9a;">
+                        <span>Discount:</span><span>- ₹${cartAdjustment.toFixed(2)}</span>
+                    </div>
+                `;
             }
-            const netColor = netPayable < 0 ? '#c62828' : (cartAdjustment !== 0 ? '#6a1b9a' : '#222');
             summaryHtml += `
                 <div style="display:flex; justify-content:space-between; font-size:1.2em; font-weight:bold; border-top:1px dashed #ccc; padding-top:5px; margin-top:5px;">
-                    <span>Net Payable:</span><span style="color:${netColor};">₹${netPayable.toFixed(2)}</span>
+                    <span>Net Payable:</span><span style="color:${cartAdjustment > 0 ? '#6a1b9a' : '#222'};">₹${netPayable.toFixed(2)}</span>
                 </div>
             `;
 
@@ -5190,8 +5210,56 @@
             document.getElementById('old-gold-modal').style.display = 'flex';
         }
 
+        // ── Old Gold Type Selector ────────────────────────────────────
+        const _ogTypes = [
+            { key: 'Old Jewellery', label: '🪙 Old Jewellery' },
+            { key: 'Exchange',      label: '🔄 Exchange' },
+            { key: 'Custom',        label: '✏️ Custom' }
+        ];
+        let _ogDialogueOpen = false;
+
+        function openOldGoldTypeDialogue() {
+            const d = document.getElementById('old-gold-type-dialogue');
+            _ogDialogueOpen = !_ogDialogueOpen;
+            d.style.display = _ogDialogueOpen ? 'block' : 'none';
+        }
+
+        function selectOldGoldType(key, label) {
+            document.getElementById('old-gold-desc').value = key;
+            document.getElementById('old-gold-type-label').textContent = label;
+            _ogTypes.forEach((t, i) => {
+                const check = document.getElementById('og-check-' + i);
+                const opt   = document.getElementById('og-type-opt-' + i);
+                const active = (t.key === key);
+                if (check) check.style.display = active ? 'inline' : 'none';
+                if (opt)   opt.style.background = active ? '#f0fdf4' : 'transparent';
+            });
+            document.getElementById('old-gold-custom-wrap').style.display = (key === 'Custom') ? 'block' : 'none';
+            if (key === 'Custom') setTimeout(() => document.getElementById('old-gold-custom-text').focus(), 80);
+            document.getElementById('old-gold-type-dialogue').style.display = 'none';
+            _ogDialogueOpen = false;
+        }
+
+        document.addEventListener('click', function(e) {
+            if (!_ogDialogueOpen) return;
+            const btn = document.getElementById('old-gold-type-btn');
+            const dlg = document.getElementById('old-gold-type-dialogue');
+            if (btn && !btn.contains(e.target) && dlg && !dlg.contains(e.target)) {
+                dlg.style.display = 'none';
+                _ogDialogueOpen = false;
+            }
+        });
+
+        window.openOldGoldTypeDialogue = openOldGoldTypeDialogue;
+        window.selectOldGoldType       = selectOldGoldType;
+        // ── End Old Gold Type Selector ───────────────────────────────
+
         function addOldGoldItem() {
-            const desc = document.getElementById('old-gold-desc').value.trim() || 'Old Jewellery';
+            let desc = document.getElementById('old-gold-desc').value.trim() || 'Old Jewellery';
+            if (desc === 'Custom') {
+                const customText = (document.getElementById('old-gold-custom-text').value || '').trim();
+                desc = customText || 'Custom';
+            }
             const val = parseFloat(document.getElementById('old-gold-value').value);
 
             if(!val || val <= 0) {
@@ -5202,8 +5270,8 @@
             oldGoldItems.push({ desc: desc, value: val, id: crypto.randomUUID() });
             localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
 
-            // Clear inputs
-            document.getElementById('old-gold-desc').value = '';
+            selectOldGoldType('Old Jewellery', '🪙 Old Jewellery');
+            document.getElementById('old-gold-custom-text').value = '';
             document.getElementById('old-gold-value').value = '';
 
             renderOldGoldList();
@@ -5784,7 +5852,7 @@
                 const ceiled = Math.ceil(current / 10) * 10;
                 newVal = (current === ceiled) ? ceiled + 10 : ceiled;
             }
-            // No floor clamp — final amount can be negative (refund scenario)
+            newVal = Math.max(0, newVal);
             finalInput.value = newVal.toFixed(0);
             syncAdjustFromFinal();
             autoApplyAdjust();
@@ -5804,7 +5872,7 @@
             _exactDiscFromFinal = null; // user is driving from discount side
             const disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
             const base = _getCartBase();
-            document.getElementById('adjust-final').value = disc > 0 ? (base - disc).toFixed(0) : '';
+            document.getElementById('adjust-final').value = disc > 0 ? Math.max(0, base - disc).toFixed(0) : '';
         }
 
         function syncAdjustFromFinal() {
@@ -5815,13 +5883,10 @@
                 return;
             }
             const base = _getCartBase();
-            // discExact = how much extra to subtract from base to reach finalVal
-            // Can be negative (meaning base is already below finalVal — no extra needed)
-            // When base is already negative, finalVal may be more negative → discExact > 0
-            const discExact = base - finalVal;
-            _exactDiscFromFinal = discExact !== 0 ? discExact : null;
-            // Show hint in discount field — negative means "you're giving more back"
-            document.getElementById('adjust-discount').value = discExact !== 0 ? discExact.toFixed(2) : '';
+            const discExact = Math.max(0, base - finalVal); // exact, possibly fractional
+            _exactDiscFromFinal = discExact > 0 ? discExact : null;
+            // Show a rounded hint in the discount field (display only)
+            document.getElementById('adjust-discount').value = discExact > 0 ? discExact.toFixed(2) : '';
         }
 
         // Auto-apply: called on every keystroke in the adjust inputs.
@@ -5838,6 +5903,7 @@
                 } else {
                     disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
                 }
+                if (disc < 0 || disc > base) return; // silent guard
                 cartAdjustment = disc;
                 // Re-render just the summary (not full cart) to update Net Payable live
                 openCart();
@@ -5853,12 +5919,14 @@
 
             let disc;
             if (_exactDiscFromFinal !== null) {
-                // Final-amount was typed: use exact adjustment so net payable == what user typed
+                // Final-amount was typed: use exact discount so net payable == what user typed
                 disc = _exactDiscFromFinal;
             } else {
                 disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
             }
 
+            if (disc < 0) { showCustomAlert('Discount cannot be negative.'); return; }
+            if (disc > base) { showCustomAlert('Discount cannot exceed payable amount (₹' + base.toFixed(0) + ').'); return; }
             cartAdjustment = disc;
             _exactDiscFromFinal = null;
             document.getElementById('adjust-panel').style.display = 'none';
