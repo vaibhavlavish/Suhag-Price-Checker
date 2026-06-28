@@ -7082,6 +7082,21 @@
         window.returnLookup      = returnLookup;
         window.confirmReturn     = confirmReturn;
         window.resetReturnSection = resetReturnSection;
+
+        function clearAllReturnedBarcodes() {
+            if (!confirm('This will clear all returns history and restore all previously returned barcodes to "sold" state.\n\nUse this only to fix stuck barcodes. Continue?')) return;
+            window._returnedBarcodes = {};
+            const update = {};
+            update['jewelryData/config/returnedBarcodes'] = null; // delete node from Firebase
+            window.dbSafeUpdate(update)
+                .then(() => {
+                    _returnSessionLog = [];
+                    _renderReturnLog();
+                    alert('✅ Returns history cleared. Barcodes are back to sold state — you can now re-add them via Item Returns.');
+                })
+                .catch(() => alert('⚠️ Cleared locally but Firebase sync failed. Try again when online.'));
+        }
+        window.clearAllReturnedBarcodes = clearAllReturnedBarcodes;
         // =============================================
         // === END RETURNS SECTION =====================
         // =============================================
@@ -7450,6 +7465,14 @@
         </div>
 
         <button onclick="showSection('main')" style="margin-top:10px;">← Back to Main</button>
+
+        <div style="margin-top:24px; border-top:1px solid #e0e0e0; padding-top:16px;">
+            <div style="font-size:12px; color:#aaa; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Danger Zone</div>
+            <button onclick="clearAllReturnedBarcodes()" style="background:#fff3e0; color:#e65100; border:1.5px solid #FF9800; border-radius:10px; padding:10px 16px; font-size:13px; font-weight:700; cursor:pointer; width:100%; box-shadow:none;">
+                🗑️ Clear All Returns History (fix stuck barcodes)
+            </button>
+            <div style="font-size:11px; color:#bbb; margin-top:6px; text-align:center;">Use this if a barcode shows "already in stock" incorrectly</div>
+        </div>
     </div>
     <!-- ==================== END RETURNS SECTION ==================== -->
 
