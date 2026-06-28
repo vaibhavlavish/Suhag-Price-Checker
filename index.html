@@ -5196,6 +5196,7 @@
                               - oldGoldItems.reduce((s, i) => s + i.value, 0);
                 if (cart.length === 0 || cartAdjustment > newBase) {
                     cartAdjustment = 0;
+                    _resetAdjustFields();
                 }
                 localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
                 updateCartIcon();
@@ -5229,6 +5230,7 @@
             showCustomConfirm('Clear the entire cart? This cannot be undone.', 'Confirm Clear Cart', () => {
                 cart = [];
                 cartAdjustment = 0;
+                _resetAdjustFields();
                 localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
                 updateCartIcon();
                 openCart();
@@ -5975,6 +5977,15 @@
             openCart();
         }
 
+        function _resetAdjustFields() {
+            cartAdjustment = 0;
+            _exactDiscFromFinal = null;
+            document.getElementById('adjust-discount').value = '';
+            document.getElementById('adjust-final').value = '';
+            const panel = document.getElementById('adjust-panel');
+            if (panel) panel.style.display = 'none';
+        }
+
 
         // =============================================
         // === CAMERA BARCODE SCANNER ==================
@@ -6521,6 +6532,7 @@
 
             // At this point local cache is up to date — safe to clear session state.
             cart = []; oldGoldItems = []; cartAdjustment = 0;
+            _resetAdjustFields();
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
             localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
             updateCartIcon();
