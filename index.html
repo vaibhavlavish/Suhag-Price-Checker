@@ -3284,10 +3284,24 @@
 
         // Delete a single bill record from Firebase + local
         function _deleteBillRecord(id, onDone) {
+            // Before removing, collect barcodes from this bill that are in returnedBarcodes
+            const deletedBill = billHistory.find(b => String(b.id) === String(id));
             billHistory = billHistory.filter(b => String(b.id) !== String(id));
             _persistLocalCache();
             const update = {};
             update[`jewelryData/billHistory/${id}`] = null;
+            // Clean up returnedBarcodes for items that were in this bill
+            if (deletedBill && window._returnedBarcodes) {
+                (deletedBill.items || []).forEach(item => {
+                    if (item && item.barcode) {
+                        const bc = String(item.barcode).trim().toUpperCase();
+                        if (window._returnedBarcodes[bc]) {
+                            delete window._returnedBarcodes[bc];
+                            update[`jewelryData/config/returnedBarcodes/${bc}`] = null;
+                        }
+                    }
+                });
+            }
             window.dbSafeUpdate(update)
                 .then(() => { if (onDone) onDone(); })
                 .catch(e => { console.error('[Bill] delete failed', e); if (onDone) onDone(); });
@@ -6548,9 +6562,11 @@
             if (billHistory.length === 0) { showCustomAlert('No history to clear.'); return; }
             if (!checkPin()) return;
             showCustomConfirm('Delete all bill history? This cannot be undone.', 'Clear History', () => {
-                // Build delete map for every bill id
                 const delObj = {};
                 billHistory.forEach(b => { delObj[`jewelryData/billHistory/${b.id}`] = null; });
+                // Also wipe all returned barcodes — they're meaningless without bills
+                delObj['jewelryData/config/returnedBarcodes'] = null;
+                window._returnedBarcodes = {};
                 billHistory = [];
                 _persistLocalCache();
                 window.dbSafeUpdate(delObj).catch(e => console.error('[Bill] clearAll failed', e));
