@@ -1795,13 +1795,13 @@
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
                     <div>
                         <label style="font-size:11px; color:#555; display:block; margin-bottom:3px;">Discount (₹)</label>
-                        <input type="number" id="adjust-discount" placeholder="e.g. 500" min="0" step="1"
+                        <input type="number" id="adjust-discount" placeholder="e.g. 500" step="1"
                                oninput="syncAdjustFromDiscount(); autoApplyAdjust();"
                                style="width:100%; padding:8px; border:1px solid #ce93d8; border-radius:8px; font-size:14px; box-sizing:border-box; background:white;">
                     </div>
                     <div>
                         <label style="font-size:11px; color:#555; display:block; margin-bottom:3px;">Final Amount (₹)</label>
-                        <input type="number" id="adjust-final" placeholder="e.g. 9500" min="0" step="1"
+                        <input type="number" id="adjust-final" placeholder="e.g. -1250" step="1"
                                oninput="syncAdjustFromFinal(); autoApplyAdjust();"
                                style="width:100%; padding:8px; border:1px solid #ce93d8; border-radius:8px; font-size:14px; box-sizing:border-box; background:white;">
                     </div>
@@ -5173,10 +5173,17 @@
                         <span>Discount:</span><span>- ₹${cartAdjustment.toFixed(2)}</span>
                     </div>
                 `;
+            } else if (cartAdjustment < 0) {
+                // Extra return given to customer (adjustment beyond old gold value)
+                summaryHtml += `
+                    <div style="display:flex; justify-content:space-between; color:#1565C0;">
+                        <span>Extra Return:</span><span>+ ₹${Math.abs(cartAdjustment).toFixed(2)}</span>
+                    </div>
+                `;
             }
             summaryHtml += `
                 <div style="display:flex; justify-content:space-between; font-size:1.2em; font-weight:bold; border-top:1px dashed #ccc; padding-top:5px; margin-top:5px;">
-                    <span>Net Payable:</span><span style="color:${cartAdjustment > 0 ? '#6a1b9a' : '#222'};">₹${netPayable.toFixed(2)}</span>
+                    <span>Net Payable:</span><span style="color:${cartAdjustment !== 0 ? '#6a1b9a' : (netPayable < 0 ? '#e53935' : '#222')};">₹${netPayable.toFixed(2)}</span>
                 </div>
             `;
 
@@ -5189,12 +5196,9 @@
         function removeFromCart(itemId) {
             showCustomConfirm('Are you sure you want to remove this item from the cart?', 'Confirm Removal', () => {
                 cart = cart.filter(item => item.id !== itemId);
-                // Safety: if the discount now exceeds what's left in the cart (or cart
-                // is empty), reset it — otherwise netPayable goes negative and checkout
-                // silently records a false refund in the ledger.
-                const newBase = cart.reduce((s, i) => s + i.finalPrice, 0)
-                              - oldGoldItems.reduce((s, i) => s + i.value, 0);
-                if (cart.length === 0 || cartAdjustment > newBase) {
+                // Safety: if cart is empty, reset adjustment.
+                // When base is negative (old gold > cart), adjustments are still valid.
+                if (cart.length === 0) {
                     cartAdjustment = 0;
                     _resetAdjustFields();
                 }
@@ -5839,12 +5843,10 @@
             const panel = document.getElementById('adjust-panel');
             const isOpen = panel.style.display !== 'none';
             if (!isOpen) {
-                // Pre-fill with current discount if any
-                document.getElementById('adjust-discount').value = cartAdjustment > 0 ? cartAdjustment : '';
-                const cartTotal = cart.reduce((s, i) => s + i.finalPrice, 0);
-                const oldGoldTotal = oldGoldItems.reduce((s, i) => s + i.value, 0);
-                const currentNet = cartTotal - oldGoldTotal;
-                document.getElementById('adjust-final').value = cartAdjustment > 0 ? (currentNet - cartAdjustment).toFixed(0) : '';
+                // Pre-fill with current adjustment if any
+                document.getElementById('adjust-discount').value = cartAdjustment !== 0 ? cartAdjustment.toFixed(2) : '';
+                const base = _getCartBase();
+                document.getElementById('adjust-final').value = cartAdjustment !== 0 ? (base - cartAdjustment).toFixed(0) : '';
             }
             panel.style.display = isOpen ? 'none' : 'block';
         }
@@ -5869,25 +5871,26 @@
             openCartWithAdjust();
         }
 
-        // Nudge final amount by ±50 (rounds down to nearest 50 first on first press)
+        // Nudge final amount by ±10 (rounds to nearest 10 first on first press)
+        // Works for negative net payable too (giving more return to customer)
         function nudgeAdjustFinal(direction) {
             const base = _getCartBase();
             const finalInput = document.getElementById('adjust-final');
             let current = parseFloat(finalInput.value);
             // If empty or invalid, start from base
             if (isNaN(current)) current = base;
-            // Snap: floor to nearest 50 then step
+            // Snap: floor to nearest 10 then step
             const floored = Math.floor(current / 10) * 10;
             let newVal;
             if (direction === -1) {
-                // Minus: if already on a multiple of 50 subtract 50, else floor to nearest 50
+                // Minus: decrease final amount (give more return / bigger discount)
                 newVal = (current === floored) ? floored - 10 : floored;
             } else {
-                // Plus: if already on a multiple of 10 add 10, else ceil to nearest 10
+                // Plus: increase final amount (give less return / smaller discount)
                 const ceiled = Math.ceil(current / 10) * 10;
                 newVal = (current === ceiled) ? ceiled + 10 : ceiled;
             }
-            newVal = Math.max(0, newVal);
+            // No lower bound — negative final means customer gets more return
             finalInput.value = newVal.toFixed(0);
             syncAdjustFromFinal();
             autoApplyAdjust();
@@ -5907,7 +5910,8 @@
             _exactDiscFromFinal = null; // user is driving from discount side
             const disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
             const base = _getCartBase();
-            document.getElementById('adjust-final').value = disc > 0 ? Math.max(0, base - disc).toFixed(0) : '';
+            // base - disc can be negative (customer gets a return): no clamping to 0
+            document.getElementById('adjust-final').value = disc > 0 ? (base - disc).toFixed(0) : '';
         }
 
         function syncAdjustFromFinal() {
@@ -5918,10 +5922,11 @@
                 return;
             }
             const base = _getCartBase();
-            const discExact = Math.max(0, base - finalVal); // exact, possibly fractional
-            _exactDiscFromFinal = discExact > 0 ? discExact : null;
-            // Show a rounded hint in the discount field (display only)
-            document.getElementById('adjust-discount').value = discExact > 0 ? discExact.toFixed(2) : '';
+            // discExact = how much we're reducing from base (can be negative if giving extra return)
+            const discExact = base - finalVal;
+            _exactDiscFromFinal = discExact !== 0 ? discExact : null;
+            // Show in discount field — negative means extra return given to customer
+            document.getElementById('adjust-discount').value = discExact !== 0 ? discExact.toFixed(2) : '';
         }
 
         // Auto-apply: called on every keystroke in the adjust inputs.
@@ -5930,7 +5935,6 @@
         function autoApplyAdjust() {
             clearTimeout(_autoApplyTimer);
             _autoApplyTimer = setTimeout(() => {
-                const base = _getCartBase();
                 if (cart.length === 0) return;
                 let disc;
                 if (_exactDiscFromFinal !== null) {
@@ -5938,7 +5942,8 @@
                 } else {
                     disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
                 }
-                if (disc < 0 || disc > base) return; // silent guard
+                // disc can be negative (giving customer extra return beyond old gold value)
+                // No upper/lower bound guard — any adjustment is valid
                 cartAdjustment = disc;
                 // Re-render just the summary (not full cart) to update Net Payable live
                 openCart();
@@ -5949,7 +5954,6 @@
         }
 
         function applyAdjust() {
-            const base = _getCartBase();
             if (cart.length === 0) { showCustomAlert('Cart is empty.'); return; }
 
             let disc;
@@ -5960,8 +5964,7 @@
                 disc = parseFloat(document.getElementById('adjust-discount').value) || 0;
             }
 
-            if (disc < 0) { showCustomAlert('Discount cannot be negative.'); return; }
-            if (disc > base) { showCustomAlert('Discount cannot exceed payable amount (₹' + base.toFixed(0) + ').'); return; }
+            // disc can be negative (giving customer extra return beyond old gold value) — no guard
             cartAdjustment = disc;
             _exactDiscFromFinal = null;
             document.getElementById('adjust-panel').style.display = 'none';
