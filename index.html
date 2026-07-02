@@ -8415,9 +8415,16 @@
             invRenderItemSettingsList();
         }
 
-        // Firebase keys can't contain . # $ [ ] / — sanitize while keeping it reversible-ish for lookups
+        // Firebase keys can't contain . # $ [ ] / — sanitize while keeping it reversible-ish for lookups.
+        // encodeURIComponent alone does NOT escape "." (it's an unreserved character), so any item
+        // name containing a period — e.g. "S PAYAL 6.5", "S PAYAL 7.5", "S PAYAL 5/5.5",
+        // "S PAYAL 8/8.5/9" — still produced a raw "." in the resulting key. Firebase then
+        // silently rejected the whole invItemSettings save for that item, which is exactly why
+        // Print Name never stuck for those items. Manually escaping "." to its percent-encoded
+        // form (%2E) fixes this; decodeURIComponent() on load correctly turns %2E back into "."
+        // since it decodes any valid percent-triplet, not just the ones it itself produced.
         function invFirebaseKey(name) {
-            return encodeURIComponent(name);
+            return encodeURIComponent(name).replace(/\./g, '%2E');
         }
 
         function invEscAttr(s) {
@@ -8649,7 +8656,7 @@
             // Printed on its own smaller italic line right under the item name —
             // there isn't room to fit it on the same line.
             if (r.huid) {
-                out += '<br><span style="font-size:8px;font-style:italic;color:#555;">' + invEscH(r.huid) + '</span>';
+                out += '<br><span style="font-size:8px;font-style:italic;color:#000;">' + invEscH(r.huid) + '</span>';
             }
             return out;
         }
@@ -9556,7 +9563,16 @@ const badge = '';
             const t = inv.totals || {};
             document.getElementById('inv-bill-modal-title').textContent = inv.billNo;
 
-            const outstanding = Math.max(0, (t.rounded||0) - (inv.receipt||0));
+            // Old jewellery (exchange) value taken against this bill — lives in inv.ogItems,
+            // not on inv.totals, so earlier history-detail code never subtracted it.
+            const ogTotal = (inv.ogItems || []).reduce((s,i) => s + (i.value||0), 0);
+            // Prefer the outstanding figure saved at bill-creation time (t.outstanding) —
+            // it already correctly accounts for old jewellery. Older bills saved before that
+            // field existed fall back to a manual calc that also subtracts old jewellery,
+            // instead of the previous buggy version which ignored it entirely and showed a
+            // false "Outstanding" balance whenever old jewellery had been exchanged.
+            const outstanding = (t.outstanding != null) ? t.outstanding
+                : Math.max(0, (t.rounded||0) - ogTotal - (inv.receipt||0));
             document.getElementById('inv-bill-modal-body').innerHTML = `
                 <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">${dt} · ${invEscH(inv.custName)}</div>
                 <div style="background:#f8f8f8;border-radius:10px;padding:12px;margin-bottom:12px;">
@@ -9564,6 +9580,8 @@ const badge = '';
                     <span>${invEscH(r.desc)}</span><span style="font-weight:700;">₹${invTaxableVal(r).toFixed(2)}</span>
                   </div>`).join('')}
                 </div>
+                ${t.disc>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#ff8a65;margin-bottom:6px;"><span>Discount</span><span>-₹${t.disc.toFixed(2)}</span></div>`:''}
+                ${ogTotal>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#8d6e63;margin-bottom:6px;"><span>Old Jewellery</span><span>-₹${ogTotal.toFixed(2)}</span></div>`:''}
                 ${t.rounded?`<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;margin-bottom:6px;"><span>Net Amount</span><span>₹${t.rounded}</span></div>`:''}
                 ${inv.receipt?`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);"><span>Receipt</span><span>₹${inv.receipt}</span></div>`:''}
                 ${outstanding>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#c00;font-weight:700;"><span>Outstanding</span><span>₹${outstanding}</span></div>`:''}
