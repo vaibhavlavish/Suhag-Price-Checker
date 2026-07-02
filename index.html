@@ -2683,8 +2683,137 @@
         };
 
         const FACTORY_PRESETS = [
-            { id: 'preset_veetla', name: 'Veetla', metal: 'Silver', stamp: 'S7', makingType: '%', makingValue: 50 }
+            { id: 'preset_veetla', name: 'Veetla', metal: 'Silver', stamp: 'S7', makingType: '%', makingValue: 50 },
+            { id: 'e0e1ed20-8e07-4d6d-af81-85654430051f', name: 'Nosepin', metal: 'Gold', stamp: '18K', makingType: '%', makingValue: 35 }
         ];
+
+        // Invoice: Terms & Conditions footer text
+        const FACTORY_INV_TANDC = "1. Used ornaments will not be changed.\n2. Breakage/diamond fittings are not guaranteed.\n Repairs will be charged extra.";
+
+        // Invoice: bill number format (literal prefix + starting number)
+        const FACTORY_INV_BILL_PREFIX = 'SJ-000';
+        const FACTORY_INV_BILL_START  = 1;
+
+        // Invoice: which stamps get printed beside the item name (default ON unless listed here as false)
+        const FACTORY_INV_STAMP_TOGGLE = { 'S7': false, 'S92': false };
+
+        // Payment: UPI IDs for checkout QR (up to 4, first is default)
+        const FACTORY_UPI_IDS = [
+            { name: 'Gpay', upi: 'stk-9898631921@okbizaxis' },
+            { name: 'Phonepe', upi: '7069895189-2@ybl' }
+        ];
+
+
+        // Invoice: per-item print-name / HSN overrides
+        const FACTORY_INV_ITEM_SETTINGS = {
+            "1G ORNAMENT": { hsn: "7117", printName: "" },
+            "G BALI": { hsn: "", printName: "Gold Bali" },
+            "G BANGELS": { hsn: "", printName: "Gold Bangles" },
+            "G BRACLETE": { hsn: "", printName: "Gold Bracelet" },
+            "G CHAIN": { hsn: "", printName: "Gold Chain" },
+            "G DOKYA": { hsn: "", printName: "Gold Dokya" },
+            "G EARRING": { hsn: "", printName: "Gold Earrings" },
+            "G MANGALSUTRA": { hsn: "", printName: "Gold Mangalsutra" },
+            "G MS PENDENT": { hsn: "", printName: "Gold MS Pendant" },
+            "G PENDANT": { hsn: "", printName: "Gold Pendant" },
+            "G RING": { hsn: "", printName: "Gold Ring" },
+            "G SOYDORA": { hsn: "", printName: "Gold Soydora" },
+            "S BANGLE": { hsn: "", printName: "Silver Bangles" },
+            "S BRACELET A": { hsn: "", printName: "Silver Bracelet" },
+            "S BRACELET B": { hsn: "", printName: "Silver Bracelet" },
+            "S BRACELET C": { hsn: "", printName: "Silver Bracelet" },
+            "S BRACELET D": { hsn: "", printName: "Silver Bracelet" },
+            "S BRACELET E": { hsn: "", printName: "Silver Bracelet" },
+            "S CHAIN A": { hsn: "", printName: "Silver Chain" },
+            "S CHAIN B": { hsn: "", printName: "Silver Chain" },
+            "S CHAIN C": { hsn: "", printName: "Silver Chain" },
+            "S CHAIN D": { hsn: "", printName: "Silver Chain" },
+            "S DOKYA": { hsn: "", printName: "Silver Dokya" },
+            "S DOKYA WT": { hsn: "", printName: "Silver Mangalsutra" },
+            "S EARRING": { hsn: "", printName: "Silver Earrings" },
+            "S KADA": { hsn: "", printName: "Silver Kada" },
+            "S KADLA": { hsn: "", printName: "Silver Kadla" },
+            "S MALA": { hsn: "", printName: "Silver Mala" },
+            "S MALA WT": { hsn: "", printName: "Silver Mala" },
+            "S MANGALSUTRA": { hsn: "", printName: "Silver Mangalsutra" },
+            "S PAYAL 5/5.5": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL 6": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL 6.5": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL 7": { hsn: "", printName: "Silver payal" },
+            "S PAYAL 7.5": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL 8/8.5/9": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL A": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL B": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL C": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL D": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL E": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL F": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL FANCY": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL G": { hsn: "", printName: "Silver Payal" },
+            "S PAYAL H": { hsn: "", printName: "Silver Payal" },
+            "S PENDANT": { hsn: "", printName: "Silver Pendant" },
+            "S RING": { hsn: "", printName: "Silver Ring" },
+            "S SANKDI": { hsn: "", printName: "Silver Sankdi" }
+        };
+
+        // Stock Weight Calc: per-item packaging weight settings
+        const FACTORY_PACKAGING_WEIGHTS = {
+            "925 BANGALS": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "925 BRACLETE": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "925 CHAIN": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "925 EARRING": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "925 KADA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "925 MANGALSUTRA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "925 PENDANT": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "925 RING": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "G BALI": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
+            "G BANGELS": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
+            "G BRACLETE": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
+            "G CHAIN": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
+            "G DOKYA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
+            "G EARRING": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
+            "G MANGALSUTRA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
+            "G MS PENDENT": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
+            "G PENDANT": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
+            "G RING": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
+            "G SOYDORA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
+            "S BANGLE": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S BRACELET A": { pWeight: 3.66, bWeight: 140, extraBag: 0, hidden: false },
+            "S BRACELET B": { pWeight: 3.66, bWeight: 140, extraBag: 0, hidden: false },
+            "S BRACELET C": { pWeight: 3.66, bWeight: 239, extraBag: 0, hidden: false },
+            "S BRACELET D": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S BRACELET E": { pWeight: 3.66, bWeight: 270, extraBag: 0, hidden: false },
+            "S CHAIN A": { pWeight: 7.94, bWeight: 412, extraBag: 0, hidden: false },
+            "S CHAIN B": { pWeight: 7.94, bWeight: 361, extraBag: 8, hidden: false },
+            "S CHAIN C": { pWeight: 7.94, bWeight: 370, extraBag: 0, hidden: false },
+            "S CHAIN D": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S DOKYA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S DOKYA WT": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S EARRING": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S KADA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S KADLA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S MALA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S MALA WT": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S MANGALSUTRA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S PAYAL 5_5_5": { pWeight: 5.85, bWeight: 265, extraBag: 0, hidden: false },
+            "S PAYAL 6": { pWeight: 5.85, bWeight: 259, extraBag: 0, hidden: false },
+            "S PAYAL 6_5": { pWeight: 5.85, bWeight: 259, extraBag: 0, hidden: false },
+            "S PAYAL 7": { pWeight: 5.85, bWeight: 264, extraBag: 0, hidden: false },
+            "S PAYAL 7_5": { pWeight: 5.85, bWeight: 258, extraBag: 0, hidden: false },
+            "S PAYAL 8_8_5_9": { pWeight: 5.85, bWeight: 0, extraBag: 24, hidden: false },
+            "S PAYAL A": { pWeight: 11.55, bWeight: 377, extraBag: 0, hidden: false },
+            "S PAYAL B": { pWeight: 11.55, bWeight: 348, extraBag: 0, hidden: false },
+            "S PAYAL C": { pWeight: 11.55, bWeight: 422, extraBag: 0, hidden: false },
+            "S PAYAL D": { pWeight: 11.55, bWeight: 366, extraBag: 0, hidden: false },
+            "S PAYAL E": { pWeight: 11.55, bWeight: 0, extraBag: 0, hidden: false },
+            "S PAYAL F": { pWeight: 11.55, bWeight: 0, extraBag: 8, hidden: false },
+            "S PAYAL FANCY": { pWeight: 11.55, bWeight: 0, extraBag: 8, hidden: false },
+            "S PAYAL G": { pWeight: 11.55, bWeight: 374, extraBag: 0, hidden: false },
+            "S PAYAL H": { pWeight: 11.55, bWeight: 389, extraBag: 0, hidden: false },
+            "S PENDANT": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S RING": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
+            "S SANKDI": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true }
+        };
 
         const FACTORY_PROFILES = [
             { id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 },
@@ -2747,6 +2876,59 @@
                     seen.add(p.id);
                     return true;
                 });
+            }
+
+            // Invoice T&C footer text
+            if (!invTandC || !invTandC.trim()) {
+                invTandC = FACTORY_INV_TANDC;
+                if (window._writeAllowed) window.dbSafeUpdate({ 'jewelryData/config/invTandC': invTandC });
+            }
+            // Per-item invoice print-name / HSN overrides
+            if (!invItemSettings || Object.keys(invItemSettings).length === 0) {
+                invItemSettings = JSON.parse(JSON.stringify(FACTORY_INV_ITEM_SETTINGS));
+                if (window._writeAllowed) {
+                    const encoded = {};
+                    for (const k in invItemSettings) encoded[invFirebaseKey(k)] = invItemSettings[k];
+                    window.dbSafeUpdate({ 'jewelryData/config/invItemSettings': encoded });
+                }
+            }
+            // Stamp print toggle (which stamps print beside the item name)
+            if (!invStampPrintToggle || Object.keys(invStampPrintToggle).length === 0) {
+                invStampPrintToggle = JSON.parse(JSON.stringify(FACTORY_INV_STAMP_TOGGLE));
+                if (window._writeAllowed) {
+                    const encoded = {};
+                    for (const k in invStampPrintToggle) encoded[invFirebaseKey(k)] = invStampPrintToggle[k];
+                    window.dbSafeUpdate({ 'jewelryData/config/invStampPrintToggle': encoded });
+                }
+            }
+            // UPI IDs for checkout QR
+            if (!shopUpiIds || shopUpiIds.length === 0) {
+                shopUpiIds = JSON.parse(JSON.stringify(FACTORY_UPI_IDS));
+                shopUpiId = shopUpiIds[0] ? shopUpiIds[0].upi : '';
+                localStorage.setItem('suhagUpiIds', JSON.stringify(shopUpiIds));
+                localStorage.setItem('suhagUpiId', shopUpiId);
+                if (window._writeAllowed) {
+                    window.dbSafeUpdate({ 'jewelryData/config/upiIds': shopUpiIds, 'jewelryData/config/upiId': shopUpiId });
+                }
+            }
+            // Bill number format (prefix + start number) — only fill when still at the
+            // hardcoded literal default, i.e. nothing has come from cloud/localStorage.
+            if (typeof invoiceSettings !== 'undefined') {
+                if (!invoiceSettings.invPrefix || invoiceSettings.invPrefix === 'SJ-') {
+                    invoiceSettings.invPrefix = FACTORY_INV_BILL_PREFIX;
+                    localStorage.setItem('invBillPrefix', invoiceSettings.invPrefix);
+                }
+                if (!invoiceSettings.invStartNumber) {
+                    invoiceSettings.invStartNumber = FACTORY_INV_BILL_START;
+                    localStorage.setItem('invBillStartNumber', String(invoiceSettings.invStartNumber));
+                }
+            }
+            // Stock Weight Calc packaging weights
+            if (!packagingWeights || Object.keys(packagingWeights).length === 0) {
+                packagingWeights = JSON.parse(JSON.stringify(FACTORY_PACKAGING_WEIGHTS));
+                if (window._writeAllowed) {
+                    window.dbSafeUpdate({ 'jewelryData/config/packagingWeights': packagingWeights });
+                }
             }
         }
         // ============================================================
@@ -6731,7 +6913,7 @@
         // to the main active format until the user picks one explicitly.
         // ══════════════════════════════════════════════════════════
         function invGetCheckoutFormat() {
-            return localStorage.getItem('invCheckoutFormat') || invGetActiveFormat();
+            return localStorage.getItem('invCheckoutFormat') || 'invoice2';
         }
 
         function invSetCheckoutFormat(fmt) {
