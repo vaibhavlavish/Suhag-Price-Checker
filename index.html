@@ -2960,6 +2960,7 @@
         let cart = [];
         // NEW: Global for current loose calculation
         let currentLooseItem = null;
+        let currentLoosePresetName = null; // name of the loose preset currently applied, if any (cleared on manual override)
         // NEW: Global for Old Gold Items
         let oldGoldItems = [];
         let cartAdjustment = 0;
@@ -3747,6 +3748,7 @@
                 document.getElementById('loose-calculator').style.display = 'flex';
                 document.querySelector('#taskbar button[onclick="showSection(\'loose-calculator\')"]').classList.add('active');
                 setLooseDefaults();
+                applyDefaultLoosePreset();
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
@@ -4136,6 +4138,14 @@
         }
         // =============== END STOCK WEIGHT CALCULATOR ===============
 
+        // A stamped item (has a metal purity stamp, e.g. 916/22K) is always priced by
+        // weight × rate + making — MRP is only meant for non-stamped/fixed-price items
+        // (e.g. loose stones, findings). If an Excel row has both a stamp AND an MRP
+        // figure, the stamp wins and MRP is ignored for pricing purposes.
+        function _productUsesMrp(d) {
+            return !!(d && d.mrp > 0 && !d.stamp);
+        }
+
         function calcProductFinalPrice(barcode) {
             const d = productData[barcode];
             if (!d) return null;
@@ -4143,7 +4153,7 @@
             const otherCharge = d.otherCharge || 0;
             const weight = d.netWeight || 0;
 
-            if (d.mrp > 0) {
+            if (_productUsesMrp(d)) {
                 const total = d.mrp + otherCharge;
                 final = total + total * (taxRate / 100);
                 return { final, makingType: 'MRP', makingInput: d.mrp };
@@ -4468,6 +4478,7 @@
         function setLooseDefaults() {
             // Hide the active preset display whenever reverting to defaults
             document.getElementById('loose-active-preset').style.display = 'none';
+            currentLoosePresetName = null;
             if (!looseDefaultsCloud?.metal) {
                 applyFactoryDefaults();
             }
@@ -4569,6 +4580,7 @@
         function updateLooseInputs() {
             // Hide the preset badge if we manually override settings
             document.getElementById('loose-active-preset').style.display = 'none';
+            currentLoosePresetName = null;
             const newMetal = document.getElementById('modal-loose-metal-select').value;
             const newStamp = document.getElementById('modal-loose-stamp-select').value;
             const newMaking = parseFloat(document.getElementById('modal-loose-making-percent').value);
@@ -4597,6 +4609,7 @@
             if (!checkPin()) return;
             // Clear active preset flag since these are now just normal defaults
             document.getElementById('loose-active-preset').style.display = 'none';
+            currentLoosePresetName = null;
             const newMetal = document.getElementById('modal-loose-metal-select').value;
             const newStamp = document.getElementById('modal-loose-stamp-select').value;
             const newMakingRaw = document.getElementById('modal-loose-making-percent').value;
@@ -4713,7 +4726,8 @@
                 finalPrice: finalPrice,
                 metal: metal, stamp: stamp,
                 rate: rate, makingType: makingType, makingValue: makingValue,
-                subtotal: subtotal, taxRateApplied: taxRate
+                subtotal: subtotal, taxRateApplied: taxRate,
+                presetName: currentLoosePresetName || null // printed on the invoice if present
             };
         }
 
@@ -4866,22 +4880,34 @@
             });
         }
 
+        function applyPreset(preset) {
+            document.getElementById('loose-metal-select').value = preset.metal;
+            document.getElementById('loose-stamp-select').value = preset.stamp;
+            document.getElementById('loose-making-type').value = preset.makingType;
+            document.getElementById('loose-making-percent').value = preset.makingValue;
+
+            // Update display text
+            document.getElementById('loose-current-selection').textContent = `Selected: ${preset.metal} ${preset.stamp}`;
+            // --- UPDATE THE PRESET NAME UI ---
+            const presetBadge = document.getElementById('loose-active-preset');
+            presetBadge.textContent = `★ ${preset.name}`;
+            presetBadge.style.display = 'block';
+            currentLoosePresetName = preset.name; // carried onto the invoice item so it can be printed
+        }
+
+        // Auto-selects the "Nosepin" preset (case-insensitive) as the default whenever
+        // the Loose menu is opened, if such a preset exists. Falls back silently to the
+        // normal cloud/factory defaults (already applied by setLooseDefaults) otherwise.
+        function applyDefaultLoosePreset() {
+            const nosepin = (loosePresets || []).find(p => (p.name || '').trim().toLowerCase() === 'nosepin');
+            if (nosepin) applyPreset(nosepin);
+        }
+
         function loadPreset(id) {
             // No PIN needed to load/use a preset
             const preset = loosePresets.find(p => p.id === id);
             if (preset) {
-                document.getElementById('loose-metal-select').value = preset.metal;
-                document.getElementById('loose-stamp-select').value = preset.stamp;
-                document.getElementById('loose-making-type').value = preset.makingType;
-                document.getElementById('loose-making-percent').value = preset.makingValue;
-
-                // Update display text
-                document.getElementById('loose-current-selection').textContent = `Selected: ${preset.metal} ${preset.stamp}`;
-                // --- UPDATE THE PRESET NAME UI ---
-                const presetBadge = document.getElementById('loose-active-preset');
-                presetBadge.textContent = `★ ${preset.name}`;
-                presetBadge.style.display = 'block';
-
+                applyPreset(preset);
                 calculateLoosePrice();
                 closeModal('preset-modal');
                 showCustomAlert(`Loaded: ${preset.name}`);
@@ -4954,7 +4980,7 @@
 
             // Initial update of product info display (Name/Barcode)
             updateMainDisplayInfo();
-            if (d.mrp > 0) {
+            if (_productUsesMrp(d)) {
                 let total = d.mrp + otherCharge;
                 currentTaxAmount = total * (taxRate / 100);
                 final = total + currentTaxAmount;
@@ -5281,7 +5307,7 @@
                 <p><strong>N. Wt.:</strong> <span>${d.netWeight.toFixed(2)}g</span></p>
                 <p><strong>Other Charge:</strong> <span>${(d.otherCharge || 0).toFixed(2)}</span></p>
             `;
-            if (d.mrp > 0) {
+            if (_productUsesMrp(d)) {
                 html += `
                     <p><strong>Type:</strong> <span>Fixed Rate</span></p>
                     <p><strong>Rate:</strong> <span>${d.mrp.toFixed(2)}</span></p>
@@ -6816,9 +6842,12 @@
                 const receipt = Math.max(0, Math.round(netPayable));
                 const outstanding = 0; // checkout bills are paid in full at confirmation
 
-                // Track B mirrors Track A's last bill number + 1 (can repeat across
-                // multiple Track B bills until Track A moves forward) — see _invNextBillNo.
-                const billNo = _invNextBillNo('B');
+                // Bill number continues whichever track checkout is currently filing
+                // under — see invGetCheckoutTrack(); Track B mirrors Track A's last bill
+                // number + 1 (can repeat across multiple Track B bills until Track A
+                // moves forward) — see _invNextBillNo.
+                const checkoutTrack = invGetCheckoutTrack();
+                const billNo = _invNextBillNo(checkoutTrack);
 
                 const paymentDetails = paymentMode === 'partial' ? (paymentSplit || {}) : {};
 
@@ -6827,7 +6856,7 @@
 
                 const record = {
                     id: crypto.randomUUID(),
-                    track: 'B',
+                    track: checkoutTrack,
                     billNo, timestamp: new Date().toISOString(),
                     custName: (cartCustomer && cartCustomer.name) || '—',
                     custMob: (cartCustomer && cartCustomer.mobile) || '',
@@ -6914,6 +6943,35 @@
         // ══════════════════════════════════════════════════════════
         function invGetCheckoutFormat() {
             return localStorage.getItem('invCheckoutFormat') || 'invoice2';
+        }
+
+        // ══════════════════════════════════════════════════════════
+        // CHECKOUT INVOICE TRACK — which track (A or B) checkout-generated invoices
+        // are filed under. Defaults to Track B (the original behaviour). Switched via
+        // a hidden 5-tap gesture on the Invoice Settings heading — see
+        // invHandleSettingsHeadingTap().
+        // ══════════════════════════════════════════════════════════
+        function invGetCheckoutTrack() {
+            const t = localStorage.getItem('invCheckoutTrack');
+            return (t === 'A' || t === 'B') ? t : 'B';
+        }
+
+        function invSetCheckoutTrack(track) {
+            localStorage.setItem('invCheckoutTrack', track);
+        }
+
+        let _invSettingsTapCount = 0, _invSettingsTapTimer = null;
+        function invHandleSettingsHeadingTap() {
+            _invSettingsTapCount++;
+            clearTimeout(_invSettingsTapTimer);
+            _invSettingsTapTimer = setTimeout(() => { _invSettingsTapCount = 0; }, 1500);
+            if (_invSettingsTapCount >= 5) {
+                _invSettingsTapCount = 0;
+                clearTimeout(_invSettingsTapTimer);
+                const next = invGetCheckoutTrack() === 'B' ? 'A' : 'B';
+                invSetCheckoutTrack(next);
+                invToast(next === 'A' ? '🔒 Checkout billing → Track A' : '🔓 Checkout billing → Track B');
+            }
         }
 
         function invSetCheckoutFormat(fmt) {
@@ -7008,9 +7066,12 @@
             const homeState = INV_STATES.find(s => s[0] === invoiceSettings.homeStateCode);
             const state = homeState ? `${homeState[1]} (${homeState[0]})` : invoiceSettings.homeStateCode;
 
-            // Track B mirrors Track A's last bill number + 1 (can repeat across
-            // multiple Track B bills until Track A moves forward) — see _invNextBillNo.
-            const billNo = _invNextBillNo('B');
+            // Bill number continues whichever track checkout is currently filing
+            // under — see invGetCheckoutTrack(); Track B mirrors Track A's last bill
+            // number + 1 (can repeat across multiple Track B bills until Track A
+            // moves forward) — see _invNextBillNo.
+            const checkoutTrackC = invGetCheckoutTrack();
+            const billNo = _invNextBillNo(checkoutTrackC);
 
             const d = new Date();
             const dateDisp = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
@@ -7206,7 +7267,7 @@
 
             const record = {
                 id: crypto.randomUUID(),
-                track: 'B',
+                track: checkoutTrackC,
                 billNo, timestamp: new Date().toISOString(),
                 custName, custMob, custAddr, state,
                 items: rows,
@@ -7508,12 +7569,12 @@
             let final = 0, making = 0;
             const otherCharge = d.otherCharge || 0;
             const weight = parseFloat(d.netWeight) || 0;
-            if (!d.mrp && weight === 0) {
+            if (!_productUsesMrp(d) && weight === 0) {
                 showCustomAlert('Item has no weight: ' + barcode);
                 input.value = '';
                 return;
             }
-            if (d.mrp > 0) {
+            if (_productUsesMrp(d)) {
                 final = d.mrp + otherCharge + (d.mrp + otherCharge) * (taxRate / 100);
             } else {
                 const mKey = d.metal, stamp = d.stamp;
@@ -8227,6 +8288,7 @@
         let invOgItems = []; // invoice-screen own old-jewellery entries [{desc,value,id}]
         let invPrintHtml = '';
         let currentInvTrack = 'A'; // 'A' or 'B'
+        let invEditingId = null; // set by invReloadBill() when editing an existing invoice; save paths reuse this id instead of minting a new record
         let invTrackBUnlocked = false;
 
         // ── Shared bill-number helper ──
@@ -8765,7 +8827,7 @@
         }
 
         function invMakingFromProduct(d) {
-            if (d.mrp > 0)           return { makingType:'mrp', makingPct: d.mrp };
+            if (_productUsesMrp(d))  return { makingType:'mrp', makingPct: d.mrp };
             if (d.makingPerPc > 0)   return { makingType:'per_pc', makingPct: d.makingPerPc };
             if (d.makingWastage > 0) return { makingType:'wastage', makingPct: d.makingWastage };
             if (d.makingPerGram > 0) return { makingType:'per_g', makingPct: d.makingPerGram };
@@ -9082,6 +9144,10 @@
                     };
                 }
                 if (item.type === 'loose') {
+                    // If this item was added using a saved preset (e.g. "Nosepin"), print
+                    // the preset name alongside the item description so it's traceable on
+                    // the invoice.
+                    const looseDesc = item.presetName || (item.itemName || 'Loose Jewellery');
                     // Loose items are real weight × rate + a real making charge — NOT a flat
                     // MRP figure, and the invoice should show the SAME making type/value the
                     // user actually picked on the loose screen (%, ₹/g, ₹/pc), not a disguised
@@ -9095,7 +9161,7 @@
                         const typeMap = { '%':'%', per_g:'per_g', per_pc:'per_pc' };
                         if (typeMap[item.makingType]) {
                             return {
-                                desc: item.itemName || 'Loose Jewellery',
+                                desc: looseDesc,
                                 hsn: '7113', pc: 1,
                                 grWt: parseFloat((item.weight || 0).toFixed(3)),
                                 nlWt: parseFloat((item.weight || 0).toFixed(3)),
@@ -9110,7 +9176,7 @@
                         const metalVal = (item.weight || 0) * (item.rate || 0);
                         const makingAmt = Math.max(0, (item.subtotal || 0) - metalVal);
                         return {
-                            desc: item.itemName || 'Loose Jewellery',
+                            desc: looseDesc,
                             hsn: '7113', pc: 1,
                             grWt: parseFloat((item.weight || 0).toFixed(3)),
                             nlWt: parseFloat((item.weight || 0).toFixed(3)),
@@ -9127,7 +9193,7 @@
                     const legacyTaxFrac = (invoiceSettings.taxRate || 0) / 100;
                     const legacySubtotal = (item.finalPrice || 0) / (1 + legacyTaxFrac);
                     return {
-                        desc: item.itemName || 'Loose Jewellery',
+                        desc: looseDesc,
                         hsn: '7113', pc: 1,
                         grWt: parseFloat((item.weight || 0).toFixed(3)),
                         nlWt: parseFloat((item.weight || 0).toFixed(3)),
@@ -9430,11 +9496,15 @@
             <div style="padding-top:2mm;text-align:center;font-size:8px;color:#000;letter-spacing:.04em;">Thank you for shopping with us</div>
             </div></div></body></html>`;
 
-            // Store record as pending — will be saved only when printing completes
+            // Store record as pending — will be saved only when printing completes.
+            // If editing an existing invoice, reuse its id/timestamp so the completed
+            // print updates that record in place instead of creating a duplicate.
+            const _pendIsEdit = !!(invEditingId && invoiceHistory.some(i => i.id === invEditingId));
+            const _pendExisting = _pendIsEdit ? invoiceHistory.find(i => i.id === invEditingId) : null;
             window._invPendingRecord = {
-                id: crypto.randomUUID(),
+                id: _pendIsEdit ? invEditingId : crypto.randomUUID(),
                 track: currentInvTrack,
-                billNo, timestamp: new Date().toISOString(),
+                billNo, timestamp: _pendExisting ? _pendExisting.timestamp : new Date().toISOString(),
                 custName, custMob, custAddr, custGstin, state,
                 items: invRows.map(r => ({...r})),
                 ogItems: invOgItems.map(r => ({...r})),
@@ -9442,6 +9512,8 @@
                 receipt, draft: false,
                 paymentMethod, paymentDetails
             };
+            window._invPendingIsEdit = _pendIsEdit;
+            if (_pendIsEdit) window._invPendingRecord.editedAt = new Date().toISOString();
 
             if (skipPreviewModal) return;
 
@@ -9478,12 +9550,20 @@
                 if (!saved && window._invPendingRecord) {
                     saved = true;
                     var rec = window._invPendingRecord;
+                    var isEdit = !!window._invPendingIsEdit;
                     window._invPendingRecord = null;
-                    invoiceHistory.unshift(rec);
+                    window._invPendingIsEdit = false;
+                    if (isEdit) {
+                        invoiceHistory = invoiceHistory.map(i => i.id === rec.id ? rec : i);
+                    } else {
+                        invoiceHistory.unshift(rec);
+                    }
                     _saveInvoiceLocal();
                     _saveInvoiceRecord(rec);
-                    _invLedgerFromRecord(rec);
-                    invToast('✅ Invoice saved — ' + rec.billNo);
+                    // Only log a ledger entry for brand-new invoices — an edit would
+                    // otherwise double-count the sale in the cash ledger.
+                    if (!isEdit) _invLedgerFromRecord(rec);
+                    invToast(isEdit ? '✅ Invoice updated — ' + rec.billNo : '✅ Invoice saved — ' + rec.billNo);
                     invRenderHistory();
                     invReset(); // clear the form so the next invoice starts fresh
                 }
@@ -9539,10 +9619,16 @@
                 }
             }
 
+            // If we're editing an existing invoice (opened via invReloadBill), reuse its id
+            // and original timestamp so saving updates that record in place instead of
+            // creating a duplicate. Otherwise this is a brand-new invoice.
+            const isEdit = !!(invEditingId && invoiceHistory.some(i => i.id === invEditingId));
+            const existing = isEdit ? invoiceHistory.find(i => i.id === invEditingId) : null;
+
             const record = {
-                id: crypto.randomUUID(),
+                id: isEdit ? invEditingId : crypto.randomUUID(),
                 track: currentInvTrack,
-                billNo, timestamp: new Date().toISOString(),
+                billNo, timestamp: existing ? existing.timestamp : new Date().toISOString(),
                 custName, custMob, custAddr, state,
                 items: invRows.map(r => ({...r})),
                 ogItems: invOgItems.map(r => ({...r})),
@@ -9550,11 +9636,19 @@
                 receipt, draft: false,
                 paymentMethod, paymentDetails
             };
-            invoiceHistory.unshift(record);
+            if (isEdit) record.editedAt = new Date().toISOString();
+
+            if (isEdit) {
+                invoiceHistory = invoiceHistory.map(i => i.id === invEditingId ? record : i);
+            } else {
+                invoiceHistory.unshift(record);
+            }
             _saveInvoiceLocal();
             _saveInvoiceRecord(record);
-            _invLedgerFromRecord(record);
-            invToast('✅ Invoice saved — ' + billNo);
+            // Only log a ledger entry for brand-new invoices — an edit would otherwise
+            // double-count the sale (and possibly the payment) in the cash ledger.
+            if (!isEdit) _invLedgerFromRecord(record);
+            invToast(isEdit ? '✅ Invoice updated — ' + billNo : '✅ Invoice saved — ' + billNo);
             invReset();
         }
 
@@ -9613,6 +9707,7 @@
             invRows = [];
             invOgItems = [];
             invPrintHtml = '';
+            invEditingId = null; // clear edit-mode so the next save starts a fresh invoice
             document.getElementById('inv-cust-name').value = '';
             document.getElementById('inv-cust-mob').value = '';
             document.getElementById('inv-cust-addr').value = '';
@@ -9777,6 +9872,7 @@ const badge = '';
         function invReloadBill(id) {
             const inv = invoiceHistory.find(i => i.id === id);
             if (!inv) return;
+            invEditingId = id; // saving now updates this record in place instead of creating a new one
             invRows = (inv.items || []).map(r => ({...r}));
             invOgItems = (inv.ogItems || []).map(r => ({...r}));
             document.getElementById('inv-cust-name').value = inv.custName || '';
@@ -10436,7 +10532,7 @@ const badge = '';
     <div id="inv-settings-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:600; align-items:center; justify-content:center;">
         <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                <span style="font-size:16px; font-weight:800; color:var(--text);">⚙️ Invoice Settings</span>
+                <span onclick="invHandleSettingsHeadingTap()" style="font-size:16px; font-weight:800; color:var(--text); user-select:none;">⚙️ Invoice Settings</span>
                 <button onclick="document.getElementById('inv-settings-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
             <div style="display:flex; flex-direction:column; gap:8px;">
