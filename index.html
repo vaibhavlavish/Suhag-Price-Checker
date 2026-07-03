@@ -1597,6 +1597,16 @@
         <label for="loose-weight">Weight (Grams):</label>
         <input type="number" id="loose-weight" placeholder="Enter weight in grams" step="0.01" oninput="calculateLoosePrice()">
 
+        <div id="loose-piece-count-row" style="display:flex; align-items:center; justify-content:center; gap:10px; margin-top:8px;">
+            <span style="font-size:13px; color:#666; font-weight:600;">Pieces (for stock count):</span>
+            <button type="button" onclick="stepLoosePieceCount(-1)"
+                style="width:32px; height:32px; border-radius:50%; border:none; background:#eee; color:#333; font-size:18px; font-weight:700; cursor:pointer; line-height:1; padding:0;">−</button>
+            <input type="number" id="loose-piece-count" value="1" min="1" step="1" readonly
+                style="width:44px; text-align:center; padding:6px 4px; border:1px solid #ddd; border-radius:8px; font-size:15px; font-weight:700; box-sizing:border-box;">
+            <button type="button" onclick="stepLoosePieceCount(1)"
+                style="width:32px; height:32px; border-radius:50%; border:none; background:#eee; color:#333; font-size:18px; font-weight:700; cursor:pointer; line-height:1; padding:0;">+</button>
+        </div>
+
         <div id="loose-making-display" style="display: none;">
             Making: 35%
         </div>
@@ -2093,6 +2103,7 @@
             <div style="background-color:#e3f2fd; border:1px solid #2196F3; color:#0d47a1; padding:10px 12px; margin-bottom:10px; border-radius:8px; font-size:12px;">
                 Sold/checked-out tags are excluded automatically.
             </div>
+            <div id="stock-calc-preset-stock-wrap"></div>
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
                 <div id="stock-calc-summary" style="flex:1; background:white; border-radius:10px; padding:10px 14px; font-size:13px; color:#555; box-shadow:0 1px 4px rgba(0,0,0,0.08);"></div>
                 <button id="stock-calc-simplify-toggle-btn" onclick="toggleStockCalcSimplify()" title="Show/hide extra columns — does not change any data"
@@ -2527,6 +2538,7 @@
                 invStampPrintToggle: invStampPrintToggle || {},
                 invTandC: invTandC || '',
                 packagingWeights: packagingWeights || {},
+                presetStock: presetStock || {},
                 backupTimestamp: new Date().toISOString()
             };
             const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
@@ -2585,7 +2597,8 @@
                                 invItemSettings: jsonContent.invItemSettings || {},
                                 invStampPrintToggle: jsonContent.invStampPrintToggle || {},
                                 invTandC: jsonContent.invTandC || '',
-                                packagingWeights: jsonContent.packagingWeights || {}
+                                packagingWeights: jsonContent.packagingWeights || {},
+                                presetStock: jsonContent.presetStock || {}
                             };
 
                             if (jsonContent.activeProfileId) {
@@ -2621,6 +2634,7 @@
                                 });
                                 restoreUpdate['jewelryData/config/invStampPrintToggle'] = encodedStampToggle;
                                 restoreUpdate['jewelryData/config/packagingWeights'] = dataToRestore.packagingWeights || {};
+                                restoreUpdate['jewelryData/config/presetStock']      = dataToRestore.presetStock || {};
                                 restoreUpdate['jewelryData/products']                = dataToRestore.products || {};
                                 // Invoices
                                 (dataToRestore.invoiceHistory || []).forEach(inv => {
@@ -2943,6 +2957,9 @@
         // Stock Weight Calculator: per-category packaging weights, manually editable.
         // Keyed by item name (trimmed, uppercase) -> { pWeight, bWeight, extraBag }
         let packagingWeights = {};
+        // Manual stock counter for non-barcoded loose presets (e.g. "Nosepin").
+        // Keyed by preset name, lowercased+trimmed. { nosepin: { available: 42 } }
+        let presetStock = {};
 
         let currentProduct = null;
         let currentFinalPrice = 0;
@@ -3186,6 +3203,12 @@
             // that window — the pending save will land moments later anyway.
             if (!window._packagingWeightsDirty) {
                 packagingWeights = cloudData.packagingWeights || {};
+            }
+            // presetStock (Nosepin-style available-count tracking) — same
+            // dirty-guard pattern as packagingWeights, to avoid a snapshot
+            // arriving mid-edit and clobbering an in-flight +/- Stock change.
+            if (!window._presetStockDirty) {
+                presetStock = cloudData.presetStock || {};
             }
             looseDefaultsCloud = cloudData.looseDefaults || null;
             baseCalcDefaults = cloudData.baseCalcDefaults || {};
@@ -3533,7 +3556,7 @@
         // Save config (rates, tax, loose defaults, base calc)
         function saveConfig() {
             const dataToSave = {
-                rates, taxRate, products: productData, packagingWeights,
+                rates, taxRate, products: productData, packagingWeights, presetStock,
                 looseDefaults: looseDefaultsCloud, baseCalcDefaults,
                 presets: loosePresets, makingProfiles, billHistory, menuPrefs
             };
@@ -3541,6 +3564,7 @@
             if (!window._writeAllowed || !window.firebaseDB || !navigator.onLine) {
                 markPendingSync();
                 window._packagingWeightsDirty = false; // nothing in flight; safe to accept next snapshot
+                window._presetStockDirty = false;
                 return;
             }
             const update = {};
@@ -3549,14 +3573,15 @@
             update['jewelryData/config/looseDefaults']    = looseDefaultsCloud || null;
             update['jewelryData/config/baseCalcDefaults'] = baseCalcDefaults || {};
             update['jewelryData/config/packagingWeights'] = packagingWeights || {};
+            update['jewelryData/config/presetStock']      = presetStock || {};
             update['jewelryData/config/menuPrefs']        = menuPrefs || {};
             update['jewelryData/config/upiId']            = shopUpiId || null;
             update['jewelryData/config/upiIds']           = (shopUpiIds && shopUpiIds.length) ? shopUpiIds : null;
             update['jewelryData/products']                = productData || {};
             window.dbSafeUpdate(update)
-                .then(() => { clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false; })
+                .then(() => { clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false; window._presetStockDirty = false; })
                 .catch((err) => {
-                    markPendingSync(); window._packagingWeightsDirty = false;
+                    markPendingSync(); window._packagingWeightsDirty = false; window._presetStockDirty = false;
                     // A single invalid key anywhere in this payload (e.g. a
                     // Firebase-illegal character in an item name) aborts the
                     // WHOLE update — surface that loudly instead of failing
@@ -3626,7 +3651,7 @@
         // Write current full state to localStorage (bills+ledger+config in one shot)
         function _persistLocalCache() {
             const dataToSave = {
-                rates, taxRate, products: productData, packagingWeights,
+                rates, taxRate, products: productData, packagingWeights, presetStock,
                 looseDefaults: looseDefaultsCloud, baseCalcDefaults,
                 presets: loosePresets, makingProfiles, billHistory, menuPrefs
             };
@@ -3643,6 +3668,15 @@
         let _saveDebounceTimer = null;
         function saveAllDataToCloudDebounced() {
             window._packagingWeightsDirty = true; // guards packagingWeights against being overwritten by a stale cloud snapshot until this save lands
+            _persistLocalCache();
+            clearTimeout(_saveDebounceTimer);
+            _saveDebounceTimer = setTimeout(() => saveConfig(), 500);
+        }
+
+        // Same idea as above, but also guards presetStock (Nosepin available-count)
+        // against being clobbered by a snapshot that arrives mid-edit.
+        function savePresetStockDebounced() {
+            window._presetStockDirty = true;
             _persistLocalCache();
             clearTimeout(_saveDebounceTimer);
             _saveDebounceTimer = setTimeout(() => saveConfig(), 500);
@@ -3688,6 +3722,7 @@
                             makingProfiles = [];
                             productData    = {};
                             packagingWeights = {};
+                            presetStock    = {};
                             rates          = {};
                             taxRate        = 3;
                             localStorage.clear();
@@ -3925,6 +3960,33 @@
             return sold;
         }
 
+        // --- MANUAL STOCK TRACKING FOR NON-BARCODED LOOSE PRESETS (e.g. Nosepin) ---
+        // Keyed by preset name, lowercased+trimmed, so "Nosepin" always maps to the
+        // same record regardless of case. Only presets that already have a record
+        // here (i.e. someone has tapped "+ Add Stock" on them at least once) show
+        // up as a tracked stock card in Stock Weight Calc.
+        function _presetStockKey(name) {
+            return (name || '').trim().toLowerCase();
+        }
+        function getPresetStock(name) {
+            const key = _presetStockKey(name);
+            if (!key) return null;
+            if (!presetStock[key]) presetStock[key] = { available: 0 };
+            if (presetStock[key].available === undefined) presetStock[key].available = 0;
+            return presetStock[key];
+        }
+        function isPresetStockTracked(name) {
+            const key = _presetStockKey(name);
+            return !!key && Object.prototype.hasOwnProperty.call(presetStock, key);
+        }
+        // Adds (or subtracts, via a negative n) to a preset's available count.
+        function adjustPresetStock(name, n) {
+            const rec = getPresetStock(name);
+            if (!rec) return;
+            rec.available += n;
+            savePresetStockDebounced();
+        }
+
         // Per-category packaging settings, created on first access and persisted.
         // Firebase RTDB keys can NEVER contain . # $ / [ ] — item names like
         // "S PAYAL 5/5.5" break this rule, and Firebase rejects the ENTIRE
@@ -4000,9 +4062,57 @@
             }
         }
 
+        // Preset names whose stock is manually tracked (non-barcoded items sold via
+        // Loose Calc presets). Add more names here later to track them the same way.
+        const TRACKED_PRESET_NAMES = ['nosepin'];
+
+        // Renders a card per tracked preset matching the currently-open metal tab
+        // (Gold/Silver) in Stock Weight Calc, with its available count and an
+        // "+ Add Stock" button. Red text when at or below zero, sale still allowed.
+        function renderPresetStockCards() {
+            const wrap = document.getElementById('stock-calc-preset-stock-wrap');
+            if (!wrap) return;
+            if (!stockCalcMetal) { wrap.innerHTML = ''; return; }
+            const matches = (loosePresets || []).filter(p =>
+                TRACKED_PRESET_NAMES.includes((p.name || '').trim().toLowerCase()) &&
+                (p.metal || '').toLowerCase() === stockCalcMetal
+            );
+            if (matches.length === 0) { wrap.innerHTML = ''; return; }
+            wrap.innerHTML = matches.map(p => {
+                const rec = getPresetStock(p.name);
+                const avail = rec.available;
+                const color = avail <= 0 ? '#f44336' : '#333';
+                return `
+                <div style="background:white; border:1px solid #eee; border-radius:10px; padding:12px 14px; margin-bottom:10px; box-shadow:0 1px 4px rgba(0,0,0,0.08); display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                    <div>
+                        <div style="font-weight:800; font-size:14px; color:#9c27b0;">📌 ${escHtml(p.name)} (Loose)</div>
+                        <div style="font-size:20px; font-weight:800; color:${color}; margin-top:2px;">Available: ${avail}</div>
+                    </div>
+                    <button onclick="promptAddPresetStock('${p.id}')" style="background:#4CAF50; color:white; border:none; border-radius:20px; padding:10px 14px; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap;">+ Add Stock</button>
+                </div>`;
+            }).join('');
+        }
+
+        function promptAddPresetStock(presetId) {
+            if (!checkPin()) return;
+            const preset = (loosePresets || []).find(p => p.id === presetId);
+            if (!preset) return;
+            const input = prompt(`Add how many ${preset.name} pieces to stock?\n(Enter a negative number to correct/reduce stock.)`, '1');
+            if (input === null) return;
+            const n = parseInt(input, 10);
+            if (isNaN(n) || n === 0) {
+                showCustomAlert('Please enter a valid non-zero whole number.');
+                return;
+            }
+            adjustPresetStock(preset.name, n);
+            renderPresetStockCards();
+            showCustomAlert(`${preset.name} stock updated: ${getPresetStock(preset.name).available} available.`);
+        }
+
         function renderStockCalc() {
             if (!stockCalcMetal) return; // nothing to render until a metal is picked
             _applyStockCalcSimplifyUI();
+            renderPresetStockCards();
             const searchVal = (document.getElementById('stock-calc-search')?.value || '').toLowerCase();
             const tbody = document.getElementById('stock-calc-tbody');
             const summary = document.getElementById('stock-calc-summary');
@@ -4727,13 +4837,28 @@
                 metal: metal, stamp: stamp,
                 rate: rate, makingType: makingType, makingValue: makingValue,
                 subtotal: subtotal, taxRateApplied: taxRate,
-                presetName: currentLoosePresetName || null // printed on the invoice if present
+                presetName: currentLoosePresetName || null, // printed on the invoice if present
+                // How many physical pieces this single weight/price entry represents —
+                // matters when e.g. 2 Nosepins are weighed together as one line.
+                // Only used for stock-count deduction, never affects price math above.
+                pieceCount: parseInt(document.getElementById('loose-piece-count').value, 10) || 1
             };
+        }
+
+        // Stepper for the "Pieces" count shown beside the weight field.
+        // Purely for stock-count purposes — does not affect price calculation.
+        function stepLoosePieceCount(delta) {
+            const el = document.getElementById('loose-piece-count');
+            let v = (parseInt(el.value, 10) || 1) + delta;
+            if (v < 1) v = 1;
+            el.value = v;
+            if (currentLooseItem) currentLooseItem.pieceCount = v; // keep in sync if price already calculated
         }
 
         function clearLooseScreen() {
             document.getElementById('loose-weight').value = '';
             document.getElementById('loose-price-display').textContent = '0.00';
+            document.getElementById('loose-piece-count').value = '1';
             document.getElementById('loose-weight').focus();
             currentLooseItem = null; // Clear stored item
         }
@@ -7398,6 +7523,16 @@
 
             // --- Record in ledger — single unified sale-entry write ---
             _recordSaleLedgerEntry(netPayable, Math.max(0, netPayable), mode, payment, 'checkout');
+
+            // --- Deduct tracked loose-preset stock (e.g. Nosepin) for this sale ---
+            // Only decrements presets that are actively tracked (someone has used
+            // "+ Add Stock" on them at least once). Untracked presets are ignored,
+            // so this never surprises the owner with a stray counter appearing.
+            cart.forEach(item => {
+                if (item && item.type === 'loose' && item.presetName && isPresetStockTracked(item.presetName)) {
+                    adjustPresetStock(item.presetName, -(item.pieceCount || 1));
+                }
+            });
 
             // At this point local cache is up to date — safe to clear session state.
             cart = []; oldGoldItems = []; cartAdjustment = 0;
