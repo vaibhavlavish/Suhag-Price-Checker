@@ -8498,6 +8498,17 @@
             if (name === 'export') invInitExportDates();
         }
 
+        // Called only when the person manually taps the "New" tab button. If an edit
+        // was left in progress (opened via invReloadBill, then abandoned without
+        // saving), this clears invEditingId first so the next save starts a genuinely
+        // fresh invoice instead of silently overwriting the invoice they were editing.
+        // invReloadBill() itself calls invSwitchTab('new') directly, bypassing this,
+        // so a real edit-in-progress is never affected.
+        function invNewTabClicked() {
+            if (invEditingId) invReset();
+            invSwitchTab('new');
+        }
+
         function isInvHomeState() {
             const sel = document.getElementById('inv-state');
             return (sel ? sel.value : invoiceSettings.homeStateCode) === invoiceSettings.homeStateCode;
@@ -8985,13 +8996,14 @@
             c.innerHTML = invRows.map((r, i) => {
                 const tv = invTaxableVal(r).toFixed(2);
                 return `<div class="item-row">
-                  <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+                  <div style="display:flex;gap:6px;align-items:center;margin-bottom:${r.barcode ? '2px' : '8px'};">
                     <input type="text" value="${invEscH(r.desc)}" placeholder="Description or barcode"
                       onchange="invDescChange(${i},this.value)"
                       style="flex:1;padding:7px 10px;font-size:13px;border:1.5px solid var(--border);border-radius:8px;margin:0;font-family:inherit;box-sizing:border-box;">
                     <button onclick="invShowItemPicker(${i})" title="Pick item from stock" style="background:#f5f5f5;color:#333;border:1.5px solid var(--border);border-radius:8px;width:32px;height:32px;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;box-shadow:none;margin:0;">💎</button>
                     <button onclick="invDelRow(${i})" style="background:var(--red);color:white;border:none;border-radius:8px;width:32px;height:32px;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;box-shadow:none;margin:0;">✕</button>
                   </div>
+                  ${r.barcode ? `<div style="font-size:10px;color:#999;font-weight:600;margin:0 0 8px 2px;">🏷️ ${invEscH(r.barcode)}</div>` : ''}
                   <div class="item-row-fields">
                     ${invNf('HSN','hsn',r.hsn,i,true)}${invNf('Pc','pc',r.pc,i)}${invNf('Gr.Wt','grWt',r.grWt,i)}${invNf('Nt.Wt','nlWt',r.nlWt,i)}${invNf('Rate/g','rate',r.rate,i)}
                   </div>
@@ -9715,6 +9727,10 @@
             document.getElementById('inv-bill-no').value = '';
             document.getElementById('inv-final-amount').value = '';
             document.getElementById('inv-receipt').value = '';
+            // Explicitly clear the date field (not just fill-if-empty) so a fresh invoice
+            // never inherits a date left over from editing a previous invoice.
+            const dateEl = document.getElementById('inv-date');
+            if (dateEl) dateEl.value = '';
             invRenderOg();
             invSetTodayDate();
             invAutoBillNo();
@@ -9854,7 +9870,7 @@ const badge = '';
                 <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">${dt} · ${invEscH(inv.custName)}</div>
                 <div style="background:#f8f8f8;border-radius:10px;padding:12px;margin-bottom:12px;">
                   ${(inv.items||[]).map(r => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;border-bottom:1px solid #eee;">
-                    <span>${invEscH(r.desc)}</span><span style="font-weight:700;">₹${invTaxableVal(r).toFixed(2)}</span>
+                    <span>${invEscH(r.desc)}${r.barcode?` <span style="color:#999;font-size:11px;font-weight:600;">(${invEscH(r.barcode)})</span>`:''}</span><span style="font-weight:700;">₹${invTaxableVal(r).toFixed(2)}</span>
                   </div>`).join('')}
                 </div>
                 ${t.disc>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#ff8a65;margin-bottom:6px;"><span>Discount</span><span>-₹${t.disc.toFixed(2)}</span></div>`:''}
@@ -9863,10 +9879,23 @@ const badge = '';
                 ${inv.receipt?`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);"><span>Receipt</span><span>₹${inv.receipt}</span></div>`:''}
                 ${outstanding>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#c00;font-weight:700;"><span>Outstanding</span><span>₹${outstanding}</span></div>`:''}
                 <div style="display:flex;gap:8px;margin-top:14px;">
+                  <button onclick="invPrintFromHistory('${id}')" style="flex:1;background:#1D6BB5;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🖨 Print</button>
                   <button onclick="invReloadBill('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="flex:1;background:var(--gold);color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">✏️ Edit / Reprint</button>
                   <button onclick="invDeleteBill('${id}')" style="flex:1;background:#ffebee;color:#c62828;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🗑 Delete</button>
                 </div>`;
             document.getElementById('inv-bill-modal').style.display = 'flex';
+        }
+
+        // One-click "Print" from the history detail modal — loads the saved invoice
+        // (same restore logic as Edit/Reprint, now correctly bringing back date,
+        // discount, and payment method) straight into the New-tab form and sends it
+        // to print immediately, without requiring the person to navigate there and
+        // press Print themselves. On completion it resaves the record in place with
+        // the same data (no duplicate, no data change) via the normal edit-save path.
+        function invPrintFromHistory(id) {
+            invReloadBill(id);
+            document.getElementById('inv-bill-modal').style.display = 'none';
+            invPrint();
         }
 
         function invReloadBill(id) {
@@ -9882,6 +9911,44 @@ const badge = '';
             document.getElementById('inv-bill-no').value = inv.billNo || '';
             document.getElementById('inv-receipt').value = inv.receipt || '';
             if (inv.state) { const s = document.getElementById('inv-state'); if (s) s.value = inv.state; }
+            // Restore the discount/final-amount field — this box holds "net after old
+            // jewellery", and if left blank invRecalc() auto-computes it fresh from the
+            // items with NO discount. Without restoring it here, reloading an invoice
+            // that had a discount applied would silently drop that discount on the next
+            // save/print.
+            const finalEl = document.getElementById('inv-final-amount');
+            if (finalEl) {
+                const ogTotalReload = (inv.ogItems || []).reduce((s,i) => s + (i.value||0), 0);
+                const roundedReload = inv.totals && inv.totals.rounded;
+                finalEl.value = (roundedReload != null) ? Math.round(roundedReload - ogTotalReload) : '';
+            }
+            // Restore payment method/details — without this, reprinting/resaving would
+            // silently reset a recorded cash/UPI/card/partial payment back to 'none'.
+            // Receipt itself is already restored above, so this only touches the mode UI
+            // and (for partial) the individual cash/upi/card split boxes.
+            const payMode = inv.paymentMethod || 'cash';
+            window._invPaymentMethod = payMode;
+            window._invPaymentDetails = inv.paymentDetails || {};
+            document.querySelectorAll('.inv-pay-btn').forEach(b => b.classList.remove('selected'));
+            const payBtn = document.getElementById('inv-pay-' + payMode);
+            if (payBtn) payBtn.classList.add('selected');
+            const partialSection = document.getElementById('inv-partial-section');
+            if (partialSection) partialSection.style.display = (payMode === 'partial') ? 'block' : 'none';
+            if (payMode === 'partial') {
+                const pd = inv.paymentDetails || {};
+                if (document.getElementById('inv-pay-cash-amt')) document.getElementById('inv-pay-cash-amt').value = pd.cash || '';
+                if (document.getElementById('inv-pay-upi-amt')) document.getElementById('inv-pay-upi-amt').value = pd.upi || '';
+                if (document.getElementById('inv-pay-card-amt')) document.getElementById('inv-pay-card-amt').value = pd.card || '';
+            }
+            // Restore the ORIGINAL invoice date onto the printed-date field — otherwise
+            // it keeps whatever date was last left in the box (usually today's), and a
+            // reprint/edit would silently print today's date instead of the invoice's
+            // actual date.
+            const dateEl = document.getElementById('inv-date');
+            if (dateEl && inv.timestamp) {
+                const d = new Date(inv.timestamp);
+                if (!isNaN(d)) dateEl.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            }
             invRenderRows();
             invRenderOg();
             invRecalc();
@@ -10338,7 +10405,7 @@ const badge = '';
 
         <!-- PRIMARY TABS -->
         <div style="display:flex; min-height:48px; background:var(--surface); border-radius:var(--radius); overflow:hidden; border:1.5px solid var(--border); margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,.06);">
-            <div class="inv-tab active" id="inv-tab-new" onclick="invSwitchTab('new')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">✏️ New</div>
+            <div class="inv-tab active" id="inv-tab-new" onclick="invNewTabClicked()" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">✏️ New</div>
             <div class="inv-tab" id="inv-tab-history" onclick="invSwitchTab('history')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📋 History</div>
             <div class="inv-tab" id="inv-tab-export" onclick="invSwitchTab('export')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📊 Excel</div>
         </div>
