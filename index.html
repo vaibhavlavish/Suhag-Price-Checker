@@ -9299,6 +9299,23 @@
             }
         }
 
+        // When editing an existing invoice, the saved record's timestamp should track
+        // whatever date the person has set in the #inv-date field (they may have
+        // deliberately corrected it), while keeping the original time-of-day so
+        // same-day ordering in history doesn't jump around on an unrelated edit.
+        // If the field is empty/invalid, falls back to the original timestamp as-is.
+        function _invTimestampFromDateField(existingIso) {
+            const dateEl = document.getElementById('inv-date');
+            const raw = dateEl ? dateEl.value : '';
+            const fallback = existingIso || new Date().toISOString();
+            if (!raw) return fallback;
+            const parts = raw.split('-').map(Number);
+            if (parts.length !== 3 || parts.some(isNaN)) return fallback;
+            const merged = existingIso ? new Date(existingIso) : new Date();
+            merged.setFullYear(parts[0], parts[1] - 1, parts[2]);
+            return isNaN(merged) ? fallback : merged.toISOString();
+        }
+
         function invSetTodayDate() {
             const el = document.getElementById('inv-date');
             if (el && !el.value) {
@@ -9516,7 +9533,7 @@
             window._invPendingRecord = {
                 id: _pendIsEdit ? invEditingId : crypto.randomUUID(),
                 track: currentInvTrack,
-                billNo, timestamp: _pendExisting ? _pendExisting.timestamp : new Date().toISOString(),
+                billNo, timestamp: _pendIsEdit ? _invTimestampFromDateField(_pendExisting && _pendExisting.timestamp) : new Date().toISOString(),
                 custName, custMob, custAddr, custGstin, state,
                 items: invRows.map(r => ({...r})),
                 ogItems: invOgItems.map(r => ({...r})),
@@ -9640,7 +9657,7 @@
             const record = {
                 id: isEdit ? invEditingId : crypto.randomUUID(),
                 track: currentInvTrack,
-                billNo, timestamp: existing ? existing.timestamp : new Date().toISOString(),
+                billNo, timestamp: isEdit ? _invTimestampFromDateField(existing && existing.timestamp) : new Date().toISOString(),
                 custName, custMob, custAddr, state,
                 items: invRows.map(r => ({...r})),
                 ogItems: invOgItems.map(r => ({...r})),
