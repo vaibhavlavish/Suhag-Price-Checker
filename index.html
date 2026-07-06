@@ -3244,6 +3244,10 @@
         // NEW: Global for Old Gold Items
         let oldGoldItems = [];
         let cartAdjustment = 0;
+        // true = the discount is auto-computed (round net payable DOWN to the
+        // nearest ₹10); flips to false once the shopkeeper manually sets a
+        // custom discount/final-amount via the Adjust Final Amount panel.
+        let cartAdjustmentAuto = true;
         // NEW: Customer details attached to the active cart (for direct invoice generation at checkout)
         let cartCustomer = { name: '', mobile: '', address: '' };
         // NEW: Global for Presets - Now synced from cloud, default empty
@@ -5136,6 +5140,7 @@
             }
 
             cart.push(currentLooseItem);
+            _autoRoundCartAdjustment();
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
             updateCartIcon();
             showCustomAlert(`${currentLooseItem.itemName} added to cart!`);
@@ -5156,6 +5161,7 @@
                 finalPrice: amount
             };
             cart.push(item);
+            _autoRoundCartAdjustment();
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
             updateCartIcon();
             showCustomAlert('Jewellery added to cart!');
@@ -5802,6 +5808,7 @@
                 makingOverride: frozenMaking // frozen effective making at add-time
             };
             cart.push(item);
+            _autoRoundCartAdjustment();
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart)); // Save cart
             updateCartIcon();
             showCustomAlert(`${item.itemName} added to cart!`);
@@ -5918,6 +5925,8 @@
                 if (cart.length === 0) {
                     cartAdjustment = 0;
                     _resetAdjustFields();
+                } else {
+                    _autoRoundCartAdjustment();
                 }
                 localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
                 updateCartIcon();
@@ -6035,6 +6044,7 @@
             }
 
             oldGoldItems.push({ desc: desc, value: val, id: crypto.randomUUID() });
+            _autoRoundCartAdjustment();
             localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
 
             selectOldGoldType('Old Jewellery', '🪙 Old Jewellery');
@@ -6047,6 +6057,7 @@
 
         function removeOldGoldItem(id) {
              oldGoldItems = oldGoldItems.filter(i => i.id !== id);
+             _autoRoundCartAdjustment();
              localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
              renderOldGoldList();
         }
@@ -6645,6 +6656,18 @@
             return cartTotal - oldGoldTotal; // base before discount
         }
 
+        // Automatically rounds the net payable DOWN to the nearest ₹10 as a
+        // default, customer-friendly discount whenever the cart changes —
+        // e.g. ₹1161.62 or ₹1168 both become a ₹1160 final amount. Only
+        // applies while the total (before this discount) is positive, and
+        // only while the shopkeeper hasn't manually overridden the discount
+        // via the Adjust Final Amount panel (cartAdjustmentAuto === false).
+        function _autoRoundCartAdjustment() {
+            if (!cartAdjustmentAuto) return;
+            const base = _getCartBase();
+            cartAdjustment = base > 0 ? (base - Math.floor(base / 10) * 10) : 0;
+        }
+
         // Tracks whether the last edit was from the "final amount" field,
         // so applyAdjust can use the exact (unrounded) discount value.
         let _exactDiscFromFinal = null; // null means use the discount field as-is
@@ -6685,6 +6708,7 @@
                 }
                 // disc can be negative (extra return to customer) — no guard
                 cartAdjustment = disc;
+                cartAdjustmentAuto = false; // shopkeeper is now driving the discount manually
                 // Re-render just the summary (not full cart) to update Net Payable live
                 openCart();
                 // Re-open panel since openCart() re-renders and hides it
@@ -6706,13 +6730,15 @@
 
             // disc can be negative (giving customer extra return) — any value is valid
             cartAdjustment = disc;
+            cartAdjustmentAuto = false; // shopkeeper is now driving the discount manually
             _exactDiscFromFinal = null;
             document.getElementById('adjust-panel').style.display = 'none';
             openCart(); // re-render summary
         }
 
         function clearAdjust() {
-            cartAdjustment = 0;
+            cartAdjustmentAuto = true; // resume the automatic round-down-to-₹10 default
+            _autoRoundCartAdjustment();
             _exactDiscFromFinal = null;
             document.getElementById('adjust-discount').value = '';
             document.getElementById('adjust-final').value = '';
@@ -6722,6 +6748,7 @@
 
         function _resetAdjustFields() {
             cartAdjustment = 0;
+            cartAdjustmentAuto = true; // next cart will start fresh in auto round-down mode
             _exactDiscFromFinal = null;
             document.getElementById('adjust-discount').value = '';
             document.getElementById('adjust-final').value = '';
@@ -8063,6 +8090,7 @@
                 makingOverride: item.makingOverride || null
             };
             cart.push(cartItem);
+            _autoRoundCartAdjustment();
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
             updateCartIcon();
             showCustomAlert(item.name + ' added to cart!');
@@ -10309,7 +10337,10 @@ const badge = '';
                   <button onclick="invPrintFromHistory('${id}')" style="flex:1;background:#1D6BB5;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🖨 Print</button>
                   <button onclick="invReloadBill('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="flex:1;background:var(--gold);color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">✏️ Edit / Reprint</button>
                   <button onclick="invDeleteBill('${id}')" style="flex:1;background:#ffebee;color:#c62828;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🗑 Delete</button>
-                </div>`;
+                </div>
+                ${inv.track === 'B' ? `<div style="margin-top:8px;">
+                  <button onclick="invCopyToTrackA('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="width:100%;background:#4CAF50;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">➡️ Copy to Track A</button>
+                </div>` : ''}`;
             document.getElementById('inv-bill-modal').style.display = 'flex';
         }
 
@@ -10380,6 +10411,75 @@ const badge = '';
             invRenderOg();
             invRecalc();
             invSwitchTab('new');
+        }
+
+        // Copies a Track B invoice's full data (items, old jewellery, customer,
+        // payment method, and — per explicit request — the ORIGINAL date) into a
+        // brand-new Track A invoice. This creates a new record with its own
+        // Track A bill number; it does NOT edit, move, or delete the original
+        // Track B invoice, which is left exactly as it was.
+        function invCopyToTrackA(id) {
+            const inv = invoiceHistory.find(i => i.id === id);
+            if (!inv) return;
+            if (inv.track !== 'B') return; // only meaningful when copying out of Track B
+
+            // Switch back to Track A first — invExitTrackB() handles the lock UI
+            // (dot colour, pill) and calls invReset(), which also auto-fills a
+            // fresh Track A bill number via invAutoBillNo(). Everything it sets
+            // gets overwritten below with the copied invoice's data anyway.
+            invExitTrackB();
+
+            invEditingId = null; // creating a new record, not editing the Track B one
+            invRows = (inv.items || []).map(r => ({...r}));
+            invOgItems = (inv.ogItems || []).map(r => ({...r}));
+            document.getElementById('inv-cust-name').value = inv.custName || '';
+            document.getElementById('inv-cust-mob').value = inv.custMob || '';
+            document.getElementById('inv-cust-addr').value = inv.custAddr || '';
+            if (document.getElementById('inv-cust-gstin')) document.getElementById('inv-cust-gstin').value = inv.custGstin || '';
+            if (inv.state) { const s = document.getElementById('inv-state'); if (s) s.value = inv.state; }
+            document.getElementById('inv-receipt').value = inv.receipt || '';
+
+            // Restore the discount/final-amount field the same way invReloadBill does.
+            const finalEl = document.getElementById('inv-final-amount');
+            if (finalEl) {
+                const ogTotalCopy = (inv.ogItems || []).reduce((s,i) => s + (i.value||0), 0);
+                const roundedCopy = inv.totals && inv.totals.rounded;
+                finalEl.value = (roundedCopy != null) ? Math.round(roundedCopy - ogTotalCopy) : '';
+            }
+
+            // Restore payment method/details.
+            const payMode = inv.paymentMethod || 'cash';
+            window._invPaymentMethod = payMode;
+            window._invPaymentDetails = inv.paymentDetails || {};
+            document.querySelectorAll('.inv-pay-btn').forEach(b => b.classList.remove('selected'));
+            const payBtn = document.getElementById('inv-pay-' + payMode);
+            if (payBtn) payBtn.classList.add('selected');
+            const partialSection = document.getElementById('inv-partial-section');
+            if (partialSection) partialSection.style.display = (payMode === 'partial') ? 'block' : 'none';
+            if (payMode === 'partial') {
+                const pd = inv.paymentDetails || {};
+                if (document.getElementById('inv-pay-cash-amt')) document.getElementById('inv-pay-cash-amt').value = pd.cash || '';
+                if (document.getElementById('inv-pay-upi-amt')) document.getElementById('inv-pay-upi-amt').value = pd.upi || '';
+                if (document.getElementById('inv-pay-card-amt')) document.getElementById('inv-pay-card-amt').value = pd.card || '';
+            }
+
+            // Keep the exact same date as the original Track B invoice.
+            const dateEl = document.getElementById('inv-date');
+            if (dateEl && inv.timestamp) {
+                const d = new Date(inv.timestamp);
+                if (!isNaN(d)) dateEl.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            }
+
+            // Bill number is intentionally left as the fresh Track A number that
+            // invReset() already filled in — Track A and Track B keep independent
+            // numbering sequences, so reusing the Track B number would create a
+            // gap/collision in Track A's own sequence.
+
+            invRenderRows();
+            invRenderOg();
+            invRecalc();
+            invSwitchTab('new');
+            invToast('➡️ Copied to Track A — review and Save to generate the invoice');
         }
 
         function invDeleteBill(id) {
