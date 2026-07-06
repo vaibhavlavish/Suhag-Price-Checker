@@ -1536,6 +1536,7 @@
         font-family: 'Inter', sans-serif;
     ">
         <span id="data-source-badge">⏳ Loading</span>
+        <span id="backup-warn-badge" onclick="openAutoBackupSettings()" style="display:none; margin-left:10px; cursor:pointer; color:#ffb74d; text-decoration:underline;"></span>
     </div>
 
     <input type="file" id="restore-file-input" accept=".json" style="display: none;" onchange="processRestoreFile()">
@@ -2697,10 +2698,43 @@
 
         function _abUpdateStatusUI(overrideMsg) {
             const el = document.getElementById('ab-last-run-status');
-            if (!el) return;
-            if (overrideMsg) { el.textContent = overrideMsg; return; }
+            if (el) {
+                if (overrideMsg) { el.textContent = overrideMsg; }
+                else {
+                    const last = localStorage.getItem('autoBackupLastRun');
+                    el.textContent = last ? ('Last auto backup: ' + new Date(last).toLocaleString()) : 'No auto backup has run yet.';
+                }
+            }
+            _abUpdateHeaderWarning();
+        }
+
+        // Shows a small, always-visible "⚠️ Backup stale" badge next to the Live
+        // indicator whenever auto backup hasn't actually succeeded recently — so a
+        // silent failure (e.g. the folder permission expiring after the browser was
+        // closed and reopened, which File System Access API does on its own) is
+        // noticed the same day instead of being discovered days later.
+        async function _abUpdateHeaderWarning() {
+            const badge = document.getElementById('backup-warn-badge');
+            if (!badge) return;
+            const times = _abGetTimes();
+            if (!times.length) { badge.style.display = 'none'; return; } // auto backup not set up at all
+            const handle = await _abIdbGet('backupDirHandle').catch(() => null);
+            if (!handle) { badge.style.display = 'none'; return; } // never connected — nothing to warn about
+            let connected = false;
+            try {
+                connected = (await handle.queryPermission({ mode: 'readwrite' })) === 'granted';
+            } catch (e) { connected = false; }
             const last = localStorage.getItem('autoBackupLastRun');
-            el.textContent = last ? ('Last auto backup: ' + new Date(last).toLocaleString()) : 'No auto backup has run yet.';
+            const hoursSince = last ? (Date.now() - new Date(last).getTime()) / 36e5 : Infinity;
+            if (!connected) {
+                badge.textContent = '⚠️ Backup needs reconnecting — tap here';
+                badge.style.display = '';
+            } else if (hoursSince > 30) {
+                badge.textContent = '⚠️ Backup hasn\'t run in a while — tap here';
+                badge.style.display = '';
+            } else {
+                badge.style.display = 'none';
+            }
         }
 
         // Runs on load and every 60s: fires any scheduled time that has just
@@ -2726,7 +2760,9 @@
 
         function initAutoBackupScheduler() {
             _abCheckSchedule(); // catch-up check on load
+            _abUpdateHeaderWarning(); // reflect current connection/staleness right away
             setInterval(_abCheckSchedule, 60 * 1000); // re-check every minute
+            setInterval(_abUpdateHeaderWarning, 5 * 60 * 1000); // keep the header badge fresh
         }
 
         function openAutoBackupSettings() {
@@ -2734,7 +2770,14 @@
             document.getElementById('auto-backup-modal').style.display = 'flex';
             renderAutoBackupTimesList();
             _abUpdateStatusUI();
-            _abGetFolderHandle(false).then(h => {
+            // Opening this modal is a genuine user click, so it's one of the few
+            // moments we're allowed to silently re-request folder permission
+            // (browsers block permission prompts from background/timer code).
+            // Chrome/Edge often reset File System Access permission after the
+            // browser is closed and reopened, which is why scheduled backups can
+            // go silent for days without any visible error — this re-grants it
+            // whenever the shopkeeper happens to open this screen.
+            _abGetFolderHandle(true).then(h => {
                 document.getElementById('ab-folder-status').textContent = h ? '✓ Folder connected' : 'Not connected — tap "Choose Backup Folder" below';
             });
         }
@@ -7434,14 +7477,16 @@
             // user's Rate/Making print-column preference (which only applies to Invoice 1).
             const showRate = fmt !== 'invoice2' && _printColPref.showRate;
             const showMaking = fmt !== 'invoice2' && _printColPref.showMaking;
+            // Invoice 2 also drops the HSN column entirely (not just rate/making).
+            const showHsn = fmt !== 'invoice2';
             const fp = _invFormatPieces(fmt, sub, t);
             let headCols = '<th style="text-align:left;width:24%;">Description</th>'
-                + '<th style="width:9%;">HSN</th><th style="width:6%;">Pc.</th>'
+                + (showHsn ? '<th style="width:9%;">HSN</th>' : '') + '<th style="width:6%;">Pc.</th>'
                 + '<th style="width:10%;">Gr.Wt</th><th style="width:10%;">Nt.Wt</th>';
-            let colSpan = 5;
+            let colSpan = showHsn ? 5 : 4;
             if (showRate)   { headCols += '<th style="width:11%;">Rate</th>';   colSpan++; }
             if (showMaking) { headCols += '<th style="width:13%;">Making</th>'; colSpan++; }
-            headCols += `<th style="width:${100 - (59 + (showRate?11:0) + (showMaking?13:0))}%;">${fp.valueColLabel}</th>`;
+            headCols += `<th style="width:${100 - (50 + (showHsn?9:0) + (showRate?11:0) + (showMaking?13:0))}%;">${fp.valueColLabel}</th>`;
 
             // ── ONE padding constant used by every row in the table so spacing
             // never drifts between item rows, the discount row, filler rows,
@@ -7461,7 +7506,7 @@
                 const tv = (fmt === 'invoice2') ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r);
                 itemsHtml += `<tr>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}">${invDescWithStamp(r)}</td>
-                  <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invEscH(String(r.hsn))}</td>
+                  ${showHsn ? `<td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invEscH(String(r.hsn))}</td>` : ''}
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${r.pc}</td>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invDashOr(r.grWt, 3)}</td>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invDashOr(r.nlWt, 3)}</td>`;
@@ -8911,19 +8956,6 @@
             const raw = (val || '').trim();
             const key = raw ? Object.keys(productData).find(k => k.toUpperCase() === raw.toUpperCase()) : null;
             if (key) {
-                // ── Barcode duplicate invoice guard ──────────────────────────
-                // Uses the same sold-set as Stock Weight Calc/Returns (getSoldBarcodes),
-                // so a barcode is blocked from re-invoicing no matter which track or
-                // source it was originally sold under — previously this only checked
-                // the CURRENT track, so an item sold on Track A (or via checkout)
-                // could silently be re-invoiced on Track B.
-                const alreadyInvoiced = getSoldBarcodes().has(key.toUpperCase());
-                if (alreadyInvoiced) {
-                    invToast('⚠️ ' + key + ' already invoiced. Return it first to re-invoice.');
-                    invRows[i].desc = '';
-                    invRenderRows();
-                    return;
-                }
                 // ── Load product data ────────────────────────────────────────
                 const d = productData[key];
                 const metal = (d.metal || '').toLowerCase();
@@ -9718,14 +9750,16 @@
             // user's Rate/Making print-column preference (which only applies to Invoice 1).
             const showRate = fmt !== 'invoice2' && showRatePref;
             const showMaking = fmt !== 'invoice2' && showMakingPref;
+            // Invoice 2 also drops the HSN column entirely (not just rate/making).
+            const showHsn = fmt !== 'invoice2';
 
             let headCols = '<th style="text-align:left;width:24%;">Description</th>'
-                + '<th style="width:9%;">HSN</th><th style="width:6%;">Pc.</th>'
+                + (showHsn ? '<th style="width:9%;">HSN</th>' : '') + '<th style="width:6%;">Pc.</th>'
                 + '<th style="width:10%;">Gr.Wt</th><th style="width:10%;">Nt.Wt</th>';
-            let colSpan = 5;
+            let colSpan = showHsn ? 5 : 4;
             if (showRate)   { headCols += '<th style="width:11%;">Rate</th>';   colSpan++; }
             if (showMaking) { headCols += '<th style="width:13%;">Making</th>'; colSpan++; }
-            headCols += `<th style="width:${100 - (59 + (showRate?11:0) + (showMaking?13:0))}%;">${fp.valueColLabel}</th>`;
+            headCols += `<th style="width:${100 - (50 + (showHsn?9:0) + (showRate?11:0) + (showMaking?13:0))}%;">${fp.valueColLabel}</th>`;
 
             const ROWPAD = '4px 6px';
             const ITEMPAD = '8px 6px'; // taller than ROWPAD so the fixed 12-row item table naturally fills most of the page
@@ -9741,7 +9775,7 @@
                 const tv = (fmt === 'invoice2') ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r);
                 itemsHtml += `<tr>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}">${invDescWithStamp(r)}</td>
-                  <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invEscH(String(r.hsn))}</td>
+                  ${showHsn ? `<td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invEscH(String(r.hsn))}</td>` : ''}
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${r.pc}</td>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invDashOr(r.grWt, 3)}</td>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invDashOr(r.nlWt, 3)}</td>`;
@@ -10208,6 +10242,9 @@
                 }
                 return true;
             });
+
+            // Newest invoice first, oldest at the bottom.
+            items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
             if (!items.length) {
                 c.innerHTML = '<div class="empty"><div style="font-size:40px;margin-bottom:10px;">🧾</div><p style="font-size:13px;">No invoices yet</p></div>';
