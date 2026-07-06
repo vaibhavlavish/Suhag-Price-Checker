@@ -10243,8 +10243,12 @@
                 return true;
             });
 
-            // Newest invoice first, oldest at the bottom.
-            items.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+            // Newest invoice first, oldest at the bottom. Timestamps are stored as
+            // ISO strings (new Date().toISOString()), so they must go through
+            // new Date(...) before comparing — plain subtraction on two date
+            // strings silently evaluates to NaN and leaves the array unsorted,
+            // which is what was happening before this fix.
+            items.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
 
             if (!items.length) {
                 c.innerHTML = '<div class="empty"><div style="font-size:40px;margin-bottom:10px;">🧾</div><p style="font-size:13px;">No invoices yet</p></div>';
