@@ -9569,8 +9569,11 @@
                         desc: item.itemName || 'Jewellery',
                         hsn: '7113', pc: 1,
                         grWt: 0, nlWt: 0, rate: 0,
+                        // Taxed like any other MRP row — GST is broken out on top of this
+                        // figure (SGST/CGST or IGST), not folded silently, untaxed, into
+                        // Round Off via invExemptSub.
                         makingType: 'mrp', makingPct: parseFloat((item.finalPrice || 0).toFixed(2)),
-                        metal: '', taxInclusive: true // settled flat price — already includes tax, never re-taxed
+                        metal: ''
                     };
                 }
                 if (item.type === 'loose') {
