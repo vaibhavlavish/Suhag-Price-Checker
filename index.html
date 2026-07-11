@@ -1362,7 +1362,20 @@
             justify-content: center;
             padding: 0 4px;
         }
-        #reminders { display:none; padding:16px; background:#f5f5f5; min-height:100%; box-sizing:border-box; max-width:480px; margin:0 auto; }
+        #reminders {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            padding: 16px;
+            background: #f5f5f5;
+            box-sizing: border-box;
+            max-width: 480px;
+            margin: 0 auto;
+            width: 100%;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            min-height: 0;
+        }
         #reminders h2 { color:#1a1a1a; font-weight:800; }
         .rem-card {
             background: #fff;
@@ -4186,7 +4199,7 @@
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen') ? 'flex' : 'block';
+                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders') ? 'flex' : 'block';
             }
 
             if (section === 'ledger') {
@@ -8333,20 +8346,29 @@
         let _reminderWeeklyDays = [];
         const REMINDER_DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
-        function _todayStr() {
-            const d = new Date();
+        function _dateStr(d) {
             return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+        }
+        function _todayStr() {
+            return _dateStr(new Date());
+        }
+        function _yesterdayDate() {
+            const d = new Date();
+            d.setDate(d.getDate() - 1);
+            return d;
+        }
+        function _yesterdayStr() {
+            return _dateStr(_yesterdayDate());
         }
         function _daysInMonth(d) {
             return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
         }
 
-        function isReminderDueToday(r) {
+        function isReminderDueOn(r, dateObj) {
             if (!r || r.active === false) return false;
-            const today = new Date();
-            const dow = today.getDay();
-            const dom = today.getDate();
-            const lastDom = _daysInMonth(today);
+            const dow = dateObj.getDay();
+            const dom = dateObj.getDate();
+            const lastDom = _daysInMonth(dateObj);
             if (r.repeat === 'daily') return true;
             if (r.repeat === 'weekly' || r.repeat === 'twice-weekly') {
                 return Array.isArray(r.weeklyDays) && r.weeklyDays.includes(dow);
@@ -8358,8 +8380,16 @@
             return false;
         }
 
+        function isReminderDueToday(r) {
+            return isReminderDueOn(r, new Date());
+        }
+
+        function isReminderDoneOn(r, dateStr) {
+            return Array.isArray(r.completedDates) && r.completedDates.includes(dateStr);
+        }
+
         function isReminderDoneToday(r) {
-            return Array.isArray(r.completedDates) && r.completedDates.includes(_todayStr());
+            return isReminderDoneOn(r, _todayStr());
         }
 
         function getDueRemindersToday() {
@@ -8368,6 +8398,19 @@
 
         function getPendingRemindersToday() {
             return getDueRemindersToday().filter(r => !isReminderDoneToday(r));
+        }
+
+        // Tasks that were due yesterday and never marked done — shown once, today
+        // only, so a missed task can be caught up. It is NOT carried forward any
+        // further: once today passes without action, it simply stops appearing.
+        function getMissedYesterdayReminders() {
+            const yDate = _yesterdayDate();
+            const yStr = _dateStr(yDate);
+            return reminders.filter(r => isReminderDueOn(r, yDate) && !isReminderDoneOn(r, yStr));
+        }
+
+        function getPendingRemindersTotal() {
+            return getPendingRemindersToday().length + getMissedYesterdayReminders().length;
         }
 
         function loadReminders() {
@@ -8428,7 +8471,7 @@
         }
 
         function updateReminderBadge() {
-            const count = getPendingRemindersToday().length;
+            const count = getPendingRemindersTotal();
             const bellBtn = document.getElementById('reminder-bell-btn');
             const bellBadge = document.getElementById('reminder-bell-badge');
             const menuBadge = document.getElementById('reminder-menu-badge');
@@ -8466,6 +8509,8 @@
         function renderReminders() {
             const todayList = document.getElementById('rem-today-list');
             const allList = document.getElementById('rem-all-list');
+            const yesterdayWrap = document.getElementById('rem-yesterday-wrap');
+            const yesterdayList = document.getElementById('rem-yesterday-list');
             if (!todayList || !allList) return;
 
             // Today's tasks (due today), pending first then done
@@ -8484,6 +8529,27 @@
                         </div>
                     </div>`;
                 }).join('');
+            }
+
+            // Yesterday's missed tasks — one-day grace period to catch up.
+            // Only shown while still relevant; once today ends these drop off for good.
+            if (yesterdayWrap && yesterdayList) {
+                const missedYesterday = getMissedYesterdayReminders();
+                if (!missedYesterday.length) {
+                    yesterdayWrap.style.display = 'none';
+                    yesterdayList.innerHTML = '';
+                } else {
+                    yesterdayWrap.style.display = 'block';
+                    yesterdayList.innerHTML = missedYesterday.map(r => {
+                        return `<div class="rem-card">
+                            <div class="rem-check" onclick="toggleReminderYesterday('${r.id}')"></div>
+                            <div class="rem-body">
+                                <div class="rem-title">${_escapeHtml(r.title)}</div>
+                                <div class="rem-sub">${_reminderRepeatLabel(r)} · Missed yesterday</div>
+                            </div>
+                        </div>`;
+                    }).join('');
+                }
             }
 
             // All reminders list, with edit/delete
@@ -8511,6 +8577,22 @@
             const d = document.createElement('div');
             d.textContent = str == null ? '' : String(str);
             return d.innerHTML;
+        }
+
+        function _toggleReminderDoneForDate(id, dateStr) {
+            const r = reminders.find(x => String(x.id) === String(id));
+            if (!r) return;
+            if (!Array.isArray(r.completedDates)) r.completedDates = [];
+            const idx = r.completedDates.indexOf(dateStr);
+            if (idx >= 0) r.completedDates.splice(idx, 1);
+            else r.completedDates.push(dateStr);
+            _saveRemindersLocal();
+            _saveReminderRecord(r);
+            renderReminders();
+        }
+
+        function toggleReminderYesterday(id) {
+            _toggleReminderDoneForDate(id, _yesterdayStr());
         }
 
         function toggleReminderDone(id) {
@@ -11456,6 +11538,11 @@ const badge = '';
 
         <div class="rem-section-label">Today</div>
         <div id="rem-today-list"></div>
+
+        <div id="rem-yesterday-wrap" style="display:none;">
+            <div class="rem-section-label">Yesterday <span style="color:#e65100;">(missed — tap to mark done)</span></div>
+            <div id="rem-yesterday-list"></div>
+        </div>
 
         <div id="rem-all-wrap" style="display:none;">
             <div class="rem-section-label">All Reminders</div>
