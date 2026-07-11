@@ -189,6 +189,7 @@
         }
         body.app-ready { opacity: 1; }
         #brand-header {
+            position: relative;
             display: flex;
             flex: 0 0 auto;
             justify-content: center;
@@ -197,6 +198,10 @@
             height: 130px;
             padding: 0 16px 14px;
             background: #FFFFFF;
+            max-width: 480px;
+            margin: 0 auto;
+            box-sizing: border-box;
+            width: 100%;
         }
         #brand-header img {
             width: 64px;
@@ -348,6 +353,7 @@
         #options-menu button.backup { color: #1565C0 !important; }
         #options-menu button.restore { color: #e65100 !important; }
         #main-screen {
+            position: relative;
             flex: 1;
             display: flex;
             flex-direction: column;
@@ -1307,6 +1313,114 @@
         }
         /* --- End Ledger Styles --- */
 
+        /* --- Reminders --- */
+        #reminder-bell-btn {
+            display: none;
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #fff;
+            border: 1.5px solid #eee;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            align-items: center;
+            justify-content: center;
+            font-size: 19px;
+            cursor: pointer;
+            z-index: 5;
+        }
+        #reminder-bell-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background: #ef4444;
+            color: #fff;
+            border-radius: 50%;
+            min-width: 18px;
+            height: 18px;
+            font-size: 11px;
+            font-weight: 800;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid #fff;
+            line-height: 1;
+        }
+        #reminder-menu-badge {
+            display: none;
+            margin-left: 6px;
+            background: #ef4444;
+            color: #fff;
+            border-radius: 50%;
+            min-width: 18px;
+            height: 18px;
+            font-size: 11px;
+            font-weight: 800;
+            align-items: center;
+            justify-content: center;
+            padding: 0 4px;
+        }
+        #reminders { display:none; padding:16px; background:#f5f5f5; min-height:100%; box-sizing:border-box; max-width:480px; margin:0 auto; }
+        #reminders h2 { color:#1a1a1a; font-weight:800; }
+        .rem-card {
+            background: #fff;
+            border-radius: 14px;
+            padding: 14px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .rem-card.done { opacity: 0.55; }
+        .rem-check {
+            width: 26px; height: 26px; border-radius: 50%;
+            border: 2px solid #ccc; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 15px; color: transparent;
+            background: #fff;
+        }
+        .rem-check.checked { background:#4CAF50; border-color:#4CAF50; color:#fff; }
+        .rem-body { flex: 1; min-width: 0; }
+        .rem-title { font-weight: 700; font-size: 15px; color: #1a1a1a; }
+        .rem-sub { font-size: 12px; color: #888; margin-top: 2px; }
+        .rem-actions { display: flex; gap: 6px; flex-shrink: 0; }
+        .rem-actions button {
+            width: 30px; height: 30px; border-radius: 8px; border: none;
+            background: #f5f5f5; cursor: pointer; font-size: 14px;
+            display:flex; align-items:center; justify-content:center; box-shadow:none; margin:0; padding:0;
+        }
+        .rem-section-label { font-size:12px; font-weight:800; color:#888; text-transform:uppercase; letter-spacing:0.06em; margin: 16px 0 8px; }
+        .rem-empty { text-align:center; color:#bbb; font-size:14px; padding:20px 0; }
+        #reminder-modal {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55); z-index: 1150;
+            align-items: flex-end; justify-content: center;
+        }
+        #reminder-modal.show { display: flex; }
+        #reminder-panel {
+            background: white; border-radius: 20px 20px 0 0;
+            width: 100%; max-width: 480px;
+            padding: 22px 20px 30px;
+            box-shadow: 0 -8px 32px rgba(0,0,0,0.15);
+            max-height: 88vh; overflow-y: auto;
+        }
+        .rem-repeat-row { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; }
+        .rem-repeat-btn {
+            flex: 1 1 45%; padding:10px 4px; border:2px solid #e0e0e0; background:#fff;
+            border-radius:10px; font-size:12.5px; font-weight:700; color:#555; cursor:pointer; text-align:center;
+        }
+        .rem-repeat-btn.active { border-color:#7c4dff; background:#f3e5f5; color:#7c4dff; }
+        .rem-day-row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+        .rem-day-btn {
+            width:38px; height:38px; border-radius:50%; border:2px solid #e0e0e0; background:#fff;
+            font-size:11px; font-weight:700; color:#555; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;
+        }
+        .rem-day-btn.active { border-color:#7c4dff; background:#7c4dff; color:#fff; }
+        /* --- End Reminders --- */
+
         /* --- Cart Modal Button Row Styles --- */
         #cart-modal-buttons {
             display: flex;
@@ -1489,6 +1603,10 @@
             <button onclick="showSection('returns')" data-menu-key="returns">
                 <span class="menu-icon" style="background:#fce4ec;">↩️</span> Item Returns
             </button>
+            <button onclick="showSection('reminders')" data-menu-key="reminders">
+                <span class="menu-icon" style="background:#f3e5f5;">🔔</span> Reminders
+                <span id="reminder-menu-badge">0</span>
+            </button>
 
             <div class="menu-divider"></div>
             <div class="menu-section-label">Data</div>
@@ -1542,6 +1660,10 @@
     <input type="file" id="restore-file-input" accept=".json" style="display: none;" onchange="processRestoreFile()">
 
     <div id="brand-header">
+        <button id="reminder-bell-btn" onclick="showSection('reminders')" title="Reminders">
+            🔔
+            <span id="reminder-bell-badge">0</span>
+        </button>
         <img src="icon-192.png" alt="Suhag Jewellers" width="34" height="34" loading="eager" onerror="this.style.display='none'">
         <span class="brand-text">
             <span class="brand-line1">SUHAG</span>
@@ -2542,6 +2664,7 @@
                 invTandC: invTandC || '',
                 packagingWeights: packagingWeights || {},
                 presetStock: presetStock || {},
+                reminders: reminders || [],
                 backupTimestamp: new Date().toISOString()
             };
         }
@@ -2861,7 +2984,8 @@
                                 invStampPrintToggle: jsonContent.invStampPrintToggle || {},
                                 invTandC: jsonContent.invTandC || '',
                                 packagingWeights: jsonContent.packagingWeights || {},
-                                presetStock: jsonContent.presetStock || {}
+                                presetStock: jsonContent.presetStock || {},
+                                reminders: jsonContent.reminders || []
                             };
 
                             if (jsonContent.activeProfileId) {
@@ -2912,6 +3036,10 @@
                                 // Presets
                                 (dataToRestore.presets || []).forEach(p => {
                                     if (p.id) restoreUpdate[`jewelryData/profiles/presets/${p.id}`] = p;
+                                });
+                                // Reminders
+                                (dataToRestore.reminders || []).forEach(r => {
+                                    if (r.id) restoreUpdate[`jewelryData/reminders/${r.id}`] = r;
                                 });
                                 window.dbSafeUpdate(restoreUpdate)
                                 .then(() => {
@@ -3286,7 +3414,7 @@
         // Returns approximate used KB across all suhag keys.
         function _suhagStorageUsedKB() {
             const keys = [
-                CACHE_KEY, 'suhagLedger', 'suhagPriceCheckerCart',
+                CACHE_KEY, 'suhagLedger', 'suhagReminders', 'suhagPriceCheckerCart',
                 'suhagPriceCheckerOldGold', PENDING_SYNC_KEY, 'activeProfileId',
                 'suhagFlatKeysTombstoned', 'suhagInvoiceHistory'
             ];
@@ -3976,7 +4104,8 @@
                             'jewelryData/billHistory',
                             'jewelryData/invoiceHistory',
                             'jewelryData/profiles',
-                            'jewelryData/ledgerEntries'
+                            'jewelryData/ledgerEntries',
+                            'jewelryData/reminders'
                         ];
                         Promise.all(nodesToRemove.map(path =>
                             window.dbRemove(window.dbRef(window.firebaseDB, path))
@@ -3984,6 +4113,7 @@
                         .then(() => {
                             // Reset all in-memory state immediately so nothing leaks back
                             ledgerEntries  = [];
+                            reminders      = [];
                             billHistory    = [];
                             invoiceHistory = [];
                             loosePresets   = [];
@@ -4030,6 +4160,7 @@
             document.getElementById('device-access').style.display = 'none';
             document.getElementById('returns').style.display = 'none';
             document.getElementById('invoice-screen').style.display = 'none';
+            document.getElementById('reminders').style.display = 'none';
             const brandHeaderEl = document.getElementById('brand-header');
             if (brandHeaderEl) brandHeaderEl.style.display = 'none';
 
@@ -4095,6 +4226,13 @@
             }
             if (section === 'device-access') {
                 renderDeviceAccessSection();
+            }
+            if (section === 'reminders') {
+                const wrap = document.getElementById('rem-all-wrap');
+                const btn = document.getElementById('rem-all-toggle-btn');
+                if (wrap) wrap.style.display = 'none';
+                if (btn) { btn.style.background = '#fff'; btn.style.color = '#7c4dff'; }
+                renderReminders();
             }
             closeOptions();
         }
@@ -6392,6 +6530,8 @@
             syncData();
             // Load ledger from cache immediately (Firebase will overwrite shortly)
             loadLedger();
+            // Load reminders from cache immediately (Firebase will overwrite shortly)
+            loadReminders();
         });
 
         // =============================================
@@ -8175,6 +8315,372 @@
         function clearBulkList() {
             bulkList = [];
             renderBulkList();
+        }
+
+        // =============================================
+        // === REMINDERS FUNCTIONS ======================
+        // =============================================
+        // reminder: {
+        //   id, title, repeat: 'daily'|'weekly'|'twice-weekly'|'monthly'|'twice-monthly',
+        //   weeklyDays: [0-6,...]   (weekly=1 entry, twice-weekly=2 entries; 0=Sun..6=Sat)
+        //   monthlyDates: [1-31,...] (monthly=1 entry, twice-monthly=2 entries)
+        //   completedDates: ['YYYY-MM-DD', ...],
+        //   active: true, createdAt
+        // }
+
+        let reminders = [];
+        let _reminderRepeatType = 'daily';
+        let _reminderWeeklyDays = [];
+        const REMINDER_DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+        function _todayStr() {
+            const d = new Date();
+            return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+        }
+        function _daysInMonth(d) {
+            return new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+        }
+
+        function isReminderDueToday(r) {
+            if (!r || r.active === false) return false;
+            const today = new Date();
+            const dow = today.getDay();
+            const dom = today.getDate();
+            const lastDom = _daysInMonth(today);
+            if (r.repeat === 'daily') return true;
+            if (r.repeat === 'weekly' || r.repeat === 'twice-weekly') {
+                return Array.isArray(r.weeklyDays) && r.weeklyDays.includes(dow);
+            }
+            if (r.repeat === 'monthly' || r.repeat === 'twice-monthly') {
+                if (!Array.isArray(r.monthlyDates)) return false;
+                return r.monthlyDates.some(dt => dt === dom || (dt > lastDom && dom === lastDom));
+            }
+            return false;
+        }
+
+        function isReminderDoneToday(r) {
+            return Array.isArray(r.completedDates) && r.completedDates.includes(_todayStr());
+        }
+
+        function getDueRemindersToday() {
+            return reminders.filter(isReminderDueToday);
+        }
+
+        function getPendingRemindersToday() {
+            return getDueRemindersToday().filter(r => !isReminderDoneToday(r));
+        }
+
+        function loadReminders() {
+            try {
+                const saved = localStorage.getItem('suhagReminders');
+                if (saved) reminders = JSON.parse(saved);
+            } catch(e) { reminders = []; }
+            updateReminderBadge();
+            syncRemindersFromCloud();
+        }
+
+        let _reminderSyncStarted = false;
+        let _reminderSyncRetries = 0;
+        function syncRemindersFromCloud() {
+            if (_reminderSyncStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB) {
+                if (_reminderSyncRetries++ < 20) setTimeout(syncRemindersFromCloud, 500);
+                return;
+            }
+            _reminderSyncStarted = true;
+            const remindersRef = window.dbRef(window.firebaseDB, 'jewelryData/reminders');
+            window.dbOnValue(remindersRef, (snapshot) => {
+                const raw = _objToArray(snapshot.val());
+                reminders = raw;
+                _saveRemindersLocal();
+                if (document.getElementById('reminders') && document.getElementById('reminders').style.display !== 'none') {
+                    renderReminders();
+                }
+                updateReminderBadge();
+            }, (error) => {
+                console.error('[Reminders] Firebase read error:', error);
+            });
+        }
+
+        function _saveRemindersLocal() {
+            try {
+                localStorage.setItem('suhagReminders', JSON.stringify(reminders));
+            } catch(e) {
+                console.warn('[Reminders] localStorage save failed:', e);
+            }
+        }
+
+        function _saveReminderRecord(reminder) {
+            if (!reminder || !reminder.id) return;
+            const update = {};
+            update[`jewelryData/reminders/${reminder.id}`] = reminder;
+            window.dbSafeUpdate(update).catch(e => console.error('[Reminders] save failed', e));
+        }
+
+        function _deleteReminderRecord(id, onDone) {
+            reminders = reminders.filter(r => String(r.id) !== String(id));
+            _saveRemindersLocal();
+            const update = {};
+            update[`jewelryData/reminders/${id}`] = null;
+            window.dbSafeUpdate(update)
+                .then(() => { if (onDone) onDone(); })
+                .catch(e => { console.error('[Reminders] delete failed', e); if (onDone) onDone(); });
+        }
+
+        function updateReminderBadge() {
+            const count = getPendingRemindersToday().length;
+            const bellBtn = document.getElementById('reminder-bell-btn');
+            const bellBadge = document.getElementById('reminder-bell-badge');
+            const menuBadge = document.getElementById('reminder-menu-badge');
+            if (bellBtn) bellBtn.style.display = count > 0 ? 'flex' : 'none';
+            if (bellBadge) {
+                if (count > 0) { bellBadge.textContent = String(count); bellBadge.style.display = 'flex'; }
+                else bellBadge.style.display = 'none';
+            }
+            if (menuBadge) {
+                if (count > 0) { menuBadge.textContent = String(count); menuBadge.style.display = 'flex'; }
+                else menuBadge.style.display = 'none';
+            }
+        }
+
+        function _reminderRepeatLabel(r) {
+            if (r.repeat === 'daily') return 'Every day';
+            if (r.repeat === 'weekly') return 'Weekly · ' + REMINDER_DAY_NAMES[r.weeklyDays[0]];
+            if (r.repeat === 'twice-weekly') return 'Twice a week · ' + r.weeklyDays.map(d => REMINDER_DAY_NAMES[d]).join(' & ');
+            if (r.repeat === 'monthly') return 'Monthly · date ' + r.monthlyDates[0];
+            if (r.repeat === 'twice-monthly') return 'Twice a month · dates ' + r.monthlyDates.join(' & ');
+            return '';
+        }
+
+        function toggleAllRemindersList() {
+            const wrap = document.getElementById('rem-all-wrap');
+            const btn = document.getElementById('rem-all-toggle-btn');
+            const showing = wrap.style.display !== 'none';
+            wrap.style.display = showing ? 'none' : 'block';
+            if (btn) {
+                btn.style.background = showing ? '#fff' : '#7c4dff';
+                btn.style.color = showing ? '#7c4dff' : '#fff';
+            }
+        }
+
+        function renderReminders() {
+            const todayList = document.getElementById('rem-today-list');
+            const allList = document.getElementById('rem-all-list');
+            if (!todayList || !allList) return;
+
+            // Today's tasks (due today), pending first then done
+            const dueToday = getDueRemindersToday();
+            if (!dueToday.length) {
+                todayList.innerHTML = '<div class="rem-empty">No tasks scheduled for today 🎉</div>';
+            } else {
+                const sorted = [...dueToday].sort((a,b) => Number(isReminderDoneToday(a)) - Number(isReminderDoneToday(b)));
+                todayList.innerHTML = sorted.map(r => {
+                    const done = isReminderDoneToday(r);
+                    return `<div class="rem-card ${done ? 'done' : ''}">
+                        <div class="rem-check ${done ? 'checked' : ''}" onclick="toggleReminderDone('${r.id}')">${done ? '✓' : ''}</div>
+                        <div class="rem-body">
+                            <div class="rem-title">${_escapeHtml(r.title)}</div>
+                            <div class="rem-sub">${_reminderRepeatLabel(r)}${done ? ' · Done today' : ''}</div>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+
+            // All reminders list, with edit/delete
+            if (!reminders.length) {
+                allList.innerHTML = '<div class="rem-empty">No reminders yet. Tap "+ Add Reminder" to create one.</div>';
+            } else {
+                allList.innerHTML = [...reminders].sort((a,b) => (a.title||'').localeCompare(b.title||'')).map(r => {
+                    return `<div class="rem-card">
+                        <div class="rem-body">
+                            <div class="rem-title">${_escapeHtml(r.title)}</div>
+                            <div class="rem-sub">${_reminderRepeatLabel(r)}</div>
+                        </div>
+                        <div class="rem-actions">
+                            <button onclick="openReminderModal('${r.id}')" title="Edit">✏️</button>
+                            <button onclick="deleteReminder('${r.id}')" title="Delete">🗑</button>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+
+            updateReminderBadge();
+        }
+
+        function _escapeHtml(str) {
+            const d = document.createElement('div');
+            d.textContent = str == null ? '' : String(str);
+            return d.innerHTML;
+        }
+
+        function toggleReminderDone(id) {
+            const r = reminders.find(x => String(x.id) === String(id));
+            if (!r) return;
+            if (!Array.isArray(r.completedDates)) r.completedDates = [];
+            const today = _todayStr();
+            const idx = r.completedDates.indexOf(today);
+            if (idx >= 0) r.completedDates.splice(idx, 1);
+            else r.completedDates.push(today);
+            _saveRemindersLocal();
+            _saveReminderRecord(r);
+            renderReminders();
+        }
+
+        function openReminderModal(id) {
+            document.getElementById('reminder-edit-id').value = id || '';
+            document.getElementById('reminder-title').value = '';
+            _reminderWeeklyDays = [];
+            document.getElementById('reminder-date-1').value = '';
+            document.getElementById('reminder-date-2').value = '';
+
+            if (id) {
+                const r = reminders.find(x => String(x.id) === String(id));
+                if (r) {
+                    document.getElementById('reminder-title').value = r.title || '';
+                    _reminderWeeklyDays = Array.isArray(r.weeklyDays) ? [...r.weeklyDays] : [];
+                    if (Array.isArray(r.monthlyDates)) {
+                        document.getElementById('reminder-date-1').value = r.monthlyDates[0] || '';
+                        document.getElementById('reminder-date-2').value = r.monthlyDates[1] || '';
+                    }
+                    document.getElementById('reminder-modal-title').textContent = 'Edit Reminder';
+                }
+            } else {
+                document.getElementById('reminder-modal-title').textContent = 'Add Reminder';
+            }
+
+            setReminderRepeatType((id && reminders.find(x => String(x.id) === String(id)) || {}).repeat || 'daily');
+            document.getElementById('reminder-modal').classList.add('show');
+            setTimeout(() => document.getElementById('reminder-title').focus(), 80);
+        }
+
+        function closeReminderModal() {
+            document.getElementById('reminder-modal').classList.remove('show');
+        }
+
+        function setReminderRepeatType(type) {
+            _reminderRepeatType = type;
+            document.querySelectorAll('.rem-repeat-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-rtype') === type);
+            });
+
+            const weekdayPicker = document.getElementById('reminder-weekday-picker');
+            const monthdatePicker = document.getElementById('reminder-monthdate-picker');
+            const weekdayLabel = document.getElementById('reminder-weekday-label');
+            const monthdateLabel = document.getElementById('reminder-monthdate-label');
+            const date2 = document.getElementById('reminder-date-2');
+
+            weekdayPicker.style.display = 'none';
+            monthdatePicker.style.display = 'none';
+
+            if (type === 'weekly' || type === 'twice-weekly') {
+                weekdayPicker.style.display = 'block';
+                weekdayLabel.textContent = type === 'weekly' ? 'SELECT DAY' : 'SELECT 2 DAYS';
+                // Trim selection to allowed count when switching type
+                const maxDays = type === 'weekly' ? 1 : 2;
+                if (_reminderWeeklyDays.length > maxDays) _reminderWeeklyDays = _reminderWeeklyDays.slice(0, maxDays);
+                _renderReminderWeekdayRow();
+            } else if (type === 'monthly' || type === 'twice-monthly') {
+                monthdatePicker.style.display = 'block';
+                monthdateLabel.textContent = type === 'monthly' ? 'SELECT DATE OF MONTH' : 'SELECT 2 DATES OF MONTH';
+                date2.style.display = type === 'twice-monthly' ? 'block' : 'none';
+            }
+        }
+
+        function _renderReminderWeekdayRow() {
+            const row = document.getElementById('reminder-weekday-row');
+            const maxDays = _reminderRepeatType === 'weekly' ? 1 : 2;
+            row.innerHTML = REMINDER_DAY_NAMES.map((name, idx) => {
+                const active = _reminderWeeklyDays.includes(idx);
+                return `<button type="button" class="rem-day-btn ${active ? 'active' : ''}" onclick="_toggleReminderWeekday(${idx})">${name}</button>`;
+            }).join('');
+            row.dataset.maxDays = maxDays;
+        }
+
+        function _toggleReminderWeekday(idx) {
+            const maxDays = _reminderRepeatType === 'weekly' ? 1 : 2;
+            const pos = _reminderWeeklyDays.indexOf(idx);
+            if (pos >= 0) {
+                _reminderWeeklyDays.splice(pos, 1);
+            } else {
+                if (maxDays === 1) _reminderWeeklyDays = [idx];
+                else {
+                    if (_reminderWeeklyDays.length >= maxDays) _reminderWeeklyDays.shift();
+                    _reminderWeeklyDays.push(idx);
+                }
+            }
+            _renderReminderWeekdayRow();
+        }
+
+        let _saveReminderInProgress = false;
+        function saveReminder() {
+            if (_saveReminderInProgress) return;
+            const title = document.getElementById('reminder-title').value.trim();
+            if (!title) { showCustomAlert('Please enter a task name.'); return; }
+
+            const type = _reminderRepeatType;
+            let weeklyDays = null, monthlyDates = null;
+
+            if (type === 'weekly' || type === 'twice-weekly') {
+                const needed = type === 'weekly' ? 1 : 2;
+                if (_reminderWeeklyDays.length !== needed) {
+                    showCustomAlert(`Please select ${needed} day${needed>1?'s':''} of the week.`);
+                    return;
+                }
+                weeklyDays = [..._reminderWeeklyDays].sort((a,b)=>a-b);
+            }
+
+            if (type === 'monthly' || type === 'twice-monthly') {
+                const d1 = parseInt(document.getElementById('reminder-date-1').value, 10);
+                if (!d1 || d1 < 1 || d1 > 31) { showCustomAlert('Please enter a valid date (1-31).'); return; }
+                if (type === 'twice-monthly') {
+                    const d2 = parseInt(document.getElementById('reminder-date-2').value, 10);
+                    if (!d2 || d2 < 1 || d2 > 31) { showCustomAlert('Please enter a valid second date (1-31).'); return; }
+                    if (d1 === d2) { showCustomAlert('The two dates must be different.'); return; }
+                    monthlyDates = [d1, d2].sort((a,b)=>a-b);
+                } else {
+                    monthlyDates = [d1];
+                }
+            }
+
+            _saveReminderInProgress = true;
+            setTimeout(() => { _saveReminderInProgress = false; }, 1000);
+
+            const editId = document.getElementById('reminder-edit-id').value;
+            let reminder;
+            if (editId) {
+                reminder = reminders.find(x => String(x.id) === String(editId));
+                if (!reminder) { _saveReminderInProgress = false; return; }
+                reminder.title = title;
+                reminder.repeat = type;
+                reminder.weeklyDays = weeklyDays;
+                reminder.monthlyDates = monthlyDates;
+            } else {
+                reminder = {
+                    id: crypto.randomUUID(),
+                    title,
+                    repeat: type,
+                    weeklyDays,
+                    monthlyDates,
+                    completedDates: [],
+                    active: true,
+                    createdAt: new Date().toISOString()
+                };
+                reminders.push(reminder);
+            }
+
+            _saveRemindersLocal();
+            _saveReminderRecord(reminder);
+            renderReminders();
+            closeReminderModal();
+            showCustomAlert('Reminder saved!');
+        }
+
+        function deleteReminder(id) {
+            showCustomConfirm('Delete this reminder? This cannot be undone.', 'Confirm Delete', () => {
+                _deleteReminderRecord(id, () => {
+                    renderReminders();
+                });
+            });
         }
 
         // =============================================
@@ -10934,6 +11440,70 @@ const badge = '';
             <button onclick="saveLedgerEntry()" id="ledger-save-btn"
                 style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">
                 ✓ Save Entry
+            </button>
+        </div>
+    </div>
+
+    <!-- ==================== REMINDERS SECTION ==================== -->
+    <div id="reminders">
+        <h2>🔔 Reminders</h2>
+        <p style="font-size:13px; text-align:center; color:#888; margin-top:-10px;">Recurring shop tasks — daily, weekly or monthly</p>
+
+        <div style="display:flex; gap:8px; margin-bottom:4px;">
+            <button onclick="openReminderModal()" style="flex:1; background:#7c4dff; color:white; margin:0;">+ Add Reminder</button>
+            <button id="rem-all-toggle-btn" onclick="toggleAllRemindersList()" style="flex:1; background:#fff; color:#7c4dff; border:2px solid #7c4dff; margin:0;">All Reminders</button>
+        </div>
+
+        <div class="rem-section-label">Today</div>
+        <div id="rem-today-list"></div>
+
+        <div id="rem-all-wrap" style="display:none;">
+            <div class="rem-section-label">All Reminders</div>
+            <div id="rem-all-list"></div>
+        </div>
+
+        <button onclick="showSection('main')" style="background:#555; color:white; margin-top:10px;">← Back to Main</button>
+    </div>
+
+    <!-- Reminder Add/Edit Modal -->
+    <div id="reminder-modal">
+        <div id="reminder-panel">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 id="reminder-modal-title" style="margin:0; font-size:18px; color:#1a1a1a;">Add Reminder</h3>
+                <button onclick="closeReminderModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
+            </div>
+
+            <input type="hidden" id="reminder-edit-id" value="">
+
+            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">TASK NAME</label>
+            <input type="text" id="reminder-title" placeholder="e.g. Update daily gold rate"
+                   style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:16px; box-sizing:border-box;">
+
+            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">REPEATS</label>
+            <div class="rem-repeat-row">
+                <button type="button" class="rem-repeat-btn" data-rtype="daily" onclick="setReminderRepeatType('daily')">Daily</button>
+                <button type="button" class="rem-repeat-btn" data-rtype="weekly" onclick="setReminderRepeatType('weekly')">Weekly (1 day)</button>
+                <button type="button" class="rem-repeat-btn" data-rtype="twice-weekly" onclick="setReminderRepeatType('twice-weekly')">Twice a Week</button>
+                <button type="button" class="rem-repeat-btn" data-rtype="monthly" onclick="setReminderRepeatType('monthly')">Monthly (1 date)</button>
+                <button type="button" class="rem-repeat-btn" data-rtype="twice-monthly" onclick="setReminderRepeatType('twice-monthly')">Twice a Month</button>
+            </div>
+
+            <div id="reminder-weekday-picker" style="display:none;">
+                <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;" id="reminder-weekday-label">SELECT DAY</label>
+                <div class="rem-day-row" id="reminder-weekday-row"></div>
+            </div>
+
+            <div id="reminder-monthdate-picker" style="display:none;">
+                <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;" id="reminder-monthdate-label">SELECT DATE OF MONTH</label>
+                <div style="display:flex; gap:10px; margin-bottom:14px;">
+                    <input type="number" id="reminder-date-1" min="1" max="31" placeholder="e.g. 1" style="flex:1; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; font-size:14px; box-sizing:border-box;">
+                    <input type="number" id="reminder-date-2" min="1" max="31" placeholder="e.g. 15" style="flex:1; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; font-size:14px; box-sizing:border-box; display:none;">
+                </div>
+            </div>
+
+            <button onclick="saveReminder()" id="reminder-save-btn"
+                style="width:100%; padding:14px; background:#7c4dff; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">
+                ✓ Save Reminder
             </button>
         </div>
     </div>
