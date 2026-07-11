@@ -535,7 +535,7 @@
         /* --- END NEW BUTTON LAYOUT STYLES --- */
 
         /* Reused Modal Styles */
-        #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal, #old-gold-modal, #preset-modal, #payment-modal {
+        #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal, #old-gold-modal, #preset-modal, #payment-modal, #upi-pay-select-modal, #upi-manage-modal, #auto-backup-modal {
             display: none;
             position: fixed;
             top: 0;
@@ -1852,7 +1852,7 @@
         </div>
     </div>
 
-    <div id="custom-modal" class="modal">
+    <div id="custom-modal" class="modal" style="z-index:5000;">
         <div id="custom-modal-content" style="max-width: 320px; text-align: center;">
             <h3 id="custom-modal-title" style="font-size: 1.25rem; margin-bottom: 10px;">Alert</h3>
             <p id="custom-modal-message" style="margin-bottom: 20px;"></p>
@@ -7094,6 +7094,15 @@
             const _swReset = document.getElementById('pay-upi-switch-wrap');
             if (_swReset) _swReset.style.display = 'none';
             window._selectedUpiEntry = null; // force a fresh pick (or auto-pick if only 1) next time UPI is chosen
+            // Clear stale partial-payment QR from previous checkout
+            const _pqSection = document.getElementById('pay-partial-upi-qr-section');
+            if (_pqSection) _pqSection.style.display = 'none';
+            const _pqBox = document.getElementById('pay-partial-upi-qr-box');
+            if (_pqBox) _pqBox.innerHTML = '';
+            const _pqLabel = document.getElementById('pay-partial-upi-qr-label');
+            if (_pqLabel) _pqLabel.innerHTML = '';
+            window._selectedPartialUpiEntry = null;
+            window._partialUpiAmount = 0;
             // For negative net, pre-select 'cash' (refund to customer) but still show modal
             // so user can preview invoice and confirm before saving
             if (net <= 0) {
@@ -7139,6 +7148,7 @@
                 _renderUpiQr(shopUpiIds[0]);
                 return;
             }
+            window._upiQrContext = 'full';
             openUpiPaySelectModal();
         }
         window._handleUpiModeSelect = _handleUpiModeSelect;
@@ -7158,43 +7168,44 @@
 
         function chooseUpiForPayment(idx) {
             closeModal('upi-pay-select-modal');
+            if (window._upiQrContext === 'partial') {
+                window._selectedPartialUpiEntry = shopUpiIds[idx];
+                const amt = window._partialUpiAmount || (parseFloat(document.getElementById('pay-upi-amt').value) || 0);
+                _renderUpiQrCore(shopUpiIds[idx], amt, { box: 'pay-partial-upi-qr-box', label: 'pay-partial-upi-qr-label', switchWrap: 'pay-partial-upi-switch-wrap' });
+                return;
+            }
             _renderUpiQr(shopUpiIds[idx]);
         }
         window.chooseUpiForPayment = chooseUpiForPayment;
 
-        function _renderUpiQr(entry) {
-            // entry === undefined -> keep whatever was previously selected (e.g. re-render on amount change)
-            if (entry === undefined) entry = window._selectedUpiEntry || (shopUpiIds && shopUpiIds[0]) || null;
-            window._selectedUpiEntry = entry;
-
+        // Shared QR-drawing core — used by both the full-UPI payment panel and the
+        // partial-payment "QR for entered amount" panel. Writes into whichever DOM
+        // ids are passed in so both panels can reuse the exact same rendering logic.
+        function _renderUpiQrCore(entry, amount, ids) {
             const upiId = entry ? entry.upi : '';
-            const qrBox = document.getElementById('pay-upi-qr-box');
-            const qrLabel = document.getElementById('pay-upi-qr-label');
-            const missingEl = document.getElementById('pay-upi-id-missing');
-            const switchWrap = document.getElementById('pay-upi-switch-wrap');
+            const qrBox = document.getElementById(ids.box);
+            const qrLabel = document.getElementById(ids.label);
+            const missingEl = ids.missing ? document.getElementById(ids.missing) : null;
+            const switchWrap = ids.switchWrap ? document.getElementById(ids.switchWrap) : null;
 
             if (!upiId) {
-                qrBox.style.display = 'none';
-                missingEl.style.display = 'block';
-                qrLabel.textContent = '';
+                if (qrBox) qrBox.style.display = 'none';
+                if (missingEl) missingEl.style.display = 'block';
+                if (qrLabel) qrLabel.textContent = '';
                 if (switchWrap) switchWrap.style.display = 'none';
                 return;
             }
 
             qrBox.style.display = 'inline-block';
-            missingEl.style.display = 'none';
+            if (missingEl) missingEl.style.display = 'none';
             qrBox.innerHTML = ''; // clear previous QR
 
-            // Calculate net payable
-            let total = 0; cart.forEach(i => total += i.finalPrice);
-            let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
-            const net = Math.max(0, total - oldGoldTotal - cartAdjustment);
-            const amount = net.toFixed(2);
+            const amt = amount.toFixed(2);
 
             // UPI deep link format — payee name uses the custom label for this QR
             const upiUrl = 'upi://pay?pa=' + encodeURIComponent(upiId)
                 + '&pn=' + encodeURIComponent(entry.name || 'Suhag Jewellers')
-                + '&am=' + amount
+                + '&am=' + amt
                 + '&cu=INR';
 
             try {
@@ -7206,13 +7217,78 @@
                     colorLight: '#ffffff',
                     correctLevel: QRCode.CorrectLevel.M
                 });
-                qrLabel.innerHTML = '<strong>' + (entry.name ? entry.name + ' — ' : '') + upiId + '</strong><br>₹' + Number(amount).toLocaleString('en-IN', {minimumFractionDigits:2});
+                qrLabel.innerHTML = '<strong>' + (entry.name ? entry.name + ' — ' : '') + upiId + '</strong><br>₹' + Number(amt).toLocaleString('en-IN', {minimumFractionDigits:2});
             } catch(e) {
                 qrBox.innerHTML = '<div style="color:#e53935;font-size:12px;">QR generation failed</div>';
             }
 
             if (switchWrap) switchWrap.style.display = (shopUpiIds && shopUpiIds.length > 1) ? 'block' : 'none';
         }
+
+        function _renderUpiQr(entry) {
+            // entry === undefined -> keep whatever was previously selected (e.g. re-render on amount change)
+            if (entry === undefined) entry = window._selectedUpiEntry || (shopUpiIds && shopUpiIds[0]) || null;
+            window._selectedUpiEntry = entry;
+
+            // Calculate net payable
+            let total = 0; cart.forEach(i => total += i.finalPrice);
+            let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
+            const net = Math.max(0, total - oldGoldTotal - cartAdjustment);
+
+            _renderUpiQrCore(entry, net, {
+                box: 'pay-upi-qr-box',
+                label: 'pay-upi-qr-label',
+                missing: 'pay-upi-id-missing',
+                switchWrap: 'pay-upi-switch-wrap'
+            });
+        }
+
+        // Partial-payment QR: shows a QR code for whatever amount is currently
+        // typed into the UPI (₹) field of the split-payment panel, rather than
+        // the full net payable. Toggled by the QR icon beside the UPI label.
+        function togglePartialUpiQr() {
+            const section = document.getElementById('pay-partial-upi-qr-section');
+            if (!section) return;
+            if (section.style.display === 'block') {
+                section.style.display = 'none';
+                return;
+            }
+
+            const amt = parseFloat(document.getElementById('pay-upi-amt').value) || 0;
+            if (amt <= 0) { showCustomAlert('Enter the UPI amount first.'); return; }
+
+            section.style.display = 'block';
+            window._partialUpiAmount = amt;
+
+            const ids = { box: 'pay-partial-upi-qr-box', label: 'pay-partial-upi-qr-label', switchWrap: 'pay-partial-upi-switch-wrap' };
+
+            if (!shopUpiIds || shopUpiIds.length === 0) {
+                document.getElementById(ids.box).innerHTML = '';
+                document.getElementById(ids.box).style.display = 'none';
+                document.getElementById(ids.label).innerHTML = '⚠️ No UPI ID set. <span style="text-decoration:underline; cursor:pointer; color:#1565C0;" onclick="openUpiIdSetting()">Add it in More → Settings</span>';
+                return;
+            }
+            if (shopUpiIds.length === 1) {
+                window._selectedPartialUpiEntry = shopUpiIds[0];
+                _renderUpiQrCore(shopUpiIds[0], amt, ids);
+                return;
+            }
+            window._upiQrContext = 'partial';
+            openUpiPaySelectModal();
+        }
+        window.togglePartialUpiQr = togglePartialUpiQr;
+
+        // Keeps the partial QR (if open) in sync as the cashier edits the UPI amount field.
+        function _updatePartialUpiQrAmount() {
+            const section = document.getElementById('pay-partial-upi-qr-section');
+            if (!section || section.style.display !== 'block') return;
+            const amt = parseFloat(document.getElementById('pay-upi-amt').value) || 0;
+            const entry = window._selectedPartialUpiEntry;
+            if (amt <= 0 || !entry) return;
+            window._partialUpiAmount = amt;
+            _renderUpiQrCore(entry, amt, { box: 'pay-partial-upi-qr-box', label: 'pay-partial-upi-qr-label', switchWrap: 'pay-partial-upi-switch-wrap' });
+        }
+        window._updatePartialUpiQrAmount = _updatePartialUpiQrAmount;
 
         function syncPartialPayment(changed) {
             let total = 0; cart.forEach(i => total += i.finalPrice);
@@ -11378,7 +11454,7 @@ const badge = '';
                 <div id="pay-upi-qr-box" style="display:inline-block; background:white; padding:12px; border-radius:12px; border:2px solid #e0e0e0; margin-bottom:8px;"></div>
                 <div id="pay-upi-qr-label" style="font-size:12px; color:#888; margin-top:4px;"></div>
                 <div id="pay-upi-switch-wrap" style="display:none; margin-top:6px;">
-                    <span onclick="openUpiPaySelectModal()" style="font-size:12px; color:#1565C0; text-decoration:underline; cursor:pointer;">🔁 Switch UPI ID</span>
+                    <span onclick="window._upiQrContext='full'; openUpiPaySelectModal();" style="font-size:12px; color:#1565C0; text-decoration:underline; cursor:pointer;">🔁 Switch UPI ID</span>
                 </div>
                 <div id="pay-upi-id-missing" style="display:none; font-size:13px; color:#e65100; background:#fff3e0; border-radius:8px; padding:10px; margin-top:4px;">
                     ⚠️ No UPI ID set. <span style="text-decoration:underline; cursor:pointer; color:#1565C0;" onclick="openUpiIdSetting()">Add it in More → Settings</span>
@@ -11398,13 +11474,22 @@ const badge = '';
                                    style="width:100%; padding:8px 10px; border:1.5px solid #e0e0e0; border-radius:8px; font-size:15px; font-weight:600; box-sizing:border-box;">
                         </div>
                     </div>
-                    <div style="display:flex; align-items:center; gap:10px;">
-                        <span style="font-size:18px;">📱</span>
+                    <div style="display:flex; align-items:flex-end; gap:10px;">
+                        <span style="font-size:18px; padding-bottom:8px;">📱</span>
                         <div style="flex:1;">
                             <label style="font-size:11px; color:#888; display:block; margin-bottom:2px;">UPI (₹)</label>
                             <input type="number" id="pay-upi-amt"   placeholder="0" min="0" step="1"
-                                   oninput="syncPartialPayment('upi')"
-                                   style="width:100%; padding:8px 10px; border:1.5px solid #e0e0e0; border-radius:8px; font-size:15px; font-weight:600; box-sizing:border-box;">
+                                   oninput="syncPartialPayment('upi'); _updatePartialUpiQrAmount();"
+                                   style="width:100%; padding:8px 10px; border:1.5px solid #e0e0e0; border-radius:8px; font-size:15px; font-weight:600; box-sizing:border-box; height:37px;">
+                        </div>
+                        <button type="button" onclick="togglePartialUpiQr()" title="Show QR for entered UPI amount"
+                              style="flex-shrink:0; height:37px; padding:0 12px; background:#ede7f6; border:1.5px solid #d1c4e9; border-radius:8px; font-size:12px; font-weight:800; color:#5e35b1; cursor:pointer; font-family:'Inter',sans-serif; box-sizing:border-box;">QR</button>
+                    </div>
+                    <div id="pay-partial-upi-qr-section" style="display:none; text-align:center; background:#fff; border-radius:10px; padding:12px; border:1px dashed #ddd;">
+                        <div id="pay-partial-upi-qr-box" style="display:inline-block; background:white; padding:10px; border-radius:12px; border:2px solid #e0e0e0; margin-bottom:6px;"></div>
+                        <div id="pay-partial-upi-qr-label" style="font-size:12px; color:#888;"></div>
+                        <div id="pay-partial-upi-switch-wrap" style="display:none; margin-top:6px;">
+                            <span onclick="window._upiQrContext='partial'; openUpiPaySelectModal();" style="font-size:12px; color:#1565C0; text-decoration:underline; cursor:pointer;">🔁 Switch UPI ID</span>
                         </div>
                     </div>
                     <div style="display:flex; align-items:center; gap:10px;">
