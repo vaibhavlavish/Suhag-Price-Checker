@@ -10938,12 +10938,21 @@
                 return true;
             });
 
-            // Newest invoice first, oldest at the bottom. Timestamps are stored as
-            // ISO strings (new Date().toISOString()), so they must go through
-            // new Date(...) before comparing — plain subtraction on two date
-            // strings silently evaluates to NaN and leaves the array unsorted,
-            // which is what was happening before this fix.
-            items.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+            // Newest invoice first, oldest at the bottom — ordered by invoice
+            // number (not timestamp). Bill numbers can be assigned out of
+            // timestamp order (e.g. an edited/backdated bill), so sorting by
+            // the numeric suffix of billNo is what actually keeps the list in
+            // invoice sequence. Falls back to timestamp if a billNo can't be
+            // parsed to a number.
+            const _histNum = (inv) => {
+                const m = String(inv.billNo || '').match(/(\d+)\s*$/);
+                return m ? parseInt(m[1], 10) : NaN;
+            };
+            items.sort((a, b) => {
+                const na = _histNum(a), nb = _histNum(b);
+                if (!isNaN(na) && !isNaN(nb) && na !== nb) return nb - na;
+                return new Date(b.timestamp || 0) - new Date(a.timestamp || 0);
+            });
 
             if (!items.length) {
                 c.innerHTML = '<div class="empty"><div style="font-size:40px;margin-bottom:10px;">🧾</div><p style="font-size:13px;">No invoices yet</p></div>';
@@ -10952,7 +10961,7 @@
 
             c.innerHTML = items.slice(0, 200).map(inv => {
                 const dt = new Date(inv.timestamp);
-                const ds = dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) + ' · ' + dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+                const ds = dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
                 const amt = inv.totals?.rounded || 0;
 const badge = '';
                 const draftTag = inv.draft ? ' <span style="font-size:9px;color:#FF9800;font-weight:700;">DRAFT</span>' : '';
