@@ -10838,9 +10838,24 @@
                     // Only log a ledger entry for brand-new invoices — an edit would
                     // otherwise double-count the sale in the cash ledger.
                     if (!isEdit) _invLedgerFromRecord(rec);
-                    invToast(isEdit ? '✅ Invoice updated — ' + rec.billNo : '✅ Invoice saved — ' + rec.billNo);
                     invRenderHistory();
                     invReset(); // clear the form so the next invoice starts fresh
+                    // Bulk print: if there are more queued invoices, move straight on to
+                    // the next one instead of stopping — this is what lets "Print
+                    // Selected" fire off a whole batch back-to-back without the person
+                    // tapping Print again for each one.
+                    if (window._invBulkQueue && window._invBulkQueue.length) {
+                        const nextId = window._invBulkQueue.shift();
+                        _invBulkUpdateProgress();
+                        invPrintFromHistory(nextId);
+                        return;
+                    }
+                    if (window._invBulkPrintActive) {
+                        window._invBulkPrintActive = false;
+                        invToast('✅ Bulk print complete — ' + window._invBulkTotal + ' invoice(s)');
+                    } else {
+                        invToast(isEdit ? '✅ Invoice updated — ' + rec.billNo : '✅ Invoice saved — ' + rec.billNo);
+                    }
                 }
             }
             pf.contentWindow.addEventListener('afterprint', onAfterPrint);
@@ -11181,17 +11196,131 @@ const badge = '';
 
         // One-click "Print" from the history detail modal — loads the saved invoice
         // (same restore logic as Edit/Reprint, now correctly bringing back date,
-        // discount, and payment method) straight into the New-tab form and sends it
-        // to print immediately, without requiring the person to navigate there and
-        // press Print themselves. On completion it resaves the record in place with
-        // the same data (no duplicate, no data change) via the normal edit-save path.
+        // discount, and payment method) straight into the (hidden) New-tab form and
+        // sends it to print immediately. Unlike Edit/Reprint, this deliberately stays
+        // on the History tab throughout — it used to jump to the New tab and leave you
+        // there, so printing a second invoice meant navigating back to History and
+        // waiting for it to re-render every time. Loading happens invisibly behind
+        // the still-visible History list, and printing resaves the record in place
+        // with the same data (no duplicate, no data change) via the normal edit-save
+        // path — see _invDoActualPrint's afterprint handler.
         function invPrintFromHistory(id) {
-            invReloadBill(id);
+            invReloadBill(id, false); // false = don't switch tabs, stay on History
             document.getElementById('inv-bill-modal').style.display = 'none';
             invPrint();
         }
 
-        function invReloadBill(id) {
+        // ─── BULK INVOICE PRINT ───
+        // Lets the person print a batch of invoices back-to-back (e.g. all of today's,
+        // or a hand-picked set) without re-opening History and pressing Print for each
+        // one individually. Reuses the exact same single-invoice print/save pipeline
+        // (invPrintFromHistory → invPrint → _invDoActualPrint) one invoice at a time —
+        // the afterprint handler above pops the next queued id and calls
+        // invPrintFromHistory again, so each invoice still gets its own native print
+        // dialog/job, just fired automatically in sequence.
+        window._invBulkQueue = [];
+        window._invBulkPrintActive = false;
+        window._invBulkTotal = 0;
+
+        function invOpenBulkPrint() {
+            document.getElementById('inv-bulk-print-modal').style.display = 'flex';
+            invRenderBulkPrintList();
+        }
+
+        function invCloseBulkPrint() {
+            document.getElementById('inv-bulk-print-modal').style.display = 'none';
+        }
+
+        // Builds the checklist from the same track/search-filtered set History itself
+        // shows, plus an optional date range, so "according to my need" can mean
+        // "everything matching my current search" or "everything in these dates".
+        function invRenderBulkPrintList() {
+            const c = document.getElementById('inv-bulk-print-list');
+            if (!c) return;
+            const q = (document.getElementById('inv-hist-search')?.value || '').toLowerCase();
+            const fromV = document.getElementById('inv-bulk-from')?.value || '';
+            const toV = document.getElementById('inv-bulk-to')?.value || '';
+
+            let items = invoiceHistory.filter(inv => {
+                if (inv.track !== currentInvTrack) return false;
+                if (inv.track === 'B' && !invTrackBUnlocked) return false;
+                if (q) {
+                    const itemHay = (inv.items || []).map(it => [it.barcode, it.huid].join(' ')).join(' ');
+                    const hay = [inv.billNo, inv.custName, inv.custMob, inv.custAddr, itemHay].join(' ').toLowerCase();
+                    if (!hay.includes(q)) return false;
+                }
+                if (fromV || toV) {
+                    const d = new Date(inv.timestamp);
+                    const dOnly = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                    if (fromV && dOnly < fromV) return false;
+                    if (toV && dOnly > toV) return false;
+                }
+                return true;
+            });
+
+            const _histNum = (inv) => {
+                const m = String(inv.billNo || '').match(/(\d+)\s*$/);
+                return m ? parseInt(m[1], 10) : NaN;
+            };
+            items.sort((a, b) => {
+                const na = _histNum(a), nb = _histNum(b);
+                if (!isNaN(na) && !isNaN(nb) && na !== nb) return nb - na;
+                return new Date(b.timestamp || 0) - new Date(a.timestamp || 0);
+            });
+
+            if (!items.length) {
+                c.innerHTML = '<div style="text-align:center;color:#999;font-size:13px;padding:16px 0;">No invoices match</div>';
+                _invBulkUpdateCount();
+                return;
+            }
+
+            c.innerHTML = items.map(inv => {
+                const dt = new Date(inv.timestamp);
+                const ds = dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+                const amt = Math.round(inv.totals?.rounded || 0);
+                return `<label style="display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f0f0f0;cursor:pointer;font-size:13px;">
+                  <input type="checkbox" class="inv-bulk-chk" value="${inv.id}" onchange="_invBulkUpdateCount()" style="width:16px;height:16px;flex-shrink:0;margin:0;">
+                  <span style="flex:1;">
+                    <span style="font-weight:700;">${invEscH(inv.custName||'—')}</span>
+                    <span style="color:#999;"> · ${inv.billNo} · ${ds}</span>
+                  </span>
+                  <span style="font-weight:700;color:var(--green);">₹${amt.toLocaleString('en-IN')}</span>
+                </label>`;
+            }).join('');
+            _invBulkUpdateCount();
+        }
+
+        function invBulkSelectAll(check) {
+            document.querySelectorAll('.inv-bulk-chk').forEach(el => el.checked = check);
+            _invBulkUpdateCount();
+        }
+
+        function _invBulkUpdateCount() {
+            const n = document.querySelectorAll('.inv-bulk-chk:checked').length;
+            const btn = document.getElementById('inv-bulk-print-btn');
+            if (btn) btn.textContent = n ? `🖨 Print Selected (${n})` : '🖨 Print Selected';
+        }
+
+        function _invBulkUpdateProgress() {
+            const done = window._invBulkTotal - window._invBulkQueue.length;
+            invToast(`🖨 Printing ${done} of ${window._invBulkTotal}…`);
+        }
+
+        // Kicks off the queue: prints the first selected invoice now, then the
+        // afterprint handler in _invDoActualPrint chains through the rest.
+        function invStartBulkPrint() {
+            const ids = Array.from(document.querySelectorAll('.inv-bulk-chk:checked')).map(el => el.value);
+            if (!ids.length) { invToast('Select at least one invoice first'); return; }
+            invCloseBulkPrint();
+            window._invBulkQueue = ids.slice(1);
+            window._invBulkPrintActive = true;
+            window._invBulkTotal = ids.length;
+            invToast(`🖨 Printing 1 of ${ids.length}…`);
+            invPrintFromHistory(ids[0]);
+        }
+
+        function invReloadBill(id, switchTab) {
+            if (switchTab === undefined) switchTab = true;
             const inv = invoiceHistory.find(i => i.id === id);
             if (!inv) return;
             invEditingId = id; // saving now updates this record in place instead of creating a new one
@@ -11245,7 +11374,7 @@ const badge = '';
             invRenderRows();
             invRenderOg();
             invRecalc();
-            invSwitchTab('new');
+            if (switchTab) invSwitchTab('new');
         }
 
         // Copies a Track B invoice's full data (items, old jewellery, customer,
@@ -11968,7 +12097,7 @@ const badge = '';
                 <span style="position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:14px;">🔍</span>
             </div>
             <div style="display:flex; gap:8px; margin-bottom:12px;">
-
+                <button onclick="invOpenBulkPrint()" style="flex:1; background:#1D6BB5; color:white; border:none; border-radius:8px; padding:10px 8px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">🖨 Bulk Print</button>
             </div>
             <div id="inv-hist-list"></div>
         </div>
@@ -12023,6 +12152,33 @@ const badge = '';
                 <button onclick="document.getElementById('inv-bill-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
             <div id="inv-bill-modal-body"></div>
+        </div>
+    </div>
+
+    <!-- BULK PRINT MODAL -->
+    <div id="inv-bulk-print-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:550; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:440px; width:100%; max-height:88vh; overflow-y:auto; padding:18px; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);">🖨 Bulk Print Invoices</span>
+                <button onclick="invCloseBulkPrint()" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <div style="font-size:11px; color:var(--text2); margin-bottom:8px;">Filter by date (optional) — search box above also applies</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+                <div>
+                    <label style="font-size:11px; display:block; margin-bottom:3px;">From</label>
+                    <input type="date" id="inv-bulk-from" onchange="invRenderBulkPrintList()" style="margin:0;">
+                </div>
+                <div>
+                    <label style="font-size:11px; display:block; margin-bottom:3px;">To</label>
+                    <input type="date" id="inv-bulk-to" onchange="invRenderBulkPrintList()" style="margin:0;">
+                </div>
+            </div>
+            <div style="display:flex; gap:8px; margin-bottom:10px;">
+                <button onclick="invBulkSelectAll(true)" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Select All</button>
+                <button onclick="invBulkSelectAll(false)" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Clear</button>
+            </div>
+            <div id="inv-bulk-print-list" style="flex:1; overflow-y:auto; max-height:45vh; border:1px solid #eee; border-radius:10px; padding:4px 8px; margin-bottom:14px;"></div>
+            <button id="inv-bulk-print-btn" onclick="invStartBulkPrint()" style="width:100%; background:var(--green); color:white; border:none; border-radius:var(--radius-sm); padding:12px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">🖨 Print Selected</button>
         </div>
     </div>
 
