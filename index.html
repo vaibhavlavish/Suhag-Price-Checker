@@ -1713,7 +1713,7 @@
                 <span id="cart-counter" class="badge" style="display: none;">0</span>
             </button>
         </div>
-        <div id="active-profile-badge" onclick="openProfileModal()" style="position:absolute; bottom:8px; left:10px; font-size:11px; color:#1565C0; font-weight:600; cursor:pointer; background:rgba(21,101,192,0.08); padding:3px 8px; border-radius:10px; display:none;"></div>
+        <div id="active-profile-badge" onclick="_handleProfileBadgeTap()" style="position:absolute; bottom:8px; left:10px; font-size:11px; color:#1565C0; font-weight:600; cursor:pointer; background:rgba(21,101,192,0.08); padding:3px 8px; border-radius:10px; display:none;"></div>
     </div>
 
     <button id="add-old-gold-btn" onclick="openOldGoldModal()">+</button>
@@ -1764,7 +1764,11 @@
 
         <button id="loose-add-to-cart-btn" class="full-width-btn" onclick="addToCartLoose()" style="margin-top: 10px; background-color: #4CAF50;">Add to Cart</button>
         <button id="loose-alter-btn" class="full-width-btn" onclick="openLooseAlterDialog()" style="margin-top: 10px; background-color: #FF9800;">Alter</button>
-        <button onclick="showSection('main')" style="margin-top: 10px;">Back to Main</button>
+        <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+            <button onclick="showLoosePriceBreakdown()" title="Price Breakdown"
+                style="width: 36px; height: 36px; border-radius: 50%; border: none; background: #2196F3; color: white; font-size: 15px; font-weight: bold; font-style: normal; padding: 0; text-align: center; cursor: pointer; flex-shrink: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">i</button>
+            <button onclick="showSection('main')" style="margin-top: 0; flex: 1;">Back to Main</button>
+        </div>
 
         <label for="repair-amount">Jewellery Amount (₹):</label>
         <input type="number" id="repair-amount" placeholder="Enter amount" step="0.01">
@@ -5843,6 +5847,131 @@
             showCustomAlert(breakdownHtml, 'Complete Price Breakdown');
         }
 
+        // NEW: Same detailed breakdown, but for the Loose calculator's current item
+        function showLoosePriceBreakdown() {
+            if (!currentLooseItem) {
+                showCustomAlert('Enter a weight first to see the breakdown.');
+                return;
+            }
+            const d = currentLooseItem;
+            const rate = d.rate;
+            const metalVal = d.weight * rate;
+            const makingType = d.makingType; // '%', 'wastage', 'per_g', 'per_pc'
+            const makingValue = d.makingValue;
+            const making = d.subtotal - metalVal;
+            const taxAmount = d.subtotal * (d.taxRateApplied / 100);
+
+            let makingStr = '0';
+            if (makingType === '%') makingStr = `${makingValue}%`;
+            else if (makingType === 'wastage') makingStr = `${makingValue}% (W)`;
+            else if (makingType === 'per_g') makingStr = `₹${makingValue.toFixed(2)}/g`;
+            else if (makingType === 'per_pc') makingStr = `₹${makingValue.toFixed(2)}/pc`;
+
+            let breakdownHtml = `<div style="text-align: left; font-size: 15px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #eee; margin-top: 10px;">`;
+
+            if (makingType === 'wastage') {
+                const pureRate = getPureRate(d.metal);
+                const makingPerGram = pureRate * (makingValue / 100);
+                const totalRatePerGram = rate + makingPerGram;
+                breakdownHtml += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="color: #555;">Pure rate:-</span>
+                        <strong>${pureRate.toFixed(2)}</strong>
+                    </div>
+                    <div style="border-top: 1px dashed #ccc; margin-bottom: 8px;"></div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span style="color: #555;">Making<br><span style="font-size:12px;">(${pureRate.toFixed(2)}*${makingValue}%(w))</span></span>
+                        <strong>₹${makingPerGram.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px; padding-left: 8px;">
+                        <span style="color: #555;">+</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span style="color: #555;">Metal rate</span>
+                        <strong>₹${rate.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; border-top: 1px dashed #ccc; padding-top: 6px;">
+                        <span style="color: #555;"></span>
+                        <strong>₹${totalRatePerGram.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Weight</span>
+                        <strong>${d.weight.toFixed(2)} gm</strong>
+                    </div>
+                `;
+            } else if (makingType === 'per_g') {
+                const totalRatePerGram = rate + makingValue;
+                breakdownHtml += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="color: #555;">Metal rate</span>
+                        <strong>₹${rate.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span style="color: #555;">Making (₹${makingValue.toFixed(2)}/g)</span>
+                        <strong>₹${makingValue.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; border-top: 1px dashed #ccc; padding-top: 6px;">
+                        <span style="color: #555;"></span>
+                        <strong>₹${totalRatePerGram.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Weight</span>
+                        <strong>${d.weight.toFixed(2)} gm</strong>
+                    </div>
+                `;
+            } else if (makingType === '%') {
+                const makingPerGram = rate * (makingValue / 100);
+                const totalRatePerGram = rate + makingPerGram;
+                breakdownHtml += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="color: #555;">Metal rate</span>
+                        <strong>₹${rate.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span style="color: #555;">Making<br><span style="font-size:12px;">(${rate.toFixed(2)}*${makingValue}%)</span></span>
+                        <strong>₹${makingPerGram.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; border-top: 1px dashed #ccc; padding-top: 6px;">
+                        <span style="color: #555;"></span>
+                        <strong>₹${totalRatePerGram.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Weight</span>
+                        <strong>${d.weight.toFixed(2)} gm</strong>
+                    </div>
+                `;
+            } else {
+                breakdownHtml += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Metal (${d.weight.toFixed(2)}g × ₹${rate.toFixed(2)}):</span>
+                        <strong>₹${metalVal.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Making (${makingStr}):</span>
+                        <strong>₹${making.toFixed(2)}</strong>
+                    </div>
+                `;
+            }
+
+            breakdownHtml += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                        <span style="color: #333; font-weight: bold;">Subtotal:</span>
+                        <strong style="color: #333;">₹${d.subtotal.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Tax (${d.taxRateApplied}%):</span>
+                        <strong>₹${taxAmount.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; border-top: 2px solid #333; padding-top: 12px; font-size: 18px; color: #4CAF50; font-weight: bold;">
+                        <span>Final Total:</span>
+                        <span>₹${d.finalPrice.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+
+            showCustomAlert(breakdownHtml, 'Complete Price Breakdown');
+        }
+
         function showDetails() {
             if (!currentProduct) return;
             const d = currentProduct;
@@ -6558,6 +6687,17 @@
             switchProfileTab('gold');
         }
 
+        let _lastProfileBadgeTap = 0;
+        function _handleProfileBadgeTap() {
+            const now = Date.now();
+            if (now - _lastProfileBadgeTap < 400) {
+                _lastProfileBadgeTap = 0;
+                openProfileModal();
+            } else {
+                _lastProfileBadgeTap = now;
+            }
+        }
+
         function _profileOffsetStr(obj, label) {
             if (!obj) return '';
             const parts = [];
@@ -6568,6 +6708,20 @@
             return parts.length ? `<span style="color:#888;">${label}:</span> ${parts.join(' · ')}` : '';
         }
 
+        function _profileSortKey(name) {
+            const m = String(name || '').match(/(\d+(?:\.\d+)*)/);
+            if (!m) return [Infinity];
+            return m[1].split('.').map(Number);
+        }
+        function _compareProfileNames(a, b) {
+            const ka = _profileSortKey(a.name), kb = _profileSortKey(b.name);
+            const len = Math.max(ka.length, kb.length);
+            for (let i = 0; i < len; i++) {
+                const av = ka[i] ?? 0, bv = kb[i] ?? 0;
+                if (av !== bv) return av - bv;
+            }
+            return String(a.name || '').localeCompare(String(b.name || ''));
+        }
         function renderProfileList() {
             const container = document.getElementById('profile-list');
             if (!container) return;
@@ -6575,7 +6729,12 @@
                 container.innerHTML = '<p style="color:#aaa; font-size:13px; text-align:center;">No profiles yet.</p>';
                 return;
             }
-            container.innerHTML = makingProfiles.map(p => {
+            const sortedProfiles = makingProfiles.slice().sort((a, b) => {
+                if (a.id === 'default') return -1;
+                if (b.id === 'default') return 1;
+                return _compareProfileNames(a, b);
+            });
+            container.innerHTML = sortedProfiles.map(p => {
                 const isActive  = p.id === activeProfileId;
                 const isDefault = p.id === 'default';
                 // Support both old flat structure and new gold/silver structure
