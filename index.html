@@ -10111,15 +10111,25 @@
 
         // PRINT-ONLY making label. Identical to invMakingLabel except for 'wastage'
         // rows: instead of printing the raw "%W" figure (which customers often find
-        // confusing), it converts the wastage % into the equivalent ₹/gram rate
-        // (rate × wastage%) so the printed invoice reads like a normal per-gram
-        // making charge. This is purely a display conversion — the underlying
-        // row data (r.makingType/r.makingPct) and invMakingAmt() math are untouched,
-        // so editing, totals, and every screen other than the printed invoice are
+        // confusing), it converts the wastage % into an equivalent rupee rate so the
+        // printed invoice reads like a normal making charge.
+        // - Items 1g and above: printed as ₹/gram (rate × wastage%).
+        // - Items below 1g: printed as ₹/pc — the item's total wastage making amount
+        //   divided by piece count, rounded to the nearest rupee — since a per-gram
+        //   rate on a sub-gram item reads as a confusingly tiny number.
+        // This is purely a display conversion — the underlying row data
+        // (r.makingType/r.makingPct) and invMakingAmt() math are untouched, so
+        // editing, totals, and every screen other than the printed invoice are
         // unaffected.
         function invMakingLabelPrint(r) {
             const type = r.makingType || '%', val = r.makingPct || 0;
             if (type === 'wastage') {
+                const weight = r.nlWt || 0;
+                if (weight > 0 && weight < 1) {
+                    const totalMaking = weight * (r.pureRate || r.rate || 0) * (val / 100);
+                    const perPc = totalMaking / (r.pc || 1);
+                    return '₹' + Math.round(perPc) + '/pc';
+                }
                 const perGram = (r.pureRate || r.rate || 0) * (val / 100);
                 return '₹' + perGram.toFixed(2) + '/g';
             }
