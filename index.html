@@ -11386,7 +11386,7 @@ const badge = '';
                     const vouchNo = (prod.vouchNo || '').toString().trim() || '—';
                     if (!types[voucherType]) types[voucherType] = {};
                     if (!types[voucherType][vouchNo]) types[voucherType][vouchNo] = [];
-                    types[voucherType][vouchNo].push({ barcode: bc, billNo: inv.billNo });
+                    types[voucherType][vouchNo].push({ barcode: bc, itemName: (prod.itemName || '').toString().trim(), billNo: inv.billNo });
                     totalBarcodes++;
                 });
             });
@@ -11412,9 +11412,10 @@ const badge = '';
                         <div style="margin-bottom:8px; padding-left:8px; border-left:2.5px solid var(--border);">
                             <div style="font-size:12.5px; font-weight:700; color:var(--text); margin-bottom:4px;">Vou No. ${invEscH(g.vouchNo)}</div>
                             ${g.barcodes.map(b => `
-                                <div style="display:flex; justify-content:space-between; font-size:12px; padding:3px 0 3px 6px; border-bottom:1px solid #f2f2f2;">
-                                    <span style="font-weight:700;">${invEscH(b.barcode)}</span>
-                                    <span style="color:#999;">${invEscH(b.billNo || '')}</span>
+                                <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:12px; padding:3px 0 3px 6px; border-bottom:1px solid #f2f2f2; gap:8px;">
+                                    <span style="font-weight:700; white-space:nowrap;">${invEscH(b.barcode)}</span>
+                                    <span style="color:#666; flex:1; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${invEscH(b.itemName || '')}</span>
+                                    <span style="color:#999; white-space:nowrap;">${invEscH(b.billNo || '')}</span>
                                 </div>
                             `).join('')}
                         </div>
