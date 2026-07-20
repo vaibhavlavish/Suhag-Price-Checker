@@ -6487,7 +6487,9 @@
                     otherCharge: findColumn(headers, ['other charge', 'other', 'extra charge']),
                     metal: findColumn(headers, ['metal']),
                     stamp: findColumn(headers, ['stamp']),
-                    huid: findColumn(headers, ['huid', 'huid no', 'huid number', 'hallmark unique id'])
+                    huid: findColumn(headers, ['huid', 'huid no', 'huid number', 'hallmark unique id']),
+                    vouchNo: findColumn(headers, ['vou no', 'vou no.', 'vouno', 'vouch no', 'vouch no.', 'vouchno', 'voucher no', 'voucher no.', 'voucherno']),
+                    voucherType: findColumn(headers, ['vou type', 'vou type.', 'voutype', 'voucher type', 'vouchertype', 'vch type', 'vch. type'])
                 };
                 if (cols.tagNo === -1) {
                     document.getElementById('excel-info').innerHTML = '<p style="color:red;">Error: Tag No column required</p>';
@@ -6515,7 +6517,9 @@
                         otherCharge: cols.otherCharge !== -1 ? parseFloat(row[cols.otherCharge]) || 0 : 0,
                         metal: cols.metal !== -1 ? (row[cols.metal] || '').toString().trim().toLowerCase() : '',
                         stamp: cols.stamp !== -1 ? (row[cols.stamp] || '').toString().trim().toUpperCase() : '',
-                        HUID: cols.huid !== -1 ? (row[cols.huid] || '').toString().trim().toUpperCase() : ''
+                        HUID: cols.huid !== -1 ? (row[cols.huid] || '').toString().trim().toUpperCase() : '',
+                        vouchNo: cols.vouchNo !== -1 ? (row[cols.vouchNo] || '').toString().trim() : '',
+                        voucherType: cols.voucherType !== -1 ? (row[cols.voucherType] || '').toString().trim() : ''
                     };
                     count++;
                 }
@@ -11327,6 +11331,101 @@ const badge = '';
             invPrintFromHistory(ids[0]);
         }
 
+        // ─── LIST BARCODE ───
+        // Lists every barcode sold in the CURRENT track (Track A and Track B never
+        // mix — same isolation rule History and Bulk Print already follow) within a
+        // user-picked date range, grouped by each item's Vouch No. + Voucher Type
+        // (both come from the Excel stock sheet columns, stored on productData).
+        // Deliberately does not show anything until a date is picked — this is meant
+        // for pulling a specific period's sold tags, not a dump of the whole track.
+        function invOpenBarcodeList() {
+            document.getElementById('inv-barcode-list-modal').style.display = 'flex';
+            invRenderBarcodeList();
+        }
+
+        function invCloseBarcodeList() {
+            document.getElementById('inv-barcode-list-modal').style.display = 'none';
+        }
+
+        function invRenderBarcodeList() {
+            const listEl = document.getElementById('inv-bcl-list');
+            const summaryEl = document.getElementById('inv-bcl-summary');
+            if (!listEl) return;
+            const fromV = document.getElementById('inv-bcl-from')?.value || '';
+            const toV = document.getElementById('inv-bcl-to')?.value || '';
+
+            if (!fromV && !toV) {
+                listEl.innerHTML = '<div style="text-align:center;color:#999;font-size:13px;padding:16px 0;">Pick a From and/or To date to list barcodes</div>';
+                summaryEl.textContent = '';
+                return;
+            }
+
+            let invs = invoiceHistory.filter(inv => {
+                if (inv.track !== currentInvTrack) return false;          // never mix tracks
+                if (inv.track === 'B' && !invTrackBUnlocked) return false;
+                if (inv.draft) return false;                              // not a finalized sale yet
+                const d = new Date(inv.timestamp);
+                const dOnly = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                if (fromV && dOnly < fromV) return false;
+                if (toV && dOnly > toV) return false;
+                return true;
+            });
+
+            // Vou No. lives INSIDE Voucher Type (e.g. "OP 2" and "PUR 2" are different
+            // groups even though both have vou no. "2") — so nest Voucher Type as the
+            // outer group and Vou No. as sub-groups underneath it, rather than a flat
+            // list keyed only on vou no.
+            const types = {};
+            let totalBarcodes = 0;
+            invs.forEach(inv => {
+                (inv.items || []).forEach(item => {
+                    if (!item || !item.barcode) return;
+                    const bc = String(item.barcode).trim().toUpperCase();
+                    const prod = productData[bc] || {};
+                    const voucherType = (prod.voucherType || '').toString().trim() || '—';
+                    const vouchNo = (prod.vouchNo || '').toString().trim() || '—';
+                    if (!types[voucherType]) types[voucherType] = {};
+                    if (!types[voucherType][vouchNo]) types[voucherType][vouchNo] = [];
+                    types[voucherType][vouchNo].push({ barcode: bc, billNo: inv.billNo });
+                    totalBarcodes++;
+                });
+            });
+
+            const typeArr = Object.keys(types).sort((a, b) => a.localeCompare(b)).map(voucherType => ({
+                voucherType,
+                vouchNoGroups: Object.keys(types[voucherType])
+                    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+                    .map(vouchNo => ({ vouchNo, barcodes: types[voucherType][vouchNo] }))
+            }));
+
+            summaryEl.textContent = totalBarcodes + ' barcode(s) across ' + typeArr.length + ' voucher type(s) — Track ' + currentInvTrack;
+
+            if (!typeArr.length) {
+                listEl.innerHTML = '<div style="text-align:center;color:#999;font-size:13px;padding:16px 0;">No barcodes sold in this range</div>';
+                return;
+            }
+
+            listEl.innerHTML = typeArr.map(t => `
+                <div style="margin-bottom:14px; border:1.5px solid var(--border); border-radius:10px; padding:10px 12px;">
+                    <div style="font-size:14px; font-weight:800; color:var(--gold,#b8860b); margin-bottom:8px;">Vou Type: ${invEscH(t.voucherType)}</div>
+                    ${t.vouchNoGroups.map(g => `
+                        <div style="margin-bottom:8px; padding-left:8px; border-left:2.5px solid var(--border);">
+                            <div style="font-size:12.5px; font-weight:700; color:var(--text); margin-bottom:4px;">Vou No. ${invEscH(g.vouchNo)}</div>
+                            ${g.barcodes.map(b => `
+                                <div style="display:flex; justify-content:space-between; font-size:12px; padding:3px 0 3px 6px; border-bottom:1px solid #f2f2f2;">
+                                    <span style="font-weight:700;">${invEscH(b.barcode)}</span>
+                                    <span style="color:#999;">${invEscH(b.billNo || '')}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `).join('')}
+                </div>
+            `).join('');
+        }
+        window.invOpenBarcodeList = invOpenBarcodeList;
+        window.invCloseBarcodeList = invCloseBarcodeList;
+        window.invRenderBarcodeList = invRenderBarcodeList;
+
         function invReloadBill(id, switchTab) {
             if (switchTab === undefined) switchTab = true;
             const inv = invoiceHistory.find(i => i.id === id);
@@ -12106,6 +12205,7 @@ const badge = '';
             </div>
             <div style="display:flex; gap:8px; margin-bottom:12px;">
                 <button onclick="invOpenBulkPrint()" style="flex:1; background:#1D6BB5; color:white; border:none; border-radius:8px; padding:10px 8px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">🖨 Bulk Print</button>
+                <button onclick="invOpenBarcodeList()" style="flex:1; background:#6A4FBF; color:white; border:none; border-radius:8px; padding:10px 8px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">🏷 List Barcode</button>
             </div>
             <div id="inv-hist-list"></div>
         </div>
@@ -12187,6 +12287,29 @@ const badge = '';
             </div>
             <div id="inv-bulk-print-list" style="flex:1; overflow-y:auto; max-height:45vh; border:1px solid #eee; border-radius:10px; padding:4px 8px; margin-bottom:14px;"></div>
             <button id="inv-bulk-print-btn" onclick="invStartBulkPrint()" style="width:100%; background:var(--green); color:white; border:none; border-radius:var(--radius-sm); padding:12px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">🖨 Print Selected</button>
+        </div>
+    </div>
+
+    <!-- LIST BARCODE MODAL -->
+    <div id="inv-barcode-list-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:560; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:440px; width:100%; max-height:88vh; overflow-y:auto; padding:18px; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);">🏷 List Barcode</span>
+                <button onclick="invCloseBarcodeList()" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <div style="font-size:11px; color:var(--text2); margin-bottom:8px;">Pick a date range — barcodes sold in that period, in the current track, grouped by Vou Type then Vou No.</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+                <div>
+                    <label style="font-size:11px; display:block; margin-bottom:3px;">From</label>
+                    <input type="date" id="inv-bcl-from" onchange="invRenderBarcodeList()" style="margin:0;">
+                </div>
+                <div>
+                    <label style="font-size:11px; display:block; margin-bottom:3px;">To</label>
+                    <input type="date" id="inv-bcl-to" onchange="invRenderBarcodeList()" style="margin:0;">
+                </div>
+            </div>
+            <div id="inv-bcl-summary" style="font-size:12px; color:var(--text2); margin-bottom:8px;"></div>
+            <div id="inv-bcl-list" style="flex:1; overflow-y:auto; max-height:55vh;"></div>
         </div>
     </div>
 
