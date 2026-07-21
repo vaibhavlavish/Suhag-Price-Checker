@@ -7946,7 +7946,7 @@
                 + '<th style="width:10%;">Gr.Wt</th><th style="width:10%;">Nt.Wt</th>';
             let colSpan = showHsn ? 5 : 4;
             if (showRate)   { headCols += '<th style="width:11%;">Rate</th>';   colSpan++; }
-            if (showMaking) { headCols += '<th style="width:13%;">Making</th>'; colSpan++; }
+            if (showMaking) { headCols += '<th style="width:13%;text-align:right;">Making</th>'; colSpan++; }
             headCols += `<th style="width:${100 - (50 + (showHsn?9:0) + (showRate?11:0) + (showMaking?13:0))}%;">${fp.valueColLabel}</th>`;
 
             // ── ONE padding constant used by every row in the table so spacing
@@ -10169,6 +10169,10 @@
         // unaffected.
         function invMakingLabelPrint(r) {
             const type = r.makingType || '%', val = r.makingPct || 0;
+            if (type === 'mrp') return '—';
+            // No making charge on this item (0, or the field was never set at all) —
+            // leave the cell blank rather than printing an unsavory "0%"/"₹0/g".
+            if (!val) return '';
             if (type === 'wastage') {
                 const weight = r.nlWt || 0;
                 if (weight > 0 && weight < 1) {
@@ -10667,7 +10671,7 @@
                 + '<th style="width:10%;">Gr.Wt</th><th style="width:10%;">Nt.Wt</th>';
             let colSpan = showHsn ? 5 : 4;
             if (showRate)   { headCols += '<th style="width:11%;">Rate</th>';   colSpan++; }
-            if (showMaking) { headCols += '<th style="width:13%;">Making</th>'; colSpan++; }
+            if (showMaking) { headCols += '<th style="width:13%;text-align:right;">Making</th>'; colSpan++; }
             headCols += `<th style="width:${100 - (50 + (showHsn?9:0) + (showRate?11:0) + (showMaking?13:0))}%;">${fp.valueColLabel}</th>`;
 
             const ROWPAD = '4px 6px';
@@ -11652,14 +11656,19 @@ const badge = '';
         function invQuickRange(k) {
             const today = new Date();
             let from = today;
+            let to = today;
             if (k === 'week')  { from = new Date(today); from.setDate(today.getDate() - today.getDay()); }
             if (k === 'month') { from = new Date(today.getFullYear(), today.getMonth(), 1); }
+            if (k === 'lastmonth') {
+                from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                to   = new Date(today.getFullYear(), today.getMonth(), 0); // last day of previous month
+            }
             if (k === 'all') {
                 const sorted = [...invoiceHistory].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
                 from = sorted.length ? new Date(sorted[0].timestamp) : today;
             }
             document.getElementById('inv-exp-from').value = invFmtDate(from);
-            document.getElementById('inv-exp-to').value = invFmtDate(today);
+            document.getElementById('inv-exp-to').value = invFmtDate(to);
         }
 
         function invStateDisplay(raw) {
@@ -12271,6 +12280,7 @@ const badge = '';
                     <button onclick="invQuickRange('today')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Today</button>
                     <button onclick="invQuickRange('week')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">This Week</button>
                     <button onclick="invQuickRange('month')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">This Month</button>
+                    <button onclick="invQuickRange('lastmonth')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Last Month</button>
                     <button onclick="invQuickRange('all')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">All Time</button>
                 </div>
 
