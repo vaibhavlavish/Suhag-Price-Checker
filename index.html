@@ -3359,6 +3359,14 @@
         let rates = JSON.parse(JSON.stringify(defaultRates));
         let taxRate = 3; // factory default — overwritten by Firebase on load
         let productData = {};
+        // Timestamp (ms) of the most recent Excel product-list import. Used to guard
+        // against barcode reuse: the offline stock software frees up a barcode number
+        // once an item is deleted there, and can hand that same number to a brand-new,
+        // unrelated item later. Any historical sale of that barcode from BEFORE this
+        // import belongs to the old (now-deleted) item, not the current one — so
+        // "sold" checks for stock/return purposes only look at sales timestamped AFTER
+        // this value. See getSoldBarcodesForStock().
+        let productDataImportedAt = 0;
         let menuPrefs = {}; // which More-menu items are hidden — cloud-synced like other config
         let shopUpiId  = ''; // UPI ID for payment QR — cloud-synced, falls back to localStorage (legacy, mirrors shopUpiIds[0])
         let shopUpiIds = []; // Array of {name, upi} — up to 4 UPI IDs for payment QR, cloud-synced
@@ -3584,6 +3592,7 @@
             rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
             taxRate = cloudData.taxRate ?? 3;
             productData = cloudData.products || {};
+            productDataImportedAt = cloudData.productDataImportedAt || 0;
             // Per-item invoice settings (HSN override + custom print name), keyed
             // by URI-encoded item name (Firebase keys can't contain . # $ [ ] /).
             invItemSettings = {};
@@ -3839,6 +3848,7 @@
                 invTandC: config.invTandC || '',
                 invBillPrefix: config.invBillPrefix || null,
                 invBillStartNumber: config.invBillStartNumber || null,
+                productDataImportedAt: config.productDataImportedAt || 0,
                 products:         val.products            || {},
                 // billHistory and profiles may be keyed objects (new) or arrays (old)
                 billHistory,
@@ -3969,7 +3979,7 @@
         // Save config (rates, tax, loose defaults, base calc)
         function saveConfig() {
             const dataToSave = {
-                rates, taxRate, products: productData, packagingWeights, presetStock,
+                rates, taxRate, products: productData, productDataImportedAt, packagingWeights, presetStock,
                 looseDefaults: looseDefaultsCloud, baseCalcDefaults,
                 presets: loosePresets, makingProfiles, billHistory, menuPrefs
             };
@@ -3991,6 +4001,7 @@
             update['jewelryData/config/upiId']            = shopUpiId || null;
             update['jewelryData/config/upiIds']           = (shopUpiIds && shopUpiIds.length) ? shopUpiIds : null;
             update['jewelryData/products']                = productData || {};
+            update['jewelryData/config/productDataImportedAt'] = productDataImportedAt || 0;
             window.dbSafeUpdate(update)
                 .then(() => { clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false; window._presetStockDirty = false; })
                 .catch((err) => {
@@ -4064,7 +4075,7 @@
         // Write current full state to localStorage (bills+ledger+config in one shot)
         function _persistLocalCache() {
             const dataToSave = {
-                rates, taxRate, products: productData, packagingWeights, presetStock,
+                rates, taxRate, products: productData, productDataImportedAt, packagingWeights, presetStock,
                 looseDefaults: looseDefaultsCloud, baseCalcDefaults,
                 presets: loosePresets, makingProfiles, billHistory, menuPrefs
             };
@@ -4384,6 +4395,36 @@
             return sold;
         }
 
+        // Same as getSoldBarcodes(), but guards against barcode reuse: the offline
+        // stock software frees a barcode number once its item is deleted there, and
+        // can later hand that exact number to a brand-new, unrelated item. If that
+        // happens, a sale recorded here from BEFORE the current product import
+        // belongs to the old (now-deleted) item — it must NOT make the new item
+        // look already-sold. So a barcode only counts as sold-for-the-current-item
+        // if the sale timestamp is on/after productDataImportedAt (sales with no
+        // timestamp, e.g. legacy billHistory, are treated as pre-dating any import).
+        function getSoldBarcodesForStock() {
+            const sold = new Set();
+            (billHistory || []).forEach(bill => {
+                const ts = bill.timestamp ? new Date(bill.timestamp).getTime() : 0;
+                if (ts < productDataImportedAt) return;
+                (bill.items || []).forEach(item => {
+                    if (item && item.barcode) sold.add(String(item.barcode).trim().toUpperCase());
+                });
+            });
+            (invoiceHistory || []).forEach(inv => {
+                if (inv.draft) return;
+                const ts = inv.timestamp ? new Date(inv.timestamp).getTime() : 0;
+                if (ts < productDataImportedAt) return;
+                (inv.items || []).forEach(item => {
+                    if (item && item.barcode) sold.add(String(item.barcode).trim().toUpperCase());
+                });
+            });
+            const returned = window._returnedBarcodes || {};
+            Object.keys(returned).forEach(bc => sold.delete(bc.toUpperCase()));
+            return sold;
+        }
+
         // --- MANUAL STOCK TRACKING FOR NON-BARCODED LOOSE PRESETS (e.g. Nosepin) ---
         // Keyed by preset name, lowercased+trimmed, so "Nosepin" always maps to the
         // same record regardless of case. Only presets that already have a record
@@ -4542,7 +4583,7 @@
             const summary = document.getElementById('stock-calc-summary');
             tbody.innerHTML = '';
 
-            const sold = getSoldBarcodes();
+            const sold = getSoldBarcodesForStock();
             const groups = {}; // name -> { pc, grossWt, totalValue }
             let hiddenCount = 0;
 
@@ -6531,6 +6572,7 @@
                     'Confirm Replacement',
                     () => {
                         productData = newProductData;
+                        productDataImportedAt = Date.now();
                         saveAllDataToCloud();
                         document.getElementById('excel-info').innerHTML = `<p>Successfully loaded ${count} products.</p>`;
                         fileInput.value = ''; // Reset after confirm so same file can be re-selected
@@ -9178,7 +9220,7 @@
                 'Weight: <strong>' + weight + '</strong>';
 
             // Warn if barcode is not in sold set (already in stock)
-            const soldBarcodes = getSoldBarcodes();
+            const soldBarcodes = getSoldBarcodesForStock();
             const alreadyWarn = document.getElementById('return-already-warn');
             alreadyWarn.style.display = soldBarcodes.has(barcode) ? 'none' : 'block';
 
