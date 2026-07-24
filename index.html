@@ -18,6 +18,7 @@
         // Import the functions you need from the Firebase SDKs
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getDatabase, ref, set, update, remove, onValue, get, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+        import { getStorage, ref as storageRef, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
         // Your web app's Firebase configuration
         const firebaseConfig = {
@@ -33,8 +34,12 @@
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
+        const storage = getStorage(app);
         // Expose Firebase functions to the global scope for the main script
         window.firebaseDB = db;
+        window.firebaseStorage = storage;
+        window.storageRef = storageRef;
+        window.deleteObject = deleteObject;
         window.dbRef = ref;
         window.dbSet = set;
         window.dbUpdate = update;
@@ -4425,10 +4430,20 @@
             return sold;
         }
 
+        // How long a fully-sold-out catalogue entry (every linked tag gone) sits
+        // hidden before its photos and Firebase record are deleted for good.
+        // Picked from the middle of the 10-20 day range — change this one
+        // number if a shorter or longer grace period is wanted.
+        const CATALOGUE_CLEANUP_DAYS = 15;
+        const CATALOGUE_CLEANUP_MS = CATALOGUE_CLEANUP_DAYS * 24 * 60 * 60 * 1000;
+
         // ─── PUBLIC CATALOGUE AVAILABILITY + PRICING SYNC ───
         // Keeps the separate public photo catalogue (its own site, its own repo)
-        // in step with real stock. This never adds or removes a catalogue entry —
-        // entries are created only by the Upload Terminal when a photo goes up.
+        // in step with real stock. This never adds a catalogue entry — entries
+        // are created only by the Upload Terminal when a photo goes up. It DOES
+        // eventually remove one, but only once every linked tag has been sold
+        // out for CATALOGUE_CLEANUP_DAYS straight (see the cleanup pass below).
+        //
         // It flips the `available` flag on barcodes that ALREADY have a
         // catalogue entry, based on the same in-stock logic Stock Calc/Returns use,
         // AND pushes a precomputed activeBarcode/displayName/displaySize/displayPrice
@@ -4439,9 +4454,11 @@
         // A catalogue entry may have a `linkedBarcodes` field — an ordered list
         // of tags that all share this one photo set (set from the Upload
         // Terminal's Link Items tab, for identical-looking pieces with
-        // different tags). Sequence = priority: this walks the list in order
-        // and quotes the FIRST tag still in stock as `activeBarcode`; entries
-        // with no `linkedBarcodes` just behave as a single-tag item, as before.
+        // different tags — e.g. one barcode gets sold and its row deleted from
+        // the stock sheet within days, but a linked twin is still in stock).
+        // Sequence = priority: this walks the list in order and quotes the
+        // FIRST tag still in stock as `activeBarcode`; entries with no
+        // `linkedBarcodes` just behave as a single-tag item, as before.
         // Called after every finalized sale, Excel import, return, and rate update.
         function invSyncCatalogueAvailability() {
             if (!window.dbGet || !window.dbUpdate || !window.firebaseDB || !window.dbRef) return;
@@ -4451,6 +4468,7 @@
                 if (!barcodes.length) return;
                 const sold = getSoldBarcodesForStock();
                 const updates = {};
+                const toDelete = [];
                 // Catalogue barcodes and stock barcodes aren't always the same
                 // case (scanner vs. Excel entry vs. manual typing), so match
                 // case-insensitively — same approach used elsewhere in this
@@ -4474,6 +4492,23 @@
                         }
                     }
                     const inStock = !!d;
+
+                    if (inStock) {
+                        // Back in stock (restock, return, or a fresh linked tag
+                        // added) — clear any sold-out clock that was ticking.
+                        if (node.soldOutAt) updates['catalogue/items/' + bc + '/soldOutAt'] = null;
+                    } else {
+                        if (!node.soldOutAt) {
+                            // First moment we've seen every tag in this group out
+                            // of stock — start the clock.
+                            updates['catalogue/items/' + bc + '/soldOutAt'] = Date.now();
+                        } else if (Date.now() - node.soldOutAt > CATALOGUE_CLEANUP_MS) {
+                            // Been sold out for the full grace period — remove it
+                            // entirely instead of leaving it hidden forever.
+                            toDelete.push({ bc, node });
+                            return; // no point writing other fields, it's being deleted
+                        }
+                    }
 
                     if (!!node.available !== inStock) {
                         updates['catalogue/items/' + bc + '/available'] = inStock;
@@ -4504,7 +4539,34 @@
                 if (Object.keys(updates).length) {
                     window.dbUpdate(window.dbRef(window.firebaseDB, '/'), updates);
                 }
+                if (toDelete.length) deleteExpiredCatalogueItems(toDelete);
             }).catch(err => console.warn('[Catalogue sync] failed:', err));
+        }
+
+        // Removes a fully-expired, fully-sold-out catalogue entry: its photo
+        // file(s) in Storage first (best-effort — a missing file is fine, it
+        // may already be gone), then the Firebase record itself. Runs quietly
+        // in the background; failures here don't interrupt anything the shop
+        // is doing, they're just retried next time the sync runs.
+        async function deleteExpiredCatalogueItems(items){
+            if (!window.firebaseStorage || !window.storageRef || !window.deleteObject) return;
+            for (const { bc, node } of items) {
+                try {
+                    const paths = [];
+                    if (node.storagePath) paths.push(node.storagePath); // legacy flat format
+                    Object.values(node.images || {}).forEach(img => { if (img && img.storagePath) paths.push(img.storagePath); });
+
+                    for (const p of paths) {
+                        try { await window.deleteObject(window.storageRef(window.firebaseStorage, p)); }
+                        catch (e) { console.warn('[Catalogue cleanup] storage file already gone or failed:', p, e); }
+                    }
+
+                    await window.dbUpdate(window.dbRef(window.firebaseDB, '/'), { ['catalogue/items/' + bc]: null });
+                    console.info('[Catalogue cleanup] removed long-sold-out entry:', bc);
+                } catch (e) {
+                    console.warn('[Catalogue cleanup] failed for', bc, e);
+                }
+            }
         }
 
         // --- MANUAL STOCK TRACKING FOR NON-BARCODED LOOSE PRESETS (e.g. Nosepin) ---
