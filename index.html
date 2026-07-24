@@ -4425,13 +4425,17 @@
             return sold;
         }
 
-        // ─── PUBLIC CATALOGUE AVAILABILITY SYNC ───
+        // ─── PUBLIC CATALOGUE AVAILABILITY + PRICING SYNC ───
         // Keeps the separate public photo catalogue (its own site, its own repo)
         // in step with real stock. This never adds or removes a catalogue entry —
         // entries are created only by the Upload Terminal when a photo goes up.
-        // It only flips the `available` flag on barcodes that ALREADY have a
-        // catalogue entry, based on the same in-stock logic Stock Calc/Returns use.
-        // Called after every finalized sale, Excel import, and return.
+        // It flips the `available` flag on barcodes that ALREADY have a
+        // catalogue entry, based on the same in-stock logic Stock Calc/Returns use,
+        // AND pushes a precomputed displayName/displaySize/displayPrice for each —
+        // this is deliberate: the public catalogue page reads ONLY these three
+        // finished values, never the underlying rates/weight/making-charge fields,
+        // so nothing about how a price is built is exposed on that page.
+        // Called after every finalized sale, Excel import, return, and rate update.
         function invSyncCatalogueAvailability() {
             if (!window.dbGet || !window.dbUpdate || !window.firebaseDB || !window.dbRef) return;
             window.dbGet(window.dbRef(window.firebaseDB, 'catalogue/items')).then(snap => {
@@ -4444,6 +4448,26 @@
                     const inStock = !!productData[bc] && !sold.has(bc);
                     if (!!catItems[bc].available !== inStock) {
                         updates['catalogue/items/' + bc + '/available'] = inStock;
+                    }
+
+                    const d = productData[bc];
+                    if (!d) return; // no product record — nothing to compute a price/name from
+                    const name = (d.itemName || '').trim();
+                    const priceResult = calcProductFinalPrice(bc);
+                    const settings = invApplyItemSettings(name);
+
+                    const displayName = settings.printName || name || null;
+                    const displaySize = d.size || null;
+                    const displayPrice = priceResult ? Math.round(priceResult.final) : null;
+
+                    if (catItems[bc].displayName !== displayName) {
+                        updates['catalogue/items/' + bc + '/displayName'] = displayName;
+                    }
+                    if (catItems[bc].displaySize !== displaySize) {
+                        updates['catalogue/items/' + bc + '/displaySize'] = displaySize;
+                    }
+                    if (catItems[bc].displayPrice !== displayPrice) {
+                        updates['catalogue/items/' + bc + '/displayPrice'] = displayPrice;
                     }
                 });
                 if (Object.keys(updates).length) {
@@ -5067,6 +5091,7 @@
             });
             if (updatedCount > 0) {
                 saveAllDataToCloud();
+                invSyncCatalogueAvailability();
                 showCustomAlert(`Successfully updated ${updatedCount} rates for ${metal.charAt(0).toUpperCase() + metal.slice(1)}.\nPercentages and Base Rate saved as default.`);
                 // Do NOT clear inputs anymore, they stay as defaults
             } else {
@@ -6627,6 +6652,7 @@
             if (rates[metal] && rates[metal][stamp] !== undefined && !isNaN(price)) {
                 rates[metal][stamp] = price;
                 saveAllDataToCloudDebounced();
+                invSyncCatalogueAvailability();
                 showCustomAlert(`Updated: ${metal} ${stamp} → ₹${price}/g`);
                 document.getElementById('price-per-gram').value = '';
             } else {
