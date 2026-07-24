@@ -4444,16 +4444,24 @@
                 if (!barcodes.length) return;
                 const sold = getSoldBarcodesForStock();
                 const updates = {};
+                // Catalogue barcodes and stock barcodes aren't always the same
+                // case (scanner vs. Excel entry vs. manual typing), so match
+                // case-insensitively — same approach used elsewhere in this
+                // file (barcode lookup, HUID lookup) for the same reason.
+                const productKeysUpper = {};
+                Object.keys(productData).forEach(k => { productKeysUpper[k.toUpperCase()] = k; });
+
                 barcodes.forEach(bc => {
-                    const inStock = !!productData[bc] && !sold.has(bc);
+                    const matchedKey = productKeysUpper[bc.toUpperCase()];
+                    const d = matchedKey ? productData[matchedKey] : null;
+                    const inStock = !!d && !sold.has(bc.toUpperCase());
                     if (!!catItems[bc].available !== inStock) {
                         updates['catalogue/items/' + bc + '/available'] = inStock;
                     }
 
-                    const d = productData[bc];
-                    if (!d) return; // no product record — nothing to compute a price/name from
+                    if (!d) return; // no matching product record — nothing to compute a price/name from
                     const name = (d.itemName || '').trim();
-                    const priceResult = calcProductFinalPrice(bc);
+                    const priceResult = calcProductFinalPrice(matchedKey);
                     const settings = invApplyItemSettings(name);
 
                     const displayName = settings.printName || name || null;
