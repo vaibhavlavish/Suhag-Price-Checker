@@ -4431,10 +4431,17 @@
         // entries are created only by the Upload Terminal when a photo goes up.
         // It flips the `available` flag on barcodes that ALREADY have a
         // catalogue entry, based on the same in-stock logic Stock Calc/Returns use,
-        // AND pushes a precomputed displayName/displaySize/displayPrice for each —
-        // this is deliberate: the public catalogue page reads ONLY these three
-        // finished values, never the underlying rates/weight/making-charge fields,
-        // so nothing about how a price is built is exposed on that page.
+        // AND pushes a precomputed activeBarcode/displayName/displaySize/displayPrice
+        // for each — this is deliberate: the public catalogue page reads ONLY
+        // these finished values, never the underlying rates/weight/making-charge
+        // fields, so nothing about how a price is built is exposed on that page.
+        //
+        // A catalogue entry may have a `linkedBarcodes` field — an ordered list
+        // of tags that all share this one photo set (set from the Upload
+        // Terminal's Link Items tab, for identical-looking pieces with
+        // different tags). Sequence = priority: this walks the list in order
+        // and quotes the FIRST tag still in stock as `activeBarcode`; entries
+        // with no `linkedBarcodes` just behave as a single-tag item, as before.
         // Called after every finalized sale, Excel import, return, and rate update.
         function invSyncCatalogueAvailability() {
             if (!window.dbGet || !window.dbUpdate || !window.firebaseDB || !window.dbRef) return;
@@ -4452,14 +4459,30 @@
                 Object.keys(productData).forEach(k => { productKeysUpper[k.toUpperCase()] = k; });
 
                 barcodes.forEach(bc => {
-                    const matchedKey = productKeysUpper[bc.toUpperCase()];
-                    const d = matchedKey ? productData[matchedKey] : null;
-                    const inStock = !!d && !sold.has(bc.toUpperCase());
-                    if (!!catItems[bc].available !== inStock) {
+                    const node = catItems[bc];
+                    const sequence = (Array.isArray(node.linkedBarcodes) && node.linkedBarcodes.length)
+                        ? node.linkedBarcodes
+                        : [bc];
+
+                    // Walk the sequence in order, first entry still in stock wins.
+                    let activeTag = null, matchedKey = null, d = null;
+                    for (const tag of sequence) {
+                        const mk = productKeysUpper[String(tag).toUpperCase()];
+                        if (mk && !sold.has(String(tag).toUpperCase())) {
+                            activeTag = tag; matchedKey = mk; d = productData[mk];
+                            break;
+                        }
+                    }
+                    const inStock = !!d;
+
+                    if (!!node.available !== inStock) {
                         updates['catalogue/items/' + bc + '/available'] = inStock;
                     }
+                    if (node.activeBarcode !== (activeTag || null)) {
+                        updates['catalogue/items/' + bc + '/activeBarcode'] = activeTag || null;
+                    }
 
-                    if (!d) return; // no matching product record — nothing to compute a price/name from
+                    if (!d) return; // nothing in the sequence is in stock — nothing to compute a price/name from
                     const name = (d.itemName || '').trim();
                     const priceResult = calcProductFinalPrice(matchedKey);
                     const settings = invApplyItemSettings(name);
@@ -4468,13 +4491,13 @@
                     const displaySize = d.size || null;
                     const displayPrice = priceResult ? Math.round(priceResult.final) : null;
 
-                    if (catItems[bc].displayName !== displayName) {
+                    if (node.displayName !== displayName) {
                         updates['catalogue/items/' + bc + '/displayName'] = displayName;
                     }
-                    if (catItems[bc].displaySize !== displaySize) {
+                    if (node.displaySize !== displaySize) {
                         updates['catalogue/items/' + bc + '/displaySize'] = displaySize;
                     }
-                    if (catItems[bc].displayPrice !== displayPrice) {
+                    if (node.displayPrice !== displayPrice) {
                         updates['catalogue/items/' + bc + '/displayPrice'] = displayPrice;
                     }
                 });
