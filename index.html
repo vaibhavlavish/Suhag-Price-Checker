@@ -4425,6 +4425,33 @@
             return sold;
         }
 
+        // ─── PUBLIC CATALOGUE AVAILABILITY SYNC ───
+        // Keeps the separate public photo catalogue (its own site, its own repo)
+        // in step with real stock. This never adds or removes a catalogue entry —
+        // entries are created only by the Upload Terminal when a photo goes up.
+        // It only flips the `available` flag on barcodes that ALREADY have a
+        // catalogue entry, based on the same in-stock logic Stock Calc/Returns use.
+        // Called after every finalized sale, Excel import, and return.
+        function invSyncCatalogueAvailability() {
+            if (!window.dbGet || !window.dbUpdate || !window.firebaseDB || !window.dbRef) return;
+            window.dbGet(window.dbRef(window.firebaseDB, 'catalogue/items')).then(snap => {
+                const catItems = snap.val() || {};
+                const barcodes = Object.keys(catItems);
+                if (!barcodes.length) return;
+                const sold = getSoldBarcodesForStock();
+                const updates = {};
+                barcodes.forEach(bc => {
+                    const inStock = !!productData[bc] && !sold.has(bc);
+                    if (!!catItems[bc].available !== inStock) {
+                        updates['catalogue/items/' + bc + '/available'] = inStock;
+                    }
+                });
+                if (Object.keys(updates).length) {
+                    window.dbUpdate(window.dbRef(window.firebaseDB, '/'), updates);
+                }
+            }).catch(err => console.warn('[Catalogue sync] failed:', err));
+        }
+
         // --- MANUAL STOCK TRACKING FOR NON-BARCODED LOOSE PRESETS (e.g. Nosepin) ---
         // Keyed by preset name, lowercased+trimmed, so "Nosepin" always maps to the
         // same record regardless of case. Only presets that already have a record
@@ -6574,6 +6601,7 @@
                         productData = newProductData;
                         productDataImportedAt = Date.now();
                         saveAllDataToCloud();
+                        invSyncCatalogueAvailability();
                         document.getElementById('excel-info').innerHTML = `<p>Successfully loaded ${count} products.</p>`;
                         fileInput.value = ''; // Reset after confirm so same file can be re-selected
                     }
@@ -8224,6 +8252,7 @@
                 note, timestamp: new Date().toISOString(), source
             };
             ledgerEntries.push(entry); _saveLedgerLocal(); _saveLedgerRecord(entry); renderLedger();
+            invSyncCatalogueAvailability();
         }
 
         // Saves everything for a checkout: Ledger + Invoice (Track B). Bills/billHistory
@@ -9239,6 +9268,7 @@
             const update = {};
             update['jewelryData/config/returnedBarcodes'] = window._returnedBarcodes;
             window.dbSafeUpdate(update).catch(e => console.error('[Return] save failed', e));
+            invSyncCatalogueAvailability();
 
             _returnSessionLog.unshift({ barcode, name: d.itemName || barcode, ts: Date.now() });
             _renderReturnLog();
