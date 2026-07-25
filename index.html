@@ -4565,7 +4565,11 @@
                 try {
                     const paths = [];
                     if (node.storagePath) paths.push(node.storagePath); // legacy flat format
-                    Object.values(node.images || {}).forEach(img => { if (img && img.storagePath) paths.push(img.storagePath); });
+                    Object.values(node.images || {}).forEach(img => {
+                        if (!img) return;
+                        if (img.storagePath) paths.push(img.storagePath);
+                        if (img.thumbStoragePath) paths.push(img.thumbStoragePath);
+                    });
 
                     for (const p of paths) {
                         try { await window.deleteObject(window.storageRef(window.firebaseStorage, p)); }
