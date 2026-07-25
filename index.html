@@ -4524,13 +4524,23 @@
 
                     const displayName = settings.printName || name || null;
                     const displaySize = d.size || null;
-                    const displayPrice = priceResult ? Math.round(priceResult.final) : null;
+                    const displayWeight = (typeof d.netWeight === 'number' && d.netWeight > 0) ? d.netWeight : null;
+                    // A shop-fixed common price (set in the Upload Terminal's Link
+                    // Items tab) overrides the calculated price for display —
+                    // the calculated price still gets computed above/below for
+                    // the price-rise reminder, it's just not what's shown here.
+                    const displayPrice = (node.useCommonPrice && typeof node.commonPrice === 'number')
+                        ? Math.round(node.commonPrice)
+                        : (priceResult ? Math.round(priceResult.final) : null);
 
                     if (node.displayName !== displayName) {
                         updates['catalogue/items/' + bc + '/displayName'] = displayName;
                     }
                     if (node.displaySize !== displaySize) {
                         updates['catalogue/items/' + bc + '/displaySize'] = displaySize;
+                    }
+                    if (node.displayWeight !== displayWeight) {
+                        updates['catalogue/items/' + bc + '/displayWeight'] = displayWeight;
                     }
                     if (node.displayPrice !== displayPrice) {
                         updates['catalogue/items/' + bc + '/displayPrice'] = displayPrice;
@@ -4539,6 +4549,7 @@
                 if (Object.keys(updates).length) {
                     window.dbUpdate(window.dbRef(window.firebaseDB, '/'), updates);
                 }
+                checkLinkedGroupPriceReminders(catItems, productKeysUpper);
                 if (toDelete.length) deleteExpiredCatalogueItems(toDelete);
             }).catch(err => console.warn('[Catalogue sync] failed:', err));
         }
@@ -4569,7 +4580,67 @@
             }
         }
 
-        // --- MANUAL STOCK TRACKING FOR NON-BARCODED LOOSE PRESETS (e.g. Nosepin) ---
+        // ─── LINKED-GROUP PRICE-RISE REMINDERS ───
+        // For any linked group where the shop has fixed a common display
+        // price (Upload Terminal → Link Items), this checks whether the real,
+        // currently-calculated price of the group's tags — by whichever
+        // measure the shop picked (lowest/average/highest) — has risen above
+        // that fixed price. If so, it creates a daily reminder in the existing
+        // Reminders system so it keeps nagging every day until resolved. Once
+        // the condition is no longer true (shop updated the fixed price, or
+        // rates came back down), the reminder is removed automatically —
+        // no manual "mark done" needed for this specific kind of reminder.
+        function checkLinkedGroupPriceReminders(catItems, productKeysUpper){
+            if (typeof reminders === 'undefined' || !window.dbSafeUpdate) return;
+            Object.keys(catItems).forEach(bc => {
+                const node = catItems[bc];
+                const reminderId = 'priceAlert_' + bc;
+                const alreadyExists = reminders.some(r => r.id === reminderId);
+
+                if (!node.priceReminderEnabled || !node.useCommonPrice || typeof node.commonPrice !== 'number') {
+                    if (alreadyExists) _deleteReminderRecord(reminderId);
+                    return;
+                }
+
+                const sequence = (Array.isArray(node.linkedBarcodes) && node.linkedBarcodes.length)
+                    ? node.linkedBarcodes
+                    : [bc];
+
+                const prices = [];
+                sequence.forEach(tag => {
+                    const mk = productKeysUpper[String(tag).toUpperCase()];
+                    if (!mk) return;
+                    const result = calcProductFinalPrice(mk);
+                    if (result) prices.push(Math.round(result.final));
+                });
+                if (!prices.length) {
+                    if (alreadyExists) _deleteReminderRecord(reminderId);
+                    return;
+                }
+
+                let basisPrice, basisLabel;
+                if (node.priceReminderBasis === 'lowest') { basisPrice = Math.min(...prices); basisLabel = 'Lowest'; }
+                else if (node.priceReminderBasis === 'highest') { basisPrice = Math.max(...prices); basisLabel = 'Highest'; }
+                else { basisPrice = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length); basisLabel = 'Average'; }
+
+                const exceeds = basisPrice > node.commonPrice;
+
+                if (exceeds && !alreadyExists) {
+                    _saveReminderRecord({
+                        id: reminderId,
+                        title: `⚠️ Fixed price for ${node.displayName || bc} (Tag ${bc}) needs updating — ${basisLabel} tag price is now ₹${basisPrice}, above your fixed ₹${node.commonPrice}`,
+                        repeat: 'daily',
+                        completedDates: [],
+                        active: true,
+                        createdAt: Date.now(),
+                    });
+                } else if (!exceeds && alreadyExists) {
+                    _deleteReminderRecord(reminderId);
+                }
+            });
+        }
+
+
         // Keyed by preset name, lowercased+trimmed, so "Nosepin" always maps to the
         // same record regardless of case. Only presets that already have a record
         // here (i.e. someone has tapped "+ Add Stock" on them at least once) show
