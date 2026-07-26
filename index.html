@@ -4496,7 +4496,21 @@
                     if (inStock) {
                         // Back in stock (restock, return, or a fresh linked tag
                         // added) — clear any sold-out clock that was ticking.
-                        if (node.soldOutAt) updates['catalogue/items/' + bc + '/soldOutAt'] = null;
+                        if (node.soldOutAt) {
+                            updates['catalogue/items/' + bc + '/soldOutAt'] = null;
+                            // The barcode software can free a sold barcode and
+                            // later hand that exact number to a totally
+                            // different physical item. Software can't tell
+                            // those two cases apart with certainty — so every
+                            // sold-out-to-back-in-stock transition gets flagged
+                            // for a quick human check, rather than silently
+                            // trusting that the old photos/purity/description
+                            // still describe whatever's now at this barcode.
+                            updates['catalogue/needsVerification/' + bc] = {
+                                flaggedAt: Date.now(),
+                                reason: 'Came back in stock after being sold out',
+                            };
+                        }
                     } else {
                         if (!node.soldOutAt) {
                             // First moment we've seen every tag in this group out
@@ -4576,7 +4590,10 @@
                         catch (e) { console.warn('[Catalogue cleanup] storage file already gone or failed:', p, e); }
                     }
 
-                    await window.dbUpdate(window.dbRef(window.firebaseDB, '/'), { ['catalogue/items/' + bc]: null });
+                    await window.dbUpdate(window.dbRef(window.firebaseDB, '/'), {
+                        ['catalogue/items/' + bc]: null,
+                        ['catalogue/needsVerification/' + bc]: null,
+                    });
                     console.info('[Catalogue cleanup] removed long-sold-out entry:', bc);
                 } catch (e) {
                     console.warn('[Catalogue cleanup] failed for', bc, e);
