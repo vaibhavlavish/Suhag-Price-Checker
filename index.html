@@ -4499,8 +4499,12 @@
         // Called after every finalized sale, Excel import, return, and rate update.
         function invSyncCatalogueAvailability() {
             if (!window.dbGet || !window.dbUpdate || !window.firebaseDB || !window.dbRef) return;
-            window.dbGet(window.dbRef(window.firebaseDB, 'catalogue/items')).then(snap => {
+            Promise.all([
+                window.dbGet(window.dbRef(window.firebaseDB, 'catalogue/items')),
+                window.dbGet(window.dbRef(window.firebaseDB, 'catalogue/tagMakingOverrides')),
+            ]).then(([snap, overridesSnap]) => {
                 const catItems = snap.val() || {};
+                const tagMakingOverrides = overridesSnap.val() || {};
                 const barcodes = Object.keys(catItems);
                 if (!barcodes.length) return;
                 const sold = getSoldBarcodesForStock();
@@ -4570,7 +4574,15 @@
 
                     if (!d) return; // nothing in the sequence is in stock — nothing to compute a price/name from
                     const name = (d.itemName || '').trim();
-                    const priceResult = calcProductFinalPrice(matchedKey);
+                    // A catalogue-only making override (set in the Upload
+                    // Terminal, per exact tag) changes what price the
+                    // catalogue displays — it never touches this tag's real
+                    // making data in the POS itself, and if it can't be
+                    // computed for any reason, this falls straight back to
+                    // the normal POS calculation rather than showing nothing.
+                    const tagOverride = tagMakingOverrides[String(matchedKey).toUpperCase()];
+                    const priceResult = (tagOverride && calcProductFinalPriceWithMakingOverride(matchedKey, tagOverride))
+                        || calcProductFinalPrice(matchedKey);
                     const settings = invApplyItemSettings(name);
 
                     const displayName = settings.printName || name || null;
@@ -5106,6 +5118,52 @@
             const total = metalVal + making + otherCharge;
             final = total + total * (taxRate / 100);
             return { final, makingType, makingInput };
+        }
+
+        // Computes the price using a catalogue-only making override instead
+        // of this tag's own stored making data — used only by the catalogue
+        // sync, and only for whichever tag actually has an override set in
+        // the Upload Terminal. The tag's real making values in the POS are
+        // never read or touched by this at all; this exists purely to answer
+        // "what would the catalogue show if this tag's making were X
+        // instead," nothing more.
+        function calcProductFinalPriceWithMakingOverride(barcode, override) {
+            const d = productData[barcode];
+            if (!d || !override || !override.makingType) return null;
+            const otherCharge = d.otherCharge || 0;
+            const weight = d.netWeight || 0;
+            const makingInput = override.makingInput;
+
+            if (override.makingType === 'MRP') {
+                if (typeof makingInput !== 'number' || makingInput < 0) return null;
+                const total = makingInput + otherCharge;
+                return { final: total + total * (taxRate / 100), makingType: 'MRP', makingInput };
+            }
+
+            const mKey = d.metal, stamp = d.stamp;
+            if (!mKey || !stamp || !rates[mKey] || !rates[mKey][stamp] || rates[mKey][stamp] === 0) return null;
+            if (typeof makingInput !== 'number' || makingInput < 0) return null;
+
+            const rate = rates[mKey][stamp];
+            const metalVal = weight * rate;
+            let making = 0;
+
+            if (override.makingType === 'per pc') {
+                making = makingInput;
+            } else if (override.makingType === 'wastage') {
+                const pureRate = getPureRate(mKey);
+                if (pureRate === 0) return null;
+                making = pureRate * weight * (makingInput / 100);
+            } else if (override.makingType === 'per g') {
+                making = makingInput * weight;
+            } else if (override.makingType === '%') {
+                making = metalVal * (makingInput / 100);
+            } else {
+                return null; // unrecognized type — fall back to the normal calculation instead of guessing
+            }
+
+            const total = metalVal + making + otherCharge;
+            return { final: total + total * (taxRate / 100), makingType: override.makingType, makingInput };
         }
 
         let currentStockSort = 'default';
