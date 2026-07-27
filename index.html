@@ -3364,6 +3364,43 @@
         let rates = JSON.parse(JSON.stringify(defaultRates));
         let taxRate = 3; // factory default — overwritten by Firebase on load
         let productData = {};
+
+        // Mirrors, per-tag, whether the catalogue has a shop-fixed display
+        // price for that tag's linked group (set in the Upload Terminal's
+        // Link Items tab) — kept live via onValue rather than fetched fresh
+        // each time, since Stock View re-renders on every keystroke in its
+        // search box and a network read that often would be wasteful.
+        let CATALOGUE_PRICE_OVERRIDES = {}; // { TAG_UPPERCASE: commonPrice }
+        if (window.firebaseDB && window.dbOnValue && window.dbRef) {
+            window.dbOnValue(window.dbRef(window.firebaseDB, 'catalogue/items'), snap => {
+                const items = snap.val() || {};
+                const map = {};
+                Object.keys(items).forEach(bc => {
+                    const node = items[bc];
+                    if (!node || !node.useCommonPrice || typeof node.commonPrice !== 'number') return;
+                    const sequence = (Array.isArray(node.linkedBarcodes) && node.linkedBarcodes.length) ? node.linkedBarcodes : [bc];
+                    sequence.forEach(tag => { map[String(tag).toUpperCase()] = node.commonPrice; });
+                });
+                CATALOGUE_PRICE_OVERRIDES = map;
+                // If Stock View happens to be open right now, refresh it so a
+                // price change (or a new override being set) shows immediately
+                // rather than needing a manual re-search to notice it.
+                const stockViewEl = document.getElementById('stock-view');
+                if (stockViewEl && stockViewEl.style.display !== 'none' && typeof renderStockView === 'function') {
+                    renderStockView();
+                }
+            }, err => console.error(err));
+        }
+
+        // The single place that decides what price actually shows/sorts for
+        // a barcode in Stock View: the catalogue's fixed display price if the
+        // shop has set one for that tag's group, otherwise the normal
+        // calculated price — same precedence the catalogue itself uses.
+        function stockEffectivePrice(barcode, priceResult) {
+            const override = CATALOGUE_PRICE_OVERRIDES[String(barcode).toUpperCase()];
+            if (typeof override === 'number') return override;
+            return priceResult ? priceResult.final : null;
+        }
         // Timestamp (ms) of the most recent Excel product-list import. Used to guard
         // against barcode reuse: the offline stock software frees up a barcode number
         // once an item is deleted there, and can hand that same number to a brand-new,
@@ -4995,6 +5032,82 @@
             return { final, makingType, makingInput };
         }
 
+        // Same calculation as calcProductFinalPrice, but also applies the
+        // currently active profile's making-charge offsets — mirroring
+        // exactly what runPriceCalculation() does for the Main scan screen,
+        // kept in sync deliberately so Stock View shows the same price a
+        // customer would actually be quoted right now, not the plain base
+        // calculation. Deliberately a SEPARATE function: calcProductFinalPrice
+        // itself stays untouched, since Stock Calc and the catalogue's price
+        // sync intentionally keep using the base calculation, not whichever
+        // profile happens to be active on this device at this moment.
+        function calcProductFinalPriceForActiveProfile(barcode) {
+            const d = productData[barcode];
+            if (!d) return null;
+            let final = 0, making = 0;
+            const otherCharge = d.otherCharge || 0;
+            const weight = d.netWeight || 0;
+
+            if (_productUsesMrp(d)) {
+                const total = d.mrp + otherCharge;
+                final = total + total * (taxRate / 100);
+                return { final, makingType: 'MRP', makingInput: d.mrp };
+            }
+
+            const mKey = d.metal, stamp = d.stamp;
+            if (!mKey || !stamp || !rates[mKey] || !rates[mKey][stamp] || rates[mKey][stamp] === 0) return null;
+
+            const rate = rates[mKey][stamp];
+            const metalVal = weight * rate;
+            let makingType = '', makingInput = 0;
+            let pureRate = null;
+
+            if (d.makingPerPc > 0) {
+                making = d.makingPerPc; makingType = 'per pc'; makingInput = d.makingPerPc;
+            } else if (d.makingWastage > 0) {
+                pureRate = getPureRate(mKey);
+                if (pureRate === 0) return null;
+                making = pureRate * weight * (d.makingWastage / 100);
+                makingType = 'wastage'; makingInput = d.makingWastage;
+            } else if (d.makingPerGram > 0) {
+                making = d.makingPerGram * weight; makingType = 'per g'; makingInput = d.makingPerGram;
+            } else if (d.makingPercent > 0) {
+                making = metalVal * (d.makingPercent / 100); makingType = '%'; makingInput = d.makingPercent;
+            }
+
+            if (makingType !== '') {
+                const prof = getActiveProfile();
+                if (prof) {
+                    const metal = (mKey || '').toLowerCase();
+                    const offsets = (metal === 'gold' && prof.gold) ? prof.gold
+                                  : (metal === 'silver' && prof.silver) ? prof.silver
+                                  : prof;
+                    if (makingType === 'wastage' && offsets.wastage) {
+                        if (pureRate === null) pureRate = getPureRate(mKey);
+                        const adj = Math.max(0, makingInput + offsets.wastage);
+                        making = pureRate * weight * (adj / 100);
+                        makingInput = adj;
+                    } else if (makingType === 'per g' && offsets.perGram) {
+                        const adj = Math.max(0, makingInput + offsets.perGram);
+                        making = adj * weight;
+                        makingInput = adj;
+                    } else if (makingType === '%' && offsets.percent) {
+                        const adj = Math.max(0, makingInput + offsets.percent);
+                        making = metalVal * (adj / 100);
+                        makingInput = adj;
+                    } else if (makingType === 'per pc' && offsets.perPc) {
+                        const adj = Math.max(0, makingInput + offsets.perPc);
+                        making = adj;
+                        makingInput = adj;
+                    }
+                }
+            }
+
+            const total = metalVal + making + otherCharge;
+            final = total + total * (taxRate / 100);
+            return { final, makingType, makingInput };
+        }
+
         let currentStockSort = 'default';
 
         function toggleStockSortMenu() {
@@ -5033,8 +5146,8 @@
                 const d = productData[barcode];
                 const name = (d.itemName || 'Unknown').trim();
                 if (searchVal && !name.toLowerCase().includes(searchVal) && !barcode.toLowerCase().includes(searchVal)) continue;
-                const priceResult = calcProductFinalPrice(barcode);
-                allItems.push({ barcode, d, name, priceResult });
+                const priceResult = calcProductFinalPriceForActiveProfile(barcode);
+                allItems.push({ barcode, d, name, priceResult, effectivePrice: stockEffectivePrice(barcode, priceResult) });
             }
 
             if (allItems.length === 0) {
@@ -5049,8 +5162,8 @@
             if (!isGrouped) {
                 // Flat sorted list
                 allItems.sort((a, b) => {
-                    if (sort === 'price-asc')    return (a.priceResult?.final || 0) - (b.priceResult?.final || 0);
-                    if (sort === 'price-desc')   return (b.priceResult?.final || 0) - (a.priceResult?.final || 0);
+                    if (sort === 'price-asc')    return (a.effectivePrice || 0) - (b.effectivePrice || 0);
+                    if (sort === 'price-desc')   return (b.effectivePrice || 0) - (a.effectivePrice || 0);
                     if (sort === 'weight-asc')   return (a.d.netWeight || 0) - (b.d.netWeight || 0);
                     if (sort === 'weight-desc')  return (b.d.netWeight || 0) - (a.d.netWeight || 0);
                     if (sort === 'making-asc')   return getMakingNumeric(a.priceResult) - getMakingNumeric(b.priceResult);
@@ -5075,8 +5188,8 @@
                 card.appendChild(thead);
 
                 allItems.forEach((item, idx) => {
-                    const { barcode, d, priceResult } = item;
-                    const priceStr = priceResult ? `₹${priceResult.final.toFixed(2)}` : '—';
+                    const { barcode, d, priceResult, effectivePrice } = item;
+                    const priceStr = effectivePrice != null ? `₹${effectivePrice.toFixed(2)}` : '—';
                     let makingStr = '—';
                     if (priceResult) {
                         const { makingType, makingInput } = priceResult;
@@ -5087,7 +5200,7 @@
                         else if (makingType === 'per pc') makingStr = `₹${makingInput}pc`;
                     }
                     let colVal = '—';
-                    if (sort.startsWith('price'))   colVal = priceResult ? `₹${priceResult.final.toFixed(0)}` : '—';
+                    if (sort.startsWith('price'))   colVal = effectivePrice != null ? `₹${effectivePrice.toFixed(0)}` : '—';
                     if (sort.startsWith('weight'))  colVal = d.netWeight ? `${d.netWeight}g` : '—';
                     if (sort.startsWith('making'))  colVal = makingStr;
                     if (sort.startsWith('size'))    colVal = d.size || '—';
@@ -5130,8 +5243,8 @@
                     thead.innerHTML = `<span>Barcode</span><span style="text-align:center;">Making</span><span style="text-align:right;">Price</span>`;
                     card.appendChild(thead);
 
-                    items.sort((a, b) => a.barcode.localeCompare(b.barcode)).forEach(({ barcode, d, priceResult }, idx) => {
-                        const priceStr = priceResult ? `₹${priceResult.final.toFixed(2)}` : '—';
+                    items.sort((a, b) => a.barcode.localeCompare(b.barcode)).forEach(({ barcode, d, priceResult, effectivePrice }, idx) => {
+                        const priceStr = effectivePrice != null ? `₹${effectivePrice.toFixed(2)}` : '—';
                         let makingStr = '—';
                         if (priceResult) {
                             const { makingType, makingInput } = priceResult;
@@ -7952,7 +8065,7 @@
                     custName: (cartCustomer && cartCustomer.name) || '—',
                     custMob: (cartCustomer && cartCustomer.mobile) || '',
                     custAddr: (cartCustomer && cartCustomer.address) || '',
-                    state: stateDisplay,
+                    state: invoiceSettings.homeStateCode,
                     items: rows,
                     ogItems: (oldGoldItems || []).map(i => ({...i})),
                     totals: { sub, disc, taxable, sgst, cgst, igst, rounded, rndOff, receipt, outstanding },
@@ -8361,7 +8474,7 @@
                 id: crypto.randomUUID(),
                 track: checkoutTrackC,
                 billNo, timestamp: new Date().toISOString(),
-                custName, custMob, custAddr, state,
+                custName, custMob, custAddr, state: invoiceSettings.homeStateCode,
                 items: rows,
                 ogItems: (typeof oldGoldItems !== 'undefined' ? oldGoldItems : []).map(i => ({...i})),
                 totals: { sub, disc, taxable, sgst, cgst, igst, rounded, rndOff, receipt, outstanding },
@@ -11079,7 +11192,7 @@
                 id: _pendIsEdit ? invEditingId : crypto.randomUUID(),
                 track: currentInvTrack,
                 billNo, timestamp: _pendIsEdit ? _invTimestampFromDateField(_pendExisting && _pendExisting.timestamp) : new Date().toISOString(),
-                custName, custMob, custAddr, custGstin, state,
+                custName, custMob, custAddr, custGstin, state: (stateSel?.value || invoiceSettings.homeStateCode),
                 items: invRows.map(r => ({...r})),
                 ogItems: invOgItems.map(r => ({...r})),
                 totals: { sub, disc, taxable, sgst, cgst, igst, rounded, rndOff, receipt, outstanding },
@@ -11627,7 +11740,28 @@ const badge = '';
         // for pulling a specific period's sold tags, not a dump of the whole track.
         function invOpenBarcodeList() {
             document.getElementById('inv-barcode-list-modal').style.display = 'flex';
+            invRenderLastVisitLine();
             invRenderBarcodeList();
+        }
+
+        // A simple manual bookmark, nothing more: pressing the button just
+        // stamps today's date as "the last time I cleared barcodes from my
+        // offline barcode software," and that date stays displayed next to
+        // the button until pressed again. Doesn't touch the From/To fields
+        // or the list itself at all — purely a personal reminder of where you
+        // left off, per device (localStorage), not synced data.
+        function invRenderLastVisitLine() {
+            const el = document.getElementById('inv-bcl-last-visit');
+            if (!el) return;
+            const last = localStorage.getItem('suhagLastBarcodeListVisit');
+            el.textContent = last ? `Last marked: ${last}` : 'Not marked yet';
+        }
+
+        function invMarkTodayChecked() {
+            const d = new Date();
+            const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            localStorage.setItem('suhagLastBarcodeListVisit', today);
+            invRenderLastVisitLine();
         }
 
         function invCloseBarcodeList() {
@@ -12592,6 +12726,10 @@ const badge = '';
                 <button onclick="invCloseBarcodeList()" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
             <div style="font-size:11px; color:var(--text2); margin-bottom:8px;">Pick a date range — barcodes sold in that period, in the current track, grouped by Vou Type then Vou No.</div>
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+                <button onclick="invMarkTodayChecked()" style="flex:0 0 auto; background:#6A4FBF; color:white; border:none; border-radius:9px; padding:8px 12px; font-size:12.5px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">📅 Mark Today</button>
+                <span id="inv-bcl-last-visit" style="font-size:11.5px; color:var(--text2);"></span>
+            </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
                 <div>
                     <label style="font-size:11px; display:block; margin-bottom:3px;">From</label>
