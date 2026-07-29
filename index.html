@@ -4583,9 +4583,17 @@
                     const tagOverride = tagMakingOverrides[String(matchedKey).toUpperCase()];
                     const priceResult = (tagOverride && calcProductFinalPriceWithMakingOverride(matchedKey, tagOverride))
                         || calcProductFinalPrice(matchedKey);
-                    const settings = invApplyItemSettings(name);
-
-                    const displayName = settings.printName || name || null;
+                    // Catalogue display name uses the raw stock item name
+                    // (e.g. "S Bracelet E"), not the simplified invoice
+                    // printName ("Silver Bracelet") — invoices intentionally
+                    // collapse style variants for a clean printed bill, but
+                    // the catalogue/Upload Terminal should keep each style as
+                    // its own group. Invoice printing calls
+                    // invApplyItemSettings independently elsewhere and is
+                    // unaffected by this. Use the "Category chip label" or
+                    // "Display name" fields in Group Defaults if a shared,
+                    // customer-friendly name is wanted on the storefront.
+                    const displayName = name || null;
                     const displaySize = d.size || null;
                     const displayWeight = (typeof d.netWeight === 'number' && d.netWeight > 0) ? d.netWeight : null;
                     // A shop-fixed common price (set in the Upload Terminal's Link
