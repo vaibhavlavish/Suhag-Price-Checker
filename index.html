@@ -11257,7 +11257,7 @@
             window._invPendingRecord = {
                 id: _pendIsEdit ? invEditingId : crypto.randomUUID(),
                 track: currentInvTrack,
-                billNo, timestamp: _pendIsEdit ? _invTimestampFromDateField(_pendExisting && _pendExisting.timestamp) : new Date().toISOString(),
+                billNo, timestamp: _invTimestampFromDateField(_pendIsEdit ? (_pendExisting && _pendExisting.timestamp) : null),
                 custName, custMob, custAddr, custGstin, state: (stateSel?.value || invoiceSettings.homeStateCode),
                 items: invRows.map(r => ({...r})),
                 ogItems: invOgItems.map(r => ({...r})),
@@ -11313,6 +11313,18 @@
                     }
                     _saveInvoiceLocal();
                     _saveInvoiceRecord(rec);
+                    // "Move to Track A" (invMoveToTrackA) sets this right after copying
+                    // the Track B invoice into this form — the original is only ever
+                    // removed here, once the copy has actually been saved, never at
+                    // the moment the button was clicked. Silent, no PIN prompt: the
+                    // move itself is the person's explicit confirmation already.
+                    if (!isEdit && window._invMoveSourceId) {
+                        const _moveSrcId = window._invMoveSourceId;
+                        window._invMoveSourceId = null;
+                        invoiceHistory = invoiceHistory.filter(i => i.id !== _moveSrcId);
+                        _saveInvoiceLocal();
+                        _deleteInvoiceRecord(_moveSrcId);
+                    }
                     // Only log a ledger entry for brand-new invoices — an edit would
                     // otherwise double-count the sale in the cash ledger.
                     if (!isEdit) _invLedgerFromRecord(rec);
@@ -11396,7 +11408,7 @@
             const record = {
                 id: isEdit ? invEditingId : crypto.randomUUID(),
                 track: currentInvTrack,
-                billNo, timestamp: isEdit ? _invTimestampFromDateField(existing && existing.timestamp) : new Date().toISOString(),
+                billNo, timestamp: _invTimestampFromDateField(isEdit ? (existing && existing.timestamp) : null),
                 custName, custMob, custAddr, state,
                 items: invRows.map(r => ({...r})),
                 ogItems: invOgItems.map(r => ({...r})),
@@ -11476,6 +11488,12 @@
             invOgItems = [];
             invPrintHtml = '';
             invEditingId = null; // clear edit-mode so the next save starts a fresh invoice
+            // A pending "Move to Track A" is only meant to survive from the moment
+            // the button is clicked through to that exact save completing (handled
+            // in onAfterPrint above) — any other reset (starting a different
+            // invoice, cancelling, etc.) means the move was abandoned, so this
+            // must not silently delete the original later on an unrelated save.
+            window._invMoveSourceId = null;
             document.getElementById('inv-cust-name').value = '';
             document.getElementById('inv-cust-mob').value = '';
             document.getElementById('inv-cust-addr').value = '';
@@ -11668,6 +11686,7 @@ const badge = '';
                 </div>
                 ${inv.track === 'B' ? `<div style="margin-top:8px;">
                   <button onclick="invCopyToTrackA('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="width:100%;background:#4CAF50;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">➡️ Copy to Track A</button>
+                  <button onclick="invMoveToTrackA('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="width:100%;background:#FF9800;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:8px 0 0;">↪️ Move to Track A</button>
                 </div>` : ''}`;
             document.getElementById('inv-bill-modal').style.display = 'flex';
         }
@@ -12039,6 +12058,18 @@ const badge = '';
             invRecalc();
             invSwitchTab('new');
             invToast('➡️ Copied to Track A — review and Save to generate the invoice');
+        }
+
+        // Same as Copy above, but the original Track B invoice is deleted once
+        // this copy is actually saved (handled in _invDoActualPrint's onAfterPrint,
+        // where the new record gets committed) — not immediately on this click,
+        // so cancelling out of the review screen leaves the original untouched.
+        function invMoveToTrackA(id) {
+            const inv = invoiceHistory.find(i => i.id === id);
+            if (!inv || inv.track !== 'B') return; // same guard as invCopyToTrackA — only ever meaningful out of Track B
+            invCopyToTrackA(id);
+            window._invMoveSourceId = id;
+            invToast('➡️ Copied to Track A — Save to complete the move (original Track B invoice will then be removed)');
         }
 
         function invDeleteBill(id) {
