@@ -68,14 +68,6 @@
         const _authReadyPromise = new Promise(resolve => { _resolveAuthReady = resolve; });
         window.getAuthReadyPromise = () => _authReadyPromise;
 
-        // body starts at opacity:0 (fade-in-once-ready, to avoid a flash of
-        // unstyled content) and only the *app itself* used to be what
-        // revealed it — meaning the login screen sat invisible until the
-        // page's other safety-fallback timer happened to reveal it up to
-        // 1.5s later. Made explicit and immediate here instead of relying
-        // on that coincidence.
-        document.body.classList.add('app-ready');
-
         document.getElementById('pos-login-btn').addEventListener('click', () => {
           const email = document.getElementById('pos-login-email').value.trim();
           const pass = document.getElementById('pos-login-pass').value;
@@ -237,10 +229,15 @@
             flex-direction: column;
             touch-action: manipulation;
             overscroll-behavior-y: contain;
-            opacity: 0;
-            transition: opacity 0.18s ease;
         }
-        body.app-ready { opacity: 1; }
+        /* Was body.opacity:0→1 originally — moved onto #app-view specifically
+           so the login screen (a sibling of #app-view, not inside it) is
+           always immediately visible regardless of this, while #app-view's
+           own content still only fades in once 'app-ready' is added to body
+           by the existing (untouched) init-sequence code — same timing as
+           before, just no longer also gating the login screen behind it. */
+        #app-view { opacity: 0; transition: opacity 0.18s ease; }
+        body.app-ready #app-view { opacity: 1; }
         #brand-header {
             position: relative;
             display: flex;
