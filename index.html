@@ -19,6 +19,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getDatabase, ref, set, update, remove, onValue, get, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
         import { getStorage, ref as storageRef, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         // Your web app's Firebase configuration
         const firebaseConfig = {
@@ -35,6 +36,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
         const storage = getStorage(app);
+        const auth = getAuth(app);
         // Expose Firebase functions to the global scope for the main script
         window.firebaseDB = db;
         window.firebaseStorage = storage;
@@ -47,6 +49,44 @@
         window.dbOnValue = onValue;
         window.dbGet = get;
         window.dbRunTransaction = runTransaction;
+        // Auth — same window-bridging pattern as the Database/Storage functions
+        // above, since the main app logic is a plain (non-module) script and
+        // can't import these directly.
+        window.firebaseAuth = auth;
+        window.authSignIn = signInWithEmailAndPassword;
+        window.authOnStateChanged = onAuthStateChanged;
+        window.authSignOut = signOut;
+
+        // ── AUTH ─────────────────────────────────────────────────────
+        // The whole app (#app-view) stays hidden behind #pos-login-card
+        // until this resolves with a real signed-in user. The main
+        // (non-module) script's DOMContentLoaded handler awaits this exact
+        // promise as its very first line, before doing anything else —
+        // same lazy-promise shape already used for getDeviceAccessPromise,
+        // just for identity instead of device count.
+        let _resolveAuthReady;
+        const _authReadyPromise = new Promise(resolve => { _resolveAuthReady = resolve; });
+        window.getAuthReadyPromise = () => _authReadyPromise;
+
+        document.getElementById('pos-login-btn').addEventListener('click', () => {
+          const email = document.getElementById('pos-login-email').value.trim();
+          const pass = document.getElementById('pos-login-pass').value;
+          const errEl = document.getElementById('pos-login-error');
+          errEl.style.display = 'none';
+          signInWithEmailAndPassword(auth, email, pass).catch(() => {
+            errEl.textContent = 'Sign-in failed — check email/password.';
+            errEl.style.display = 'block';
+          });
+        });
+        document.getElementById('pos-login-pass').addEventListener('keydown', e => {
+          if (e.key === 'Enter') document.getElementById('pos-login-btn').click();
+        });
+
+        onAuthStateChanged(auth, user => {
+          document.getElementById('pos-login-card').style.display = user ? 'none' : 'block';
+          document.getElementById('app-view').style.display = user ? 'block' : 'none';
+          if (user && _resolveAuthReady) { _resolveAuthReady(user); _resolveAuthReady = null; }
+        });
 
         // Manual diagnostic — run this in the browser console at any time:
         //   debugCheckPackagingWeights()
@@ -1573,6 +1613,26 @@
     </style>
 </head>
 <body>
+
+<!-- LOGIN — shown until Firebase Auth confirms a signed-in user; the rest
+     of this page (the whole POS) lives inside #app-view below, hidden by
+     default. This is the same pattern already used on Upload Terminal. -->
+<div id="pos-login-card" style="max-width:360px; margin:60px auto; padding:26px 22px; background:#fff; border:1px solid var(--border); border-radius:var(--radius); font-family:Arial,'Helvetica Neue',Helvetica,sans-serif;">
+  <h2 style="margin:0 0 4px; font-size:18px; color:var(--charcoal);">Sign in</h2>
+  <p style="margin:0 0 18px; font-size:12.5px; color:var(--text2);">This is the shop's private point-of-sale system.</p>
+  <div style="margin-bottom:12px;">
+    <label style="display:block; font-size:12px; font-weight:700; color:var(--charcoal); margin-bottom:4px;">Email</label>
+    <input type="email" id="pos-login-email" autocomplete="username" style="width:100%; padding:10px 12px; border:1.5px solid var(--border); border-radius:var(--radius-sm); font-size:14px; box-sizing:border-box;">
+  </div>
+  <div style="margin-bottom:16px;">
+    <label style="display:block; font-size:12px; font-weight:700; color:var(--charcoal); margin-bottom:4px;">Password</label>
+    <input type="password" id="pos-login-pass" autocomplete="current-password" style="width:100%; padding:10px 12px; border:1.5px solid var(--border); border-radius:var(--radius-sm); font-size:14px; box-sizing:border-box;">
+  </div>
+  <button id="pos-login-btn" style="width:100%; padding:11px 0; background:var(--gold); color:#fff; border:none; border-radius:var(--radius-sm); font-size:14px; font-weight:700; cursor:pointer;">Sign In</button>
+  <p id="pos-login-error" style="display:none; margin:12px 0 0; font-size:12.5px; color:var(--red);"></p>
+</div>
+
+<div id="app-view" style="display:none;">
 <!-- Schema version warning banner — hidden by default, shown if this HTML is outdated -->
 
     <div id="taskbar">
@@ -1640,6 +1700,9 @@
 
             <div class="menu-divider"></div>
             <div class="menu-section-label">Actions</div>
+            <button onclick="window.authSignOut(window.firebaseAuth)" style="color:#F44336 !important; font-weight:700;" data-menu-key="sign-out">
+                <span class="menu-icon" style="background:#FEF2F2;">🔓</span> Sign Out
+            </button>
             <button onclick="location.reload()" style="color:#4CAF50 !important; font-weight:700;" data-menu-key="refresh">
                 <span class="menu-icon" style="background:#F0FDF4;">🔄</span> Refresh App
             </button>
@@ -7037,6 +7100,12 @@
         }
 
         document.addEventListener('DOMContentLoaded', async () => {
+            // Waits here until a real signed-in user is confirmed — the
+            // login screen is what's actually visible on the page until
+            // then. Everything below (device check, then the entire rest
+            // of the app) only ever runs after this resolves.
+            await window.getAuthReadyPromise();
+
             const allowed = await getDeviceAccessPromise();
             if (!allowed) return; // denied screen already shown by checkDeviceAccess()
 
@@ -13248,6 +13317,8 @@ const badge = '';
             transform: translateY(-1px);
         }
     </style>
+
+</div><!-- /#app-view -->
 
 </body>
 </html>
