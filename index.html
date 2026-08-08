@@ -1656,6 +1656,9 @@
             <button onclick="showSection('invoice-screen')" data-menu-key="invoice">
                 <span class="menu-icon" style="background:#FFF8E1;">🧾</span> Invoice
             </button>
+            <button onclick="showSection('installments-screen')" data-menu-key="installments">
+                <span class="menu-icon" style="background:#FCE4EC;">📆</span> Installment Plans
+            </button>
             <button onclick="showSection('update-rates')" data-menu-key="update-rates">
                 <span class="menu-icon" style="background:#e3f2fd;">💰</span> Update Rates
             </button>
@@ -3513,6 +3516,15 @@
         let cartAdjustmentAuto = true;
         // NEW: Customer details attached to the active cart (for direct invoice generation at checkout)
         let cartCustomer = { name: '', mobile: '', address: '' };
+
+        // ═══ INSTALLMENT PLANS ═══
+        // PLACEHOLDER — update this once the customer-facing installment
+        // site (a separate repo) is actually built and deployed. Every
+        // generated/copied link uses this constant, so updating it here is
+        // the only change needed once the real URL is known.
+        const INSTALLMENT_CUSTOMER_SITE_URL = 'https://vaibhavlavish.github.io/suhag-installments/';
+        let installmentPlans = []; // cached list, (re)loaded each time the All Plans tab opens
+        let currentInstallmentDetailId = null;
         // NEW: Global for Presets - Now synced from cloud, default empty
         let loosePresets = [];
         // Making Charge Profiles
@@ -4298,6 +4310,7 @@
             document.getElementById('device-access').style.display = 'none';
             document.getElementById('returns').style.display = 'none';
             document.getElementById('invoice-screen').style.display = 'none';
+            document.getElementById('installments-screen').style.display = 'none';
             document.getElementById('reminders').style.display = 'none';
             const brandHeaderEl = document.getElementById('brand-header');
             if (brandHeaderEl) brandHeaderEl.style.display = 'none';
@@ -4324,7 +4337,11 @@
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders') ? 'flex' : 'block';
+                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen') ? 'flex' : 'block';
+            }
+
+            if (section === 'installments-screen') {
+                openInstallmentsScreen();
             }
 
             if (section === 'ledger') {
@@ -4533,6 +4550,28 @@
             const returned = window._returnedBarcodes || {};
             Object.keys(returned).forEach(bc => sold.delete(bc.toUpperCase()));
             return sold;
+        }
+
+        // Barcodes currently sitting in an active (not cancelled) installment
+        // plan — excluded from the stock weight calculator the same way
+        // sold barcodes already are, since they're not really available
+        // stock right now even though nothing's been formally sold/invoiced
+        // yet. A barcode that's already genuinely sold (per real invoice/
+        // bill records, via getSoldBarcodesForStock) is left to that
+        // existing set instead — this only ever adds items that are still
+        // pending, not yet a real sale.
+        function getInstallmentHeldBarcodes(){
+            const held = new Set();
+            const sold = getSoldBarcodesForStock();
+            (installmentPlans || []).forEach(plan => {
+                if (plan.status === 'cancelled') return;
+                (plan.items || []).forEach(item => {
+                    if (!item || !item.barcode) return;
+                    const bc = String(item.barcode).trim().toUpperCase();
+                    if (!sold.has(bc)) held.add(bc);
+                });
+            });
+            return held;
         }
 
         // How long a fully-sold-out catalogue entry (every linked tag gone) sits
@@ -4945,11 +4984,14 @@
             tbody.innerHTML = '';
 
             const sold = getSoldBarcodesForStock();
+            const held = getInstallmentHeldBarcodes();
             const groups = {}; // name -> { pc, grossWt, totalValue }
             let hiddenCount = 0;
 
             for (const barcode in productData) {
-                if (sold.has(String(barcode).trim().toUpperCase())) continue; // checked-out tag — excluded
+                const bcUpper = String(barcode).trim().toUpperCase();
+                if (sold.has(bcUpper)) continue; // checked-out tag — excluded
+                if (held.has(bcUpper)) continue; // tied up in an active installment plan — not real available stock right now
                 const d = productData[barcode];
                 const metalKey = (d.metal || '').toLowerCase();
                 if (metalKey !== stockCalcMetal) continue; // only the chosen metal
@@ -6621,6 +6663,550 @@
             clearAll();
         }
 
+        // ═══ INSTALLMENT PLANS ═══
+
+        function openInstallmentsScreen(){
+            installmentsSwitchTab('new');
+        }
+
+        function installmentsSwitchTab(tab){
+            document.getElementById('inst-tab-new').classList.toggle('active', tab === 'new');
+            document.getElementById('inst-tab-list').classList.toggle('active', tab === 'list');
+            document.getElementById('inst-pane-new').style.display = tab === 'new' ? 'block' : 'none';
+            document.getElementById('inst-pane-list').style.display = tab === 'list' ? 'block' : 'none';
+            if (tab === 'new') renderNewInstallmentPane();
+            if (tab === 'list') renderInstallmentsList();
+        }
+
+        // Same math openCart() already uses for the actual amount owed at
+        // checkout (cart total, minus old-gold exchange, minus any
+        // adjustment) — the right number to split into installments, since
+        // it's what the customer would otherwise pay in one go.
+        function getCartNetPayable(){
+            let cartTotal = 0;
+            cart.forEach(item => cartTotal += item.finalPrice);
+            let oldGoldTotal = 0;
+            oldGoldItems.forEach(item => oldGoldTotal += item.value);
+            return cartTotal - oldGoldTotal - cartAdjustment;
+        }
+
+        function renderNewInstallmentPane(){
+            const itemsEl = document.getElementById('inst-cart-items');
+            const emptyNote = document.getElementById('inst-cart-empty-note');
+            if (!cart.length) {
+                itemsEl.innerHTML = '';
+                emptyNote.style.display = 'block';
+            } else {
+                emptyNote.style.display = 'none';
+                itemsEl.innerHTML = cart.map(item => `
+                    <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--border);">
+                        <span>${item.itemName}</span><span>₹${item.finalPrice.toFixed(2)}</span>
+                    </div>
+                `).join('');
+            }
+            document.getElementById('inst-cust-name').value = cartCustomer.name || '';
+            document.getElementById('inst-cust-mob').value = cartCustomer.mobile || '';
+            if (!document.getElementById('inst-first-due').value) {
+                const d = new Date(); d.setDate(d.getDate() + 30);
+                document.getElementById('inst-first-due').value = d.toISOString().slice(0, 10);
+            }
+            renderInstallmentPreview();
+        }
+
+        function renderInstallmentPreview(){
+            const previewEl = document.getElementById('inst-preview');
+            const principal = getCartNetPayable();
+            if (principal <= 0) {
+                previewEl.innerHTML = '<span style="color:var(--text2);">Add items to the cart to see a preview.</span>';
+                return;
+            }
+            const count = Math.max(1, parseInt(document.getElementById('inst-count').value) || 1);
+            const interestRate = Math.max(0, parseFloat(document.getElementById('inst-interest').value) || 0);
+            const downPayment = Math.max(0, parseFloat(document.getElementById('inst-downpayment').value) || 0);
+            const intervalDays = Math.max(1, parseInt(document.getElementById('inst-interval-days').value) || 30);
+            const total = principal * (1 + interestRate / 100);
+            const afterDownPayment = Math.max(0, total - downPayment);
+            const perInstallment = afterDownPayment / count;
+
+            const firstDue = document.getElementById('inst-first-due').value;
+            let dueDates = [];
+            if (firstDue) {
+                const base = new Date(firstDue + 'T00:00:00');
+                for (let i = 0; i < count; i++) {
+                    const d = new Date(base);
+                    d.setDate(d.getDate() + i * intervalDays);
+                    dueDates.push(d);
+                }
+            }
+
+            let html = `<div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Principal:</span><span>₹${principal.toFixed(2)}</span></div>`;
+            if (interestRate > 0) {
+                html += `<div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#e65100;"><span>Interest (${interestRate}%):</span><span>+₹${(total - principal).toFixed(2)}</span></div>`;
+            }
+            html += `<div style="display:flex; justify-content:space-between; font-weight:800; margin-bottom:4px; ${downPayment > 0 ? '' : 'border-top:1px solid var(--border); padding-top:6px;'}"><span>Total Payable:</span><span>₹${total.toFixed(2)}</span></div>`;
+            if (downPayment > 0) {
+                html += `<div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#2E7D32;"><span>Down Payment (today):</span><span>-₹${downPayment.toFixed(2)}</span></div>`;
+                html += `<div style="display:flex; justify-content:space-between; font-weight:800; margin-bottom:10px; border-top:1px solid var(--border); padding-top:6px;"><span>Split Into Installments:</span><span>₹${afterDownPayment.toFixed(2)}</span></div>`;
+            } else {
+                html += `<div style="margin-bottom:6px;"></div>`;
+            }
+            html += `<div style="font-size:12.5px; color:var(--text2); margin-bottom:6px;">${count} installment${count === 1 ? '' : 's'} of ~₹${perInstallment.toFixed(2)} each:</div>`;
+            dueDates.forEach((d, i) => {
+                html += `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>#${i + 1}</span><span>${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} — ~₹${perInstallment.toFixed(2)}</span></div>`;
+            });
+            previewEl.innerHTML = html;
+        }
+
+        async function createInstallmentPlan(){
+            const statusEl = document.getElementById('inst-create-status');
+            const principal = getCartNetPayable();
+            if (!cart.length || principal <= 0) { statusEl.textContent = 'Cart is empty — nothing to create a plan for.'; return; }
+
+            const name = document.getElementById('inst-cust-name').value.trim();
+            const mobile = document.getElementById('inst-cust-mob').value.trim();
+            if (!name) { statusEl.textContent = "Enter the customer's name."; return; }
+
+            const count = Math.max(1, parseInt(document.getElementById('inst-count').value) || 1);
+            const interestRate = Math.max(0, parseFloat(document.getElementById('inst-interest').value) || 0);
+            const downPayment = Math.max(0, parseFloat(document.getElementById('inst-downpayment').value) || 0);
+            const intervalDays = Math.max(1, parseInt(document.getElementById('inst-interval-days').value) || 30);
+            const firstDue = document.getElementById('inst-first-due').value;
+            if (!firstDue) { statusEl.textContent = 'Set the first payment due date.'; return; }
+
+            const total = Math.round((principal * (1 + interestRate / 100)) * 100) / 100;
+            if (downPayment > total) { statusEl.textContent = 'Down payment cannot be more than the total payable.'; return; }
+            const amountPaid = downPayment;
+            const remainingAmount = Math.round((total - amountPaid) * 100) / 100;
+            const perInstallment = Math.round((remainingAmount / count) * 100) / 100;
+            // Down payment is logged the exact same way any other payment is
+            // — just dated today, at creation time — so it shows up in the
+            // payment history like any other entry, not as a separate
+            // hidden concept.
+            const payments = downPayment > 0
+                ? [{ amount: downPayment, date: new Date().toISOString().slice(0, 10), note: 'Down payment' }]
+                : [];
+
+            const dueDates = [];
+            const base = new Date(firstDue + 'T00:00:00');
+            for (let i = 0; i < count; i++) {
+                const d = new Date(base);
+                d.setDate(d.getDate() + i * intervalDays);
+                dueDates.push(d.toISOString().slice(0, 10));
+            }
+
+            // Snapshot the cart items exactly as they stand right now, as
+            // full copies (not a trimmed field list) — the same shape a
+            // real cart item already has (barcode, makingOverride, or for
+            // loose items weight/metal/stamp/rate/subtotal/makingType).
+            // Keeping the full shape is what lets both "Change to Today's
+            // Rate" and "Save to Invoice" below reuse the app's existing,
+            // already-correct pricing and invoice-row functions instead of
+            // reimplementing that math a second time.
+            const items = cart.map(item => ({ ...item, type: item.type || 'standard' }));
+
+            // The plan's id doubles as its customer-facing access token — a
+            // long, unguessable random value (the same crypto.randomUUID
+            // generator already used elsewhere in this app for cart item
+            // ids). The Firebase rules for this will only ever grant public
+            // read to one exact, already-known token like this — never to
+            // the list of all plans — so this being unguessable is what
+            // keeps one customer's plan private from anyone without their
+            // specific link.
+            const planId = crypto.randomUUID();
+
+            const plan = {
+                id: planId,
+                customerName: name,
+                customerMobile: mobile || null,
+                createdAt: new Date().toISOString(),
+                items,
+                principalAmount: principal,
+                interestRate,
+                totalAmount: total,
+                installmentCount: count,
+                installmentAmount: perInstallment,
+                dueDates,
+                payments,
+                amountPaid,
+                remainingAmount,
+                status: remainingAmount <= 0 ? 'completed' : 'active',
+            };
+
+            statusEl.textContent = 'Saving…';
+            try {
+                await window.dbSet(window.dbRef(window.firebaseDB, 'installments/' + planId), plan);
+                // Pull each item off the public catalogue while the plan is
+                // pending — not sold yet, but not really available for
+                // someone else to buy either. Reuses the exact same
+                // catalogue/items/<bc>/hidden flag Upload Terminal's own
+                // "hide this item" feature already uses, so Catalogue.html
+                // needs no changes at all to respect this.
+                const catalogueUpdates = {};
+                items.forEach(item => {
+                    if (item.barcode) catalogueUpdates['catalogue/items/' + item.barcode + '/hidden'] = true;
+                });
+                if (Object.keys(catalogueUpdates).length) {
+                    await window.dbUpdate(window.dbRef(window.firebaseDB, '/'), catalogueUpdates);
+                }
+                const link = INSTALLMENT_CUSTOMER_SITE_URL + '?id=' + planId;
+                statusEl.innerHTML = `✅ Plan created! Share this link with the customer:<br><b style="word-break:break-all;">${link}</b>`;
+                // Clear the cart the same way a normal sale would — this
+                // plan now owns these items going forward, not the cart.
+                cart = [];
+                oldGoldItems = [];
+                cartAdjustment = 0;
+                localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
+                updateCartIcon();
+                document.getElementById('inst-cust-name').value = '';
+                document.getElementById('inst-cust-mob').value = '';
+                document.getElementById('inst-first-due').value = '';
+                document.getElementById('inst-downpayment').value = '0';
+                renderNewInstallmentPane();
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not save — try again.';
+            }
+        }
+
+        // Live-synced from app startup (see startInstallmentsSync call near
+        // the other startup syncs below), same pattern as loadInvoiceHistory
+        // — NOT a one-shot fetch gated behind opening the Installments
+        // screen. Stock Calc's weight exclusion depends on this being
+        // accurate even if that screen is never opened in a session.
+        let _installmentsSyncStarted = false;
+        let _installmentsSyncRetries = 0;
+        function startInstallmentsSync(){
+            if (_installmentsSyncStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB) {
+                if (_installmentsSyncRetries++ < 20) setTimeout(startInstallmentsSync, 500);
+                return;
+            }
+            _installmentsSyncStarted = true;
+            const instRef = window.dbRef(window.firebaseDB, 'installments');
+            window.dbOnValue(instRef, (snapshot) => {
+                const val = snapshot.val() || {};
+                installmentPlans = Object.values(val).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                if (document.getElementById('installments-screen').style.display !== 'none') {
+                    renderInstallmentsList();
+                }
+                if (document.getElementById('stock-calc').style.display !== 'none' && stockCalcMetal) {
+                    renderStockCalc();
+                }
+            }, (error) => {
+                console.error('[Installments] Firebase read error:', error);
+            });
+        }
+
+        function renderInstallmentsList(){
+            const q = (document.getElementById('inst-search').value || '').trim().toLowerCase();
+            const listEl = document.getElementById('inst-list-body');
+            const filtered = installmentPlans.filter(p =>
+                !q || (p.customerName || '').toLowerCase().includes(q) || (p.customerMobile || '').includes(q)
+            );
+            if (!filtered.length) {
+                listEl.innerHTML = '<p class="note" style="text-align:center;">No installment plans found.</p>';
+                return;
+            }
+            listEl.innerHTML = filtered.map(p => {
+                const badgeBg = p.status === 'completed' ? '#E8F5E9' : (p.status === 'cancelled' ? '#FFEBEE' : '#FFF3E0');
+                const badgeColor = p.status === 'completed' ? '#2E7D32' : (p.status === 'cancelled' ? '#C62828' : '#E65100');
+                const badgeLabel = p.status === 'completed' ? 'PAID OFF' : (p.status === 'cancelled' ? 'CANCELLED' : 'ACTIVE');
+                return `
+                <div onclick="openInstallmentDetail('${p.id}')" style="background:var(--surface); border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06); cursor:pointer; ${p.status === 'cancelled' ? 'opacity:0.6;' : ''}">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700;">${p.customerName}</span>
+                        <span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; background:${badgeBg}; color:${badgeColor};">${badgeLabel}</span>
+                    </div>
+                    <div style="font-size:12.5px; color:var(--text2); margin-top:4px;">${p.customerMobile || 'No mobile'} · ${p.items.length} item${p.items.length === 1 ? '' : 's'}</div>
+                    <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:13px;">
+                        <span>Paid: ₹${p.amountPaid.toFixed(2)} / ₹${p.totalAmount.toFixed(2)}</span>
+                        <span style="font-weight:700; color:${p.remainingAmount > 0 ? '#e65100' : '#2E7D32'};">${p.remainingAmount > 0 ? 'Due: ₹' + p.remainingAmount.toFixed(2) : 'Fully Paid'}</span>
+                    </div>
+                </div>
+            `;
+            }).join('');
+        }
+
+        function openInstallmentDetail(planId){
+            currentInstallmentDetailId = planId;
+            const plan = installmentPlans.find(p => p.id === planId);
+            if (!plan) return;
+            document.getElementById('installment-detail-title').textContent = plan.customerName;
+            renderInstallmentDetailBody(plan);
+            document.getElementById('installment-detail-modal').style.display = 'flex';
+        }
+
+        function renderInstallmentDetailBody(plan){
+            const bodyEl = document.getElementById('installment-detail-body');
+            const itemsHtml = plan.items.map(i => `
+                <div style="display:flex; justify-content:space-between; font-size:13px; padding:3px 0;">
+                    <span>${i.itemName}</span><span>₹${i.finalPrice.toFixed(2)}</span>
+                </div>
+            `).join('');
+            const paymentsHtml = plan.payments.length
+                ? plan.payments.slice().reverse().map(pmt => `
+                    <div style="display:flex; justify-content:space-between; font-size:12.5px; padding:3px 0; border-bottom:1px solid var(--border);">
+                        <span>${new Date(pmt.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pmt.note ? ' · ' + pmt.note : ''}</span>
+                        <span>₹${pmt.amount.toFixed(2)}</span>
+                    </div>
+                `).join('')
+                : '<p class="note">No payments logged yet.</p>';
+
+            const isActive = plan.status === 'active';
+            const isCancelled = plan.status === 'cancelled';
+
+            bodyEl.innerHTML = `
+                <div style="font-size:12.5px; color:var(--text2); margin-bottom:10px;">${plan.customerMobile || 'No mobile on file'}</div>
+                ${isCancelled ? `<div style="background:#FFEBEE; color:#C62828; font-weight:700; text-align:center; padding:8px; border-radius:8px; margin-bottom:12px; font-size:13px;">✕ This plan was cancelled — items were made visible on the catalogue again (unless already sold separately).</div>` : ''}
+                <div style="background:var(--bg); border-radius:10px; padding:10px 12px; margin-bottom:12px;">${itemsHtml}</div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Total Payable:</span><span>₹${plan.totalAmount.toFixed(2)}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#2E7D32;"><span>Paid So Far:</span><span>₹${plan.amountPaid.toFixed(2)}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-weight:800;"><span>Remaining:</span><span>₹${plan.remainingAmount.toFixed(2)}</span></div>
+
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Payment History</div>
+                <div style="margin-bottom:14px;">${paymentsHtml}</div>
+
+                ${isActive ? `
+                    <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Log a Payment</div>
+                    <div style="display:flex; gap:6px; margin-bottom:6px;">
+                        <input type="number" id="inst-pay-amount" placeholder="Amount" step="0.01" style="margin:0; flex:1;">
+                        <input type="date" id="inst-pay-date" style="margin:0; flex:1;" value="${new Date().toISOString().slice(0, 10)}">
+                    </div>
+                    <select id="inst-pay-method" style="margin:0 0 6px;" onchange="document.getElementById('inst-pay-split-fields').style.display = this.value === 'partial' ? 'flex' : 'none';">
+                        <option value="cash">Cash</option>
+                        <option value="upi">UPI</option>
+                        <option value="card">Card</option>
+                        <option value="partial">Split (multiple modes)</option>
+                    </select>
+                    <div id="inst-pay-split-fields" style="display:none; gap:6px; margin-bottom:6px;">
+                        <input type="number" id="inst-pay-split-cash" placeholder="Cash" step="0.01" style="margin:0; flex:1;">
+                        <input type="number" id="inst-pay-split-upi" placeholder="UPI" step="0.01" style="margin:0; flex:1;">
+                        <input type="number" id="inst-pay-split-card" placeholder="Card" step="0.01" style="margin:0; flex:1;">
+                    </div>
+                    <input type="text" id="inst-pay-note" placeholder="Note (optional)" style="margin:0 0 8px;">
+                    <button onclick="logInstallmentPayment()" style="background:var(--gold); color:#fff; font-weight:800; padding:11px; border-radius:var(--radius); border:none; font-size:14px;">Add Payment</button>
+                    <p class="note" id="inst-pay-status" style="margin-top:6px; text-align:center;"></p>
+                ` : (plan.status === 'completed' ? `<p class="note" style="text-align:center; font-weight:700; color:#2E7D32;">✅ This plan is fully paid off.</p>` : '')}
+
+                <button onclick="copyInstallmentLink('${plan.id}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:14px;">🔗 Copy Customer Link</button>
+                ${plan.status !== 'completed' && !isCancelled ? `
+                    <button onclick="changeInstallmentToTodaysRate()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">📈 Change to Today's Rate</button>
+                    <p class="note" id="inst-rate-status" style="margin-top:6px; text-align:center;"></p>
+                ` : ''}
+                ${!isCancelled ? `<button onclick="saveInstallmentToInvoice()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🧾 Save to Invoice</button>` : ''}
+                ${isActive ? `
+                    <button onclick="cancelInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">✕ Cancel Plan</button>
+                    <p class="note" id="inst-cancel-status" style="margin-top:6px; text-align:center;"></p>
+                ` : ''}
+            `;
+        }
+
+        async function logInstallmentPayment(){
+            const statusEl = document.getElementById('inst-pay-status');
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan || plan.status === 'cancelled') return;
+
+            const amount = parseFloat(document.getElementById('inst-pay-amount').value);
+            const date = document.getElementById('inst-pay-date').value;
+            const note = document.getElementById('inst-pay-note').value.trim();
+            const method = document.getElementById('inst-pay-method').value;
+            if (isNaN(amount) || amount <= 0) { statusEl.textContent = 'Enter a valid amount.'; return; }
+            if (!date) { statusEl.textContent = 'Pick a date.'; return; }
+
+            let details = null;
+            if (method === 'partial') {
+                const cashPart = parseFloat(document.getElementById('inst-pay-split-cash').value) || 0;
+                const upiPart = parseFloat(document.getElementById('inst-pay-split-upi').value) || 0;
+                const cardPart = parseFloat(document.getElementById('inst-pay-split-card').value) || 0;
+                if (Math.abs((cashPart + upiPart + cardPart) - amount) > 0.5) {
+                    statusEl.textContent = 'Cash + UPI + Card must add up to the payment amount.';
+                    return;
+                }
+                details = { cash: cashPart, upi: upiPart, card: cardPart };
+            }
+
+            // Deliberately flexible — a customer paying more or less than
+            // the exact "installment amount" just adjusts what's left, it
+            // doesn't need to match any specific installment precisely.
+            // amountPaid/remainingAmount are the only numbers that actually
+            // matter going forward.
+            const payments = [...plan.payments, { amount, date, note: note || null, method, details }];
+            const amountPaid = Math.round((plan.amountPaid + amount) * 100) / 100;
+            const remainingAmount = Math.round((plan.totalAmount - amountPaid) * 100) / 100;
+            const status = remainingAmount <= 0 ? 'completed' : 'active';
+
+            statusEl.textContent = 'Saving…';
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), {
+                    payments, amountPaid, remainingAmount, status,
+                });
+                plan.payments = payments;
+                plan.amountPaid = amountPaid;
+                plan.remainingAmount = remainingAmount;
+                plan.status = status;
+                // Same ledger entry a checkout/invoice sale already creates
+                // (_recordSaleLedgerEntry) — dated today, same as any other
+                // cash-received-today entry, since installment payments are
+                // always logged the same day they're actually collected,
+                // never backdated.
+                _recordSaleLedgerEntry(amount, amount, method, details, 'installment');
+                document.getElementById('inst-pay-amount').value = '';
+                document.getElementById('inst-pay-note').value = '';
+                renderInstallmentDetailBody(plan);
+                renderInstallmentsList();
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not save — try again.';
+            }
+        }
+
+        // Recomputes one installment item's price using CURRENT rates/stock
+        // data — the exact same formulas already used everywhere else in
+        // this app (calcProductFinalPrice / calcProductFinalPriceWithMakingOverride
+        // for barcode items, the same weight×rate+making math the loose
+        // screen itself uses for loose items), just re-run with today's
+        // numbers instead of whatever was current when the plan was first
+        // created. A wastage-based making charge is SUPPOSED to move with
+        // the rate (that's the actual formula — pureRate × weight × wastage%
+        // — not a bug); a %/per-gram/per-piece making charge stays fixed
+        // either way, only the metal value itself changes. Falls back to
+        // the item's existing frozen price if it can no longer be priced
+        // (e.g. the barcode was since sold/removed from stock).
+        function recalcInstallmentItemPrice(item){
+            if (item.type === 'repair') return item.finalPrice;
+            if (item.type === 'loose') {
+                if (!item.metal || !item.stamp || !rates[item.metal] || !rates[item.metal][item.stamp]) return item.finalPrice;
+                const rate = rates[item.metal][item.stamp];
+                const metalVal = (item.weight || 0) * rate;
+                let making = 0;
+                if (item.makingType === '%') making = metalVal * ((item.makingValue || 0) / 100);
+                else if (item.makingType === 'wastage') {
+                    const pureRate = getPureRate(item.metal);
+                    if (!pureRate) return item.finalPrice;
+                    making = pureRate * (item.weight || 0) * ((item.makingValue || 0) / 100);
+                } else if (item.makingType === 'per_g') making = (item.makingValue || 0) * (item.weight || 0);
+                else if (item.makingType === 'per_pc') making = item.makingValue || 0;
+                const subtotal = metalVal + making;
+                const appliedTax = (item.taxRateApplied != null) ? item.taxRateApplied : taxRate;
+                return subtotal + subtotal * (appliedTax / 100);
+            }
+            // Standard (barcode) item — same lookup calcProductFinalPrice
+            // and calcProductFinalPriceWithMakingOverride already use.
+            if (item.barcode) {
+                const result = item.makingOverride
+                    ? calcProductFinalPriceWithMakingOverride(item.barcode, item.makingOverride)
+                    : calcProductFinalPrice(item.barcode);
+                if (result) return result.final;
+            }
+            return item.finalPrice;
+        }
+
+        // Cancelling keeps the plan record on file (never deleted — it might
+        // need to be referred back to) but restores catalogue visibility
+        // for its items, EXCEPT any that turn out to already be genuinely
+        // sold via a real invoice/bill in the meantime (checked against
+        // getSoldBarcodesForStock, the same source of truth used
+        // everywhere else in this app) — those are left exactly as they
+        // are, since they're actually gone, not just pending.
+        async function cancelInstallmentPlan(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            if (!confirm(`Cancel this installment plan for ${plan.customerName}? Its items become visible on the catalogue again (unless already sold separately). The plan itself is kept on record, not deleted.`)) return;
+
+            const statusEl = document.getElementById('inst-cancel-status');
+            statusEl.textContent = 'Cancelling…';
+            try {
+                const sold = getSoldBarcodesForStock();
+                const catalogueUpdates = {};
+                let skippedSold = 0;
+                plan.items.forEach(item => {
+                    if (!item.barcode) return;
+                    const bc = String(item.barcode).trim().toUpperCase();
+                    if (sold.has(bc)) { skippedSold++; return; }
+                    catalogueUpdates['catalogue/items/' + item.barcode + '/hidden'] = false;
+                });
+                if (Object.keys(catalogueUpdates).length) {
+                    await window.dbUpdate(window.dbRef(window.firebaseDB, '/'), catalogueUpdates);
+                }
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), { status: 'cancelled' });
+                plan.status = 'cancelled';
+                renderInstallmentDetailBody(plan);
+                renderInstallmentsList();
+                if (skippedSold > 0) {
+                    showCustomAlert(`Plan cancelled. ${skippedSold} item(s) were already sold separately and were left as they are.`);
+                }
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not cancel — try again.';
+            }
+        }
+
+        async function changeInstallmentToTodaysRate(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan || plan.status === 'cancelled') return;
+            const statusEl = document.getElementById('inst-rate-status');
+
+            const newItems = plan.items.map(item => {
+                const newPrice = recalcInstallmentItemPrice(item);
+                return { ...item, finalPrice: (typeof newPrice === 'number' && !isNaN(newPrice)) ? newPrice : item.finalPrice };
+            });
+            const newPrincipal = newItems.reduce((s, i) => s + i.finalPrice, 0);
+            const newTotal = Math.round((newPrincipal * (1 + (plan.interestRate || 0) / 100)) * 100) / 100;
+            const newRemaining = Math.round((newTotal - plan.amountPaid) * 100) / 100;
+            const remainingCount = Math.max(1, plan.installmentCount);
+
+            if (!confirm(`Recalculate this plan's items at today's rate?\n\nOld total: ₹${plan.totalAmount.toFixed(2)}\nNew total: ₹${newTotal.toFixed(2)}\n\nWhat's already been paid (₹${plan.amountPaid.toFixed(2)}) stays exactly as logged — only the remaining balance changes.`)) return;
+
+            statusEl.textContent = 'Saving…';
+            try {
+                const updates = {
+                    items: newItems,
+                    principalAmount: newPrincipal,
+                    totalAmount: newTotal,
+                    remainingAmount: newRemaining,
+                    installmentAmount: Math.round((Math.max(0, newRemaining) / remainingCount) * 100) / 100,
+                    status: newRemaining <= 0 ? 'completed' : 'active',
+                };
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), updates);
+                Object.assign(plan, updates);
+                renderInstallmentDetailBody(plan);
+                renderInstallmentsList();
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not save — try again.';
+            }
+        }
+
+        // Loads this plan's items into whichever invoice track is currently
+        // active, using the same cart→invoice-row converter the rest of the
+        // app already relies on (_invRowsFromCartItems) — so a barcode item
+        // is priced at TODAY's rate the same way "Change to Today's Rate"
+        // does, since that converter looks up productData/rates live too.
+        // Deliberately does NOT touch #inv-date — the invoice gets saved
+        // with whatever date it's actually saved on, exactly like any other
+        // invoice, not backdated to when the plan was created or paid off.
+        function saveInstallmentToInvoice(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan || plan.status === 'cancelled') return;
+            if (!confirm(`Load "${plan.customerName}"'s ${plan.items.length} item(s) into the current invoice track for review? This won't change the installment plan itself.`)) return;
+
+            document.getElementById('installment-detail-modal').style.display = 'none';
+            showSection('invoice-screen');
+            if (invEditingId) invReset();
+            invSwitchTab('new');
+            document.getElementById('inv-cust-name').value = plan.customerName || '';
+            document.getElementById('inv-cust-mob').value = plan.customerMobile || '';
+            invRows = _invRowsFromCartItems(plan.items);
+            invRenderRows();
+            invRecalc();
+            showCustomAlert('Items loaded — review and Save to generate the invoice.');
+        }
+
+        function copyInstallmentLink(planId){
+            const link = INSTALLMENT_CUSTOMER_SITE_URL + '?id=' + planId;
+            navigator.clipboard.writeText(link).then(() => showCustomAlert('Link copied!')).catch(() => prompt('Copy this link:', link));
+        }
+
         function openCart() {
             // Add active class to make button green
             const btn = document.getElementById('cart-btn-nav');
@@ -7208,6 +7794,7 @@
 
             // --- Start Firebase Sync ---
             syncData();
+            startInstallmentsSync();
             // Load ledger from cache immediately (Firebase will overwrite shortly)
             loadLedger();
             // Load reminders from cache immediately (Firebase will overwrite shortly)
@@ -9639,7 +10226,7 @@
                         <div class="ledger-entry-icon ${iconClass}">${icons[e.type]||'📝'}</div>
                         <div class="ledger-entry-body">
                             <div class="ledger-entry-title">${labels[e.type]||e.type}</div>
-                            <div class="ledger-entry-meta">${time}${e.source === 'checkout' ? ' · Auto from checkout' : e.source === 'invoice' ? ' · From Invoice' : ' · Manual'}</div>
+                            <div class="ledger-entry-meta">${time}${e.source === 'checkout' ? ' · Auto from checkout' : e.source === 'invoice' ? ' · From Invoice' : e.source === 'installment' ? ' · From Installment Plan' : ' · Manual'}</div>
                             ${e.note ? `<div class="ledger-entry-note">${e.note}</div>` : ''}
                         </div>
                         <div class="ledger-entry-amount ${isPos ? 'positive' : 'negative'}">${isPos?'+':'-'}₹${_fmt(e.amount)}</div>
@@ -12661,6 +13248,77 @@ const badge = '';
     <!-- ==================== END RETURNS SECTION ==================== -->
 
     <!-- ==================== INVOICE SCREEN ==================== -->
+    <div id="installments-screen" style="display:none; flex:1; flex-direction:column; padding:14px; background:var(--bg); overflow-y:auto; -webkit-overflow-scrolling:touch; box-sizing:border-box; max-width:600px; margin:0 auto; width:100%; min-height:0;">
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <h2 style="margin:0; font-size:18px; font-weight:800; color:var(--text);">📆 Installment Plans</h2>
+        </div>
+
+        <div style="display:flex; min-height:48px; background:var(--surface); border-radius:var(--radius); overflow:hidden; border:1.5px solid var(--border); margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,.06);">
+            <div class="inst-tab active" id="inst-tab-new" onclick="installmentsSwitchTab('new')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">➕ New Plan</div>
+            <div class="inst-tab" id="inst-tab-list" onclick="installmentsSwitchTab('list')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📋 All Plans</div>
+        </div>
+
+        <!-- ══ PANE: NEW PLAN ══ -->
+        <div id="inst-pane-new">
+            <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Items From Cart</div>
+                <div id="inst-cart-items" style="font-size:13px; color:var(--text);"></div>
+                <p class="note" id="inst-cart-empty-note" style="display:none; margin:4px 0 0; font-size:12.5px; color:var(--text2);">Cart is empty — add items to the cart first, then come back here to split the total into an installment plan.</p>
+            </div>
+
+            <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Customer</div>
+                <div style="display:flex; flex-direction:column; gap:7px;">
+                    <input type="text" id="inst-cust-name" placeholder="Customer Name" style="margin:0;">
+                    <input type="tel" id="inst-cust-mob" placeholder="Mobile Number" style="margin:0;">
+                </div>
+            </div>
+
+            <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Plan Details</div>
+                <div style="display:flex; flex-direction:column; gap:7px;">
+                    <label style="font-size:12.5px; color:var(--text2); font-weight:600;">Number of Installments</label>
+                    <input type="number" id="inst-count" min="1" step="1" value="3" style="margin:0;" oninput="renderInstallmentPreview()">
+                    <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Interest Rate (%) — default 0</label>
+                    <input type="number" id="inst-interest" min="0" step="0.01" value="0" style="margin:0;" oninput="renderInstallmentPreview()">
+                    <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Down Payment (optional) — paid today, logged automatically</label>
+                    <input type="number" id="inst-downpayment" min="0" step="0.01" value="0" style="margin:0;" oninput="renderInstallmentPreview()">
+                    <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">First Payment Due Date</label>
+                    <input type="date" id="inst-first-due" style="margin:0;">
+                    <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Days Between Installments</label>
+                    <input type="number" id="inst-interval-days" min="1" step="1" value="30" style="margin:0;" oninput="renderInstallmentPreview()">
+                </div>
+            </div>
+
+            <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:16px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Preview</div>
+                <div id="inst-preview" style="font-size:13.5px; color:var(--text);"></div>
+            </div>
+
+            <button onclick="createInstallmentPlan()" style="background:var(--gold); color:#fff; font-weight:800; padding:14px; border-radius:var(--radius); border:none; font-size:15px;">Create Installment Plan</button>
+            <p class="note" id="inst-create-status" style="margin-top:8px; text-align:center;"></p>
+        </div>
+
+        <!-- ══ PANE: ALL PLANS ══ -->
+        <div id="inst-pane-list" style="display:none;">
+            <input type="text" id="inst-search" placeholder="🔍 Search by customer name or mobile…" style="margin-bottom:12px;" oninput="renderInstallmentsList()">
+            <div id="inst-list-body"></div>
+            <p class="note" id="inst-list-status" style="text-align:center;"></p>
+        </div>
+
+    </div>
+
+    <div id="installment-detail-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);" id="installment-detail-title">Plan Detail</span>
+                <button onclick="document.getElementById('installment-detail-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <div id="installment-detail-body"></div>
+        </div>
+    </div>
+
     <div id="invoice-screen" style="display:none; flex:1; flex-direction:column; padding:14px; background:var(--bg); overflow-y:auto; -webkit-overflow-scrolling:touch; box-sizing:border-box; max-width:600px; margin:0 auto; width:100%; min-height:0;">
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
@@ -13066,6 +13724,7 @@ const badge = '';
         .inv-pin-dot.filled { background:var(--gold); border-color:var(--gold); }
         .inv-tab { background: transparent !important; background-color: transparent !important; color: var(--text2) !important; box-shadow: none !important; margin: 0 !important; padding: 13px 4px !important; border-radius: 0 !important; font-weight: 700 !important; font-size: 13px !important; width: auto !important; display: flex !important; align-items: center !important; justify-content: center !important; min-height: 48px !important; }
         .inv-tab.active { color: var(--gold) !important; border-bottom: 3px solid var(--gold) !important; background: var(--gold-lt) !important; }
+        .inst-tab.active { color: var(--gold) !important; border-bottom: 3px solid var(--gold) !important; background: var(--gold-lt) !important; }
         #invoice-screen .item-row { background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:11px; margin-bottom:8px; }
         #invoice-screen .item-row-fields { display:grid; grid-template-columns:repeat(5,1fr); gap:5px; margin-bottom:5px; }
         #invoice-screen .item-row-making { display:grid; grid-template-columns:1.2fr 1fr; gap:5px; margin-bottom:6px; }
