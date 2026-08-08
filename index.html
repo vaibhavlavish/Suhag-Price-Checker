@@ -7269,7 +7269,7 @@
             const dueDateStr = nextDue
                 ? new Date(nextDue + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
                 : 'soon';
-            const message = `Hi ${plan.customerName}, this is a friendly reminder from Suhag Jewellers — your next installment payment is due on ${dueDateStr}. Remaining balance: ₹${plan.remainingAmount.toFixed(2)}. Please visit us or reach out to make the payment. Thank you!`;
+            const message = `Dear ${plan.customerName},\n\nthis is a installment payment reminder from suhag jewellers\npayment date = ${dueDateStr}\ninstallment amount = ₹ ${plan.installmentAmount.toFixed(2)}\nremaining amount = ₹ ${plan.remainingAmount.toFixed(2)}`;
 
             let mobile = plan.customerMobile.replace(/\D/g, '');
             if (mobile.length === 10) mobile = '91' + mobile; // assume Indian number when no country code was entered
@@ -7321,8 +7321,8 @@
 
         function renderInstallmentDetailBody(plan){
             const bodyEl = document.getElementById('installment-detail-body');
-            const itemsHtml = plan.items.map(i => `
-                <div style="display:flex; justify-content:space-between; font-size:13px; padding:3px 0;">
+            const itemsHtml = plan.items.map((i, idx) => `
+                <div class="inst-detail-item-row" data-item-idx="${idx}" style="display:flex; justify-content:space-between; font-size:13px; padding:3px 0; cursor:pointer; user-select:none; -webkit-user-select:none;">
                     <span>${i.itemName}</span><span>₹${i.finalPrice.toFixed(2)}</span>
                 </div>
             `).join('');
@@ -7342,14 +7342,15 @@
                 <div style="font-size:12.5px; color:var(--text2); margin-bottom:2px;">${plan.customerMobile || 'No mobile on file'}</div>
                 <div style="font-size:12.5px; color:var(--text2); margin-bottom:10px;">${plan.customerAddress ? plan.customerAddress.replace(/\n/g, '<br>') : 'No address on file'}</div>
                 ${isCancelled ? `<div style="background:#FFEBEE; color:#C62828; font-weight:700; text-align:center; padding:8px; border-radius:8px; margin-bottom:12px; font-size:13px;">✕ This plan was cancelled — items were made visible on the catalogue again (unless already sold separately).</div>` : ''}
-                <div style="background:var(--bg); border-radius:10px; padding:10px 12px; margin-bottom:12px;">${itemsHtml}</div>
+                <div id="inst-detail-items-container" style="background:var(--bg); border-radius:10px; padding:10px 12px; margin-bottom:4px;">${itemsHtml}</div>
+                <p class="note" style="margin:0 0 12px; font-size:11.5px;">Tap any item for its price breakdown.</p>
                 <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Total Payable:</span><span>₹${plan.totalAmount.toFixed(2)}</span></div>
                 <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#2E7D32;"><span>Paid So Far:</span><span>₹${plan.amountPaid.toFixed(2)}</span></div>
                 <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-weight:800;"><span>Remaining:</span><span>₹${plan.remainingAmount.toFixed(2)}</span></div>
 
                 ${isActive && plan.dueDates && plan.dueDates.length ? `
                     <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Payment Dates</div>
-                    <div style="margin-bottom:10px;">${plan.dueDates.map(d => `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span></div>`).join('')}</div>
+                    <div style="margin-bottom:10px;">${plan.dueDates.map(d => `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span><span>₹${plan.installmentAmount.toFixed(2)}</span></div>`).join('')}</div>
                     <button onclick="sendInstallmentWhatsAppReminder()" style="background:#25D366; color:#fff; font-weight:700; padding:10px; border-radius:var(--radius); border:none; font-size:13px; margin-bottom:14px;">💬 Send WhatsApp Reminder</button>
                 ` : ''}
 
@@ -7393,6 +7394,17 @@
                     <p class="note" id="inst-delete-status" style="margin-top:6px; text-align:center;"></p>
                 ` : ''}
             `;
+
+            // Re-wired every call, not idempotent-guarded — this whole body
+            // (including the items container) is destroyed and rebuilt via
+            // innerHTML on every render, unlike the plan list or New Plan
+            // cart preview where only rows inside a stable parent change.
+            document.getElementById('inst-detail-items-container').addEventListener('click', e => {
+                const row = e.target.closest('.inst-detail-item-row');
+                if (!row) return;
+                const idx = parseInt(row.dataset.itemIdx, 10);
+                if (!isNaN(idx) && plan.items[idx]) openInstallmentItemPriceDetail(plan.items[idx]);
+            });
         }
 
         async function logInstallmentPayment(){
