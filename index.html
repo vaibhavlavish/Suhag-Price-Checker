@@ -6706,6 +6706,7 @@
             }
             document.getElementById('inst-cust-name').value = cartCustomer.name || '';
             document.getElementById('inst-cust-mob').value = cartCustomer.mobile || '';
+            document.getElementById('inst-cust-addr').value = cartCustomer.address || '';
             if (!document.getElementById('inst-first-due').value) {
                 const d = new Date(); d.setDate(d.getDate() + 30);
                 document.getElementById('inst-first-due').value = d.toISOString().slice(0, 10);
@@ -6764,6 +6765,7 @@
 
             const name = document.getElementById('inst-cust-name').value.trim();
             const mobile = document.getElementById('inst-cust-mob').value.trim();
+            const address = document.getElementById('inst-cust-addr').value.trim();
             if (!name) { statusEl.textContent = "Enter the customer's name."; return; }
 
             const count = Math.max(1, parseInt(document.getElementById('inst-count').value) || 1);
@@ -6818,6 +6820,7 @@
                 id: planId,
                 customerName: name,
                 customerMobile: mobile || null,
+                customerAddress: address || null,
                 createdAt: new Date().toISOString(),
                 items,
                 principalAmount: principal,
@@ -6859,6 +6862,7 @@
                 updateCartIcon();
                 document.getElementById('inst-cust-name').value = '';
                 document.getElementById('inst-cust-mob').value = '';
+                document.getElementById('inst-cust-addr').value = '';
                 document.getElementById('inst-first-due').value = '';
                 document.getElementById('inst-downpayment').value = '0';
                 renderNewInstallmentPane();
@@ -6975,7 +6979,8 @@
             const isCancelled = plan.status === 'cancelled';
 
             bodyEl.innerHTML = `
-                <div style="font-size:12.5px; color:var(--text2); margin-bottom:10px;">${plan.customerMobile || 'No mobile on file'}</div>
+                <div style="font-size:12.5px; color:var(--text2); margin-bottom:2px;">${plan.customerMobile || 'No mobile on file'}</div>
+                <div style="font-size:12.5px; color:var(--text2); margin-bottom:10px;">${plan.customerAddress ? plan.customerAddress.replace(/\n/g, '<br>') : 'No address on file'}</div>
                 ${isCancelled ? `<div style="background:#FFEBEE; color:#C62828; font-weight:700; text-align:center; padding:8px; border-radius:8px; margin-bottom:12px; font-size:13px;">✕ This plan was cancelled — items were made visible on the catalogue again (unless already sold separately).</div>` : ''}
                 <div style="background:var(--bg); border-radius:10px; padding:10px 12px; margin-bottom:12px;">${itemsHtml}</div>
                 <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Total Payable:</span><span>₹${plan.totalAmount.toFixed(2)}</span></div>
@@ -7012,10 +7017,14 @@
                     <button onclick="changeInstallmentToTodaysRate()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">📈 Change to Today's Rate</button>
                     <p class="note" id="inst-rate-status" style="margin-top:6px; text-align:center;"></p>
                 ` : ''}
-                ${!isCancelled ? `<button onclick="saveInstallmentToInvoice()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🧾 Save to Invoice</button>` : ''}
+                ${plan.status === 'completed' ? `<button onclick="saveInstallmentToInvoice()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🧾 Save to Invoice</button>` : ''}
                 ${isActive ? `
                     <button onclick="cancelInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">✕ Cancel Plan</button>
                     <p class="note" id="inst-cancel-status" style="margin-top:6px; text-align:center;"></p>
+                ` : ''}
+                ${isCancelled ? `
+                    <button onclick="deleteInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🗑️ Delete This Plan</button>
+                    <p class="note" id="inst-delete-status" style="margin-top:6px; text-align:center;"></p>
                 ` : ''}
             `;
         }
@@ -7135,6 +7144,7 @@
         async function cancelInstallmentPlan(){
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan) return;
+            if (!checkPin()) return;
             if (!confirm(`Cancel this installment plan for ${plan.customerName}? Its items become visible on the catalogue again (unless already sold separately). The plan itself is kept on record, not deleted.`)) return;
 
             const statusEl = document.getElementById('inst-cancel-status');
@@ -7165,9 +7175,35 @@
             }
         }
 
+        // Only ever offered on an already-cancelled plan (the button itself
+        // is hidden otherwise) — an active or completed plan should never
+        // be deletable, since that would erase a real financial record.
+        // A cancelled plan has already had its items released back to the
+        // catalogue; this is purely for cleaning up the record once
+        // whatever refund was owed has actually been settled.
+        async function deleteInstallmentPlan(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan || plan.status !== 'cancelled') return;
+            if (!checkPin()) return;
+            if (!confirm(`Permanently delete this cancelled plan for ${plan.customerName}? This cannot be undone.`)) return;
+
+            const statusEl = document.getElementById('inst-delete-status');
+            statusEl.textContent = 'Deleting…';
+            try {
+                await window.dbRemove(window.dbRef(window.firebaseDB, 'installments/' + plan.id));
+                installmentPlans = installmentPlans.filter(p => p.id !== plan.id);
+                document.getElementById('installment-detail-modal').style.display = 'none';
+                renderInstallmentsList();
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not delete — try again.';
+            }
+        }
+
         async function changeInstallmentToTodaysRate(){
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan || plan.status === 'cancelled') return;
+            if (!checkPin()) return;
             const statusEl = document.getElementById('inst-rate-status');
 
             const newItems = plan.items.map(item => {
@@ -7212,6 +7248,11 @@
         function saveInstallmentToInvoice(){
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan || plan.status === 'cancelled') return;
+            if (plan.status !== 'completed') {
+                showCustomAlert("This plan isn't fully paid off yet — Save to Invoice only works once the balance is settled.");
+                return;
+            }
+            if (!checkPin()) return;
             if (!confirm(`Load "${plan.customerName}"'s ${plan.items.length} item(s) into the current invoice track for review? This won't change the installment plan itself.`)) return;
 
             document.getElementById('installment-detail-modal').style.display = 'none';
@@ -7220,6 +7261,7 @@
             invSwitchTab('new');
             document.getElementById('inv-cust-name').value = plan.customerName || '';
             document.getElementById('inv-cust-mob').value = plan.customerMobile || '';
+            document.getElementById('inv-cust-addr').value = plan.customerAddress || '';
             invRows = _invRowsFromCartItems(plan.items);
             invRenderRows();
             invRecalc();
@@ -13296,6 +13338,7 @@ const badge = '';
                 <div style="display:flex; flex-direction:column; gap:7px;">
                     <input type="text" id="inst-cust-name" placeholder="Customer Name" style="margin:0;">
                     <input type="tel" id="inst-cust-mob" placeholder="Mobile Number" style="margin:0;">
+                    <textarea id="inst-cust-addr" placeholder="Address (optional)" rows="2" style="margin:0; font-family:inherit; resize:vertical;"></textarea>
                 </div>
             </div>
 
