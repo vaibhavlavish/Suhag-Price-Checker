@@ -6672,10 +6672,13 @@
         function installmentsSwitchTab(tab){
             document.getElementById('inst-tab-new').classList.toggle('active', tab === 'new');
             document.getElementById('inst-tab-list').classList.toggle('active', tab === 'list');
+            document.getElementById('inst-tab-reminders').classList.toggle('active', tab === 'reminders');
             document.getElementById('inst-pane-new').style.display = tab === 'new' ? 'block' : 'none';
             document.getElementById('inst-pane-list').style.display = tab === 'list' ? 'block' : 'none';
+            document.getElementById('inst-pane-reminders').style.display = tab === 'reminders' ? 'block' : 'none';
             if (tab === 'new') renderNewInstallmentPane();
             if (tab === 'list') renderInstallmentsList();
+            if (tab === 'reminders') renderInstallmentReminders();
         }
 
         // Same math openCart() already uses for the actual amount owed at
@@ -7186,6 +7189,67 @@
             }
         }
 
+        // Nearest due date that's today or later; if every date has already
+        // passed, falls back to the last one (still worth reminding about
+        // — it's overdue, not irrelevant). Dates are a schedule/reminder
+        // cadence, not a strict ledger — payments are logged flexibly and
+        // don't tie to a specific installment number, so this is always
+        // "what's the next date worth nudging about," not "which exact
+        // installment is unpaid."
+        function getInstallmentNextDueDate(plan){
+            if (!plan.dueDates || !plan.dueDates.length) return null;
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const sorted = plan.dueDates.slice().sort();
+            const upcoming = sorted.find(d => d >= todayStr);
+            return upcoming || sorted[sorted.length - 1];
+        }
+
+        function sendInstallmentWhatsAppReminder(planArg){
+            const plan = planArg || installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            if (!plan.customerMobile) { showCustomAlert('No mobile number on file for this customer.'); return; }
+
+            const nextDue = getInstallmentNextDueDate(plan);
+            const dueDateStr = nextDue
+                ? new Date(nextDue + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                : 'soon';
+            const message = `Hi ${plan.customerName}, this is a friendly reminder from Suhag Jewellers — your next installment payment is due on ${dueDateStr}. Remaining balance: ₹${plan.remainingAmount.toFixed(2)}. Please visit us or reach out to make the payment. Thank you!`;
+
+            let mobile = plan.customerMobile.replace(/\D/g, '');
+            if (mobile.length === 10) mobile = '91' + mobile; // assume Indian number when no country code was entered
+            window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(message)}`, '_blank');
+        }
+
+        function renderInstallmentReminders(){
+            const bodyEl = document.getElementById('inst-reminders-body');
+            const upcoming = installmentPlans
+                .filter(p => p.status === 'active')
+                .map(p => ({ plan: p, nextDue: getInstallmentNextDueDate(p) }))
+                .filter(x => x.nextDue)
+                .sort((a, b) => a.nextDue.localeCompare(b.nextDue));
+
+            if (!upcoming.length) {
+                bodyEl.innerHTML = '<p class="note" style="text-align:center;">No active plans with an upcoming payment date.</p>';
+                return;
+            }
+
+            const todayStr = new Date().toISOString().slice(0, 10);
+            bodyEl.innerHTML = upcoming.map(({ plan, nextDue }) => {
+                const overdue = nextDue < todayStr;
+                const dateLabel = new Date(nextDue + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+                return `
+                    <div style="background:var(--surface); border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-weight:700;">${plan.customerName}</span>
+                            <span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; background:${overdue ? '#FFEBEE' : '#FFF3E0'}; color:${overdue ? '#C62828' : '#E65100'};">${overdue ? 'OVERDUE' : dateLabel}</span>
+                        </div>
+                        <div style="font-size:12.5px; color:var(--text2); margin-top:4px;">${plan.customerMobile || 'No mobile'} · Remaining: ₹${plan.remainingAmount.toFixed(2)}</div>
+                        <button onclick='sendInstallmentWhatsAppReminder(installmentPlans.find(p => p.id === "${plan.id}"))' style="background:#25D366; color:#fff; font-weight:700; padding:9px; border-radius:8px; border:none; font-size:13px; margin-top:8px;">💬 Send WhatsApp Reminder</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
         function openInstallmentDetail(planId){
             currentInstallmentDetailId = planId;
             const plan = installmentPlans.find(p => p.id === planId);
@@ -7227,6 +7291,12 @@
                 <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#2E7D32;"><span>Paid So Far:</span><span>₹${plan.amountPaid.toFixed(2)}</span></div>
                 <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-weight:800;"><span>Remaining:</span><span>₹${plan.remainingAmount.toFixed(2)}</span></div>
 
+                ${isActive && plan.dueDates && plan.dueDates.length ? `
+                    <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Payment Dates</div>
+                    <div style="margin-bottom:10px;">${plan.dueDates.map(d => `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span></div>`).join('')}</div>
+                    <button onclick="sendInstallmentWhatsAppReminder()" style="background:#25D366; color:#fff; font-weight:700; padding:10px; border-radius:var(--radius); border:none; font-size:13px; margin-bottom:14px;">💬 Send WhatsApp Reminder</button>
+                ` : ''}
+
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Payment History</div>
                 <div style="margin-bottom:14px;">${paymentsHtml}</div>
 
@@ -7254,7 +7324,7 @@
 
                 <button onclick="copyInstallmentLink('${plan.id}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:14px;">🔗 Copy Customer Link</button>
                 ${plan.status !== 'completed' && !isCancelled ? `
-                    <button onclick="changeInstallmentToTodaysRate()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">📈 Change to Today's Rate</button>
+                    <button onclick="changeInstallmentToTodaysRate()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">📈 Change Rate (Today's / Custom)</button>
                     <p class="note" id="inst-rate-status" style="margin-top:6px; text-align:center;"></p>
                 ` : ''}
                 ${plan.status === 'completed' ? `<button onclick="saveInstallmentToInvoice()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🧾 Save to Invoice</button>` : ''}
@@ -7345,16 +7415,34 @@
         // either way, only the metal value itself changes. Falls back to
         // the item's existing frozen price if it can no longer be priced
         // (e.g. the barcode was since sold/removed from stock).
-        function recalcInstallmentItemPrice(item){
+        function recalcInstallmentItemPrice(item, customRateOverrides){
             if (item.type === 'repair') return item.finalPrice;
+
+            // Custom overrides take priority when supplied; otherwise this
+            // falls back to today's live rates, exactly as before this
+            // feature existed.
+            function resolveRate(metal, stamp){
+                if (customRateOverrides && customRateOverrides.rates && customRateOverrides.rates[metal + '|' + stamp] != null) {
+                    return customRateOverrides.rates[metal + '|' + stamp];
+                }
+                return (rates[metal] && rates[metal][stamp]) || 0;
+            }
+            function resolvePureRate(metal){
+                if (customRateOverrides && customRateOverrides.pureRates && customRateOverrides.pureRates[metal] != null) {
+                    return customRateOverrides.pureRates[metal];
+                }
+                return getPureRate(metal) || 0;
+            }
+
             if (item.type === 'loose') {
-                if (!item.metal || !item.stamp || !rates[item.metal] || !rates[item.metal][item.stamp]) return item.finalPrice;
-                const rate = rates[item.metal][item.stamp];
+                if (!item.metal || !item.stamp) return item.finalPrice;
+                const rate = resolveRate(item.metal, item.stamp);
+                if (!rate) return item.finalPrice;
                 const metalVal = (item.weight || 0) * rate;
                 let making = 0;
                 if (item.makingType === '%') making = metalVal * ((item.makingValue || 0) / 100);
                 else if (item.makingType === 'wastage') {
-                    const pureRate = getPureRate(item.metal);
+                    const pureRate = resolvePureRate(item.metal);
                     if (!pureRate) return item.finalPrice;
                     making = pureRate * (item.weight || 0) * ((item.makingValue || 0) / 100);
                 } else if (item.makingType === 'per_g') making = (item.makingValue || 0) * (item.weight || 0);
@@ -7363,15 +7451,53 @@
                 const appliedTax = (item.taxRateApplied != null) ? item.taxRateApplied : taxRate;
                 return subtotal + subtotal * (appliedTax / 100);
             }
-            // Standard (barcode) item — same lookup calcProductFinalPrice
-            // and calcProductFinalPriceWithMakingOverride already use.
-            if (item.barcode) {
+
+            // Standard (barcode) item
+            if (!item.barcode) return item.finalPrice;
+            const d = productData[item.barcode];
+            if (!d) return item.finalPrice;
+
+            // No custom rate given — keep using the exact shared pricing
+            // functions, completely unchanged, same as always.
+            if (!customRateOverrides) {
                 const result = item.makingOverride
                     ? calcProductFinalPriceWithMakingOverride(item.barcode, item.makingOverride)
                     : calcProductFinalPrice(item.barcode);
-                if (result) return result.final;
+                return result ? result.final : item.finalPrice;
             }
-            return item.finalPrice;
+
+            // Custom rate path — computed directly here rather than through
+            // calcProductFinalPrice/...WithMakingOverride, since those
+            // always read the live global rate and every other screen in
+            // this app depends on that staying true. Same formula those
+            // functions (and the price-breakdown popup) already use.
+            const weight = d.netWeight || 0;
+            const otherCharge = d.otherCharge || 0;
+            if (_productUsesMrp(d) && !item.makingOverride) return item.finalPrice; // MRP isn't rate-based
+            if (item.makingOverride && item.makingOverride.makingType === 'MRP') return item.finalPrice;
+
+            const rate = resolveRate(d.metal, d.stamp);
+            if (!rate) return item.finalPrice;
+            const metalVal = weight * rate;
+            let makingType, makingInput;
+            if (item.makingOverride && item.makingOverride.makingType) {
+                makingType = item.makingOverride.makingType; makingInput = item.makingOverride.makingInput;
+            } else if (d.makingWastage > 0) { makingType = 'wastage'; makingInput = d.makingWastage; }
+            else if (d.makingPercent > 0) { makingType = '%'; makingInput = d.makingPercent; }
+            else if (d.makingPerGram > 0) { makingType = 'per g'; makingInput = d.makingPerGram; }
+            else { makingType = 'per pc'; makingInput = d.makingPerPc || 0; }
+
+            let making = 0;
+            if (makingType === 'per pc') making = makingInput;
+            else if (makingType === 'wastage') {
+                const pureRate = resolvePureRate(d.metal);
+                if (!pureRate) return item.finalPrice;
+                making = pureRate * weight * (makingInput / 100);
+            } else if (makingType === 'per g') making = makingInput * weight;
+            else if (makingType === '%') making = metalVal * (makingInput / 100);
+
+            const subtotal = metalVal + making + otherCharge;
+            return subtotal + subtotal * (taxRate / 100);
         }
 
         // Cancelling keeps the plan record on file (never deleted — it might
@@ -7446,8 +7572,51 @@
             if (!checkPin()) return;
             const statusEl = document.getElementById('inst-rate-status');
 
+            const useCustom = confirm("Recalculate using a CUSTOM rate instead of today's live rate?\n\nOK = Enter a custom rate\nCancel = Use today's live rate");
+
+            let customRateOverrides = null;
+            if (useCustom) {
+                customRateOverrides = { rates: {}, pureRates: {} };
+                const rateCombos = new Map(); // 'metal|stamp' -> {metal, stamp}
+                const pureRateMetals = new Set();
+
+                plan.items.forEach(item => {
+                    if (item.type === 'repair') return;
+                    let metal, stamp, isWastage;
+                    if (item.type === 'loose') {
+                        metal = item.metal; stamp = item.stamp;
+                        isWastage = item.makingType === 'wastage';
+                    } else {
+                        const d = productData[item.barcode];
+                        if (!d) return;
+                        metal = d.metal; stamp = d.stamp;
+                        const mt = (item.makingOverride && item.makingOverride.makingType) || (d.makingWastage > 0 ? 'wastage' : null);
+                        isWastage = mt === 'wastage';
+                    }
+                    if (metal && stamp) rateCombos.set(metal + '|' + stamp, { metal, stamp });
+                    if (isWastage && metal) pureRateMetals.add(metal);
+                });
+
+                for (const [key, combo] of rateCombos) {
+                    const currentRate = (rates[combo.metal] && rates[combo.metal][combo.stamp]) || 0;
+                    const input = prompt(`Custom rate for ${combo.metal} ${combo.stamp} (₹ per gram):`, currentRate ? currentRate.toFixed(2) : '');
+                    if (input === null) return; // cancelled — no changes made
+                    const val = parseFloat(input);
+                    if (isNaN(val) || val < 0) { showCustomAlert('Invalid rate entered — no changes made.'); return; }
+                    customRateOverrides.rates[key] = val;
+                }
+                for (const metal of pureRateMetals) {
+                    const currentPure = getPureRate(metal) || 0;
+                    const input = prompt(`Custom PURE rate for ${metal} — used for wastage-based making (₹ per gram):`, currentPure ? currentPure.toFixed(2) : '');
+                    if (input === null) return;
+                    const val = parseFloat(input);
+                    if (isNaN(val) || val < 0) { showCustomAlert('Invalid pure rate entered — no changes made.'); return; }
+                    customRateOverrides.pureRates[metal] = val;
+                }
+            }
+
             const newItems = plan.items.map(item => {
-                const newPrice = recalcInstallmentItemPrice(item);
+                const newPrice = recalcInstallmentItemPrice(item, customRateOverrides);
                 return { ...item, finalPrice: (typeof newPrice === 'number' && !isNaN(newPrice)) ? newPrice : item.finalPrice };
             });
             const newPrincipal = newItems.reduce((s, i) => s + i.finalPrice, 0);
@@ -7455,7 +7624,8 @@
             const newRemaining = Math.round((newTotal - plan.amountPaid) * 100) / 100;
             const remainingCount = Math.max(1, plan.installmentCount);
 
-            if (!confirm(`Recalculate this plan's items at today's rate?\n\nOld total: ₹${plan.totalAmount.toFixed(2)}\nNew total: ₹${newTotal.toFixed(2)}\n\nWhat's already been paid (₹${plan.amountPaid.toFixed(2)}) stays exactly as logged — only the remaining balance changes.`)) return;
+            const rateDescription = useCustom ? 'the custom rate you entered' : "today's rate";
+            if (!confirm(`Recalculate this plan's items at ${rateDescription}?\n\nOld total: ₹${plan.totalAmount.toFixed(2)}\nNew total: ₹${newTotal.toFixed(2)}\n\nWhat's already been paid (₹${plan.amountPaid.toFixed(2)}) stays exactly as logged — only the remaining balance changes.`)) return;
 
             statusEl.textContent = 'Saving…';
             try {
@@ -13606,7 +13776,8 @@ const badge = '';
 
         <div style="display:flex; min-height:48px; background:var(--surface); border-radius:var(--radius); overflow:hidden; border:1.5px solid var(--border); margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,.06);">
             <div class="inst-tab active" id="inst-tab-new" onclick="installmentsSwitchTab('new')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">➕ New Plan</div>
-            <div class="inst-tab" id="inst-tab-list" onclick="installmentsSwitchTab('list')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📋 All Plans</div>
+            <div class="inst-tab" id="inst-tab-list" onclick="installmentsSwitchTab('list')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📋 All Plans</div>
+            <div class="inst-tab" id="inst-tab-reminders" onclick="installmentsSwitchTab('reminders')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">🔔 Reminders</div>
         </div>
 
         <!-- ══ PANE: NEW PLAN ══ -->
@@ -13672,6 +13843,12 @@ const badge = '';
             <input type="text" id="inst-search" placeholder="🔍 Search by customer name or mobile…" style="margin-bottom:12px;" oninput="renderInstallmentsList()">
             <div id="inst-list-body"></div>
             <p class="note" id="inst-list-status" style="text-align:center;"></p>
+        </div>
+
+        <!-- ══ PANE: REMINDERS ══ -->
+        <div id="inst-pane-reminders" style="display:none;">
+            <p class="note" style="margin-bottom:12px;">Every active plan's next payment date, soonest first. Tap Send to open a pre-filled WhatsApp reminder.</p>
+            <div id="inst-reminders-body"></div>
         </div>
 
     </div>
