@@ -6757,76 +6757,201 @@
         // navigating away from the New Plan form the way the cart's own
         // "tap item" (viewItemFromCart) does, since that would lose
         // whatever the shopkeeper has already filled in here.
-        function getInstallmentItemPriceBreakdown(item){
-            if (item.type === 'repair') {
-                return { kind: 'repair', finalPrice: item.finalPrice };
+        // Builds the inner HTML for the rate/making section only — exactly
+        // the 4 branches showPriceBreakdown() already uses elsewhere in
+        // this app (wastage, %, per gram, per piece/other), so an
+        // installment item's breakdown looks identical to the same item's
+        // breakdown anywhere else in the POS, not a second, different style.
+        function _installmentBreakdownRateSection(rate, pureRate, weight, makingType, makingInput){
+            if (makingType === 'wastage') {
+                const makingPerGram = pureRate * (makingInput / 100);
+                const totalRatePerGram = rate + makingPerGram;
+                return `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="color: #555;">Pure rate:-</span>
+                        <strong>${pureRate.toFixed(2)}</strong>
+                    </div>
+                    <div style="border-top: 1px dashed #ccc; margin-bottom: 8px;"></div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span style="color: #555;">Making<br><span style="font-size:12px;">(${pureRate.toFixed(2)}*${makingInput}%(w))</span></span>
+                        <strong>₹${makingPerGram.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px; padding-left: 8px;">
+                        <span style="color: #555;">+</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span style="color: #555;">Metal rate</span>
+                        <strong>₹${rate.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; border-top: 1px dashed #ccc; padding-top: 6px;">
+                        <span style="color: #555;"></span>
+                        <strong>₹${totalRatePerGram.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Weight</span>
+                        <strong>${weight.toFixed(2)} gm</strong>
+                    </div>
+                `;
             }
-            if (item.type === 'loose') {
-                const rate = (rates[item.metal] && rates[item.metal][item.stamp]) || 0;
-                const weight = item.weight || 0;
-                const metalVal = weight * rate;
-                let making = 0, makingLabel = '—';
-                if (item.makingType === '%') { making = metalVal * ((item.makingValue || 0) / 100); makingLabel = `${item.makingValue}%`; }
-                else if (item.makingType === 'wastage') { const pr = getPureRate(item.metal) || 0; making = pr * weight * ((item.makingValue || 0) / 100); makingLabel = `${item.makingValue}% wastage`; }
-                else if (item.makingType === 'per_g') { making = (item.makingValue || 0) * weight; makingLabel = `₹${item.makingValue}/g`; }
-                else if (item.makingType === 'per_pc') { making = item.makingValue || 0; makingLabel = `₹${item.makingValue} flat`; }
-                return { kind: 'loose', weight, metal: item.metal, stamp: item.stamp, rate, pureRate: getPureRate(item.metal) || 0, metalVal, making, makingLabel, otherCharge: 0, finalPrice: item.finalPrice };
+            if (makingType === '%') {
+                const makingPerGram = rate * (makingInput / 100);
+                const totalRatePerGram = rate + makingPerGram;
+                return `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="color: #555;">Metal rate</span>
+                        <strong>₹${rate.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span style="color: #555;">Making<br><span style="font-size:12px;">(${rate.toFixed(2)}*${makingInput}%)</span></span>
+                        <strong>₹${makingPerGram.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; border-top: 1px dashed #ccc; padding-top: 6px;">
+                        <span style="color: #555;"></span>
+                        <strong>₹${totalRatePerGram.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Weight</span>
+                        <strong>${weight.toFixed(2)} gm</strong>
+                    </div>
+                `;
             }
-            // Standard (barcode) item
-            const d = productData[item.barcode];
-            if (!d) return { kind: 'unavailable', finalPrice: item.finalPrice };
-            const weight = d.netWeight || 0;
-            const otherCharge = d.otherCharge || 0;
-
-            if (_productUsesMrp(d) && !item.makingOverride) {
-                return { kind: 'mrp', mrp: d.mrp, otherCharge, finalPrice: item.finalPrice };
+            if (makingType === 'per g') {
+                const totalRatePerGram = rate + makingInput;
+                return `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                        <span style="color: #555;">Metal rate</span>
+                        <strong>₹${rate.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                        <span style="color: #555;">Making (₹${makingInput.toFixed(2)}/g)</span>
+                        <strong>₹${makingInput.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; border-top: 1px dashed #ccc; padding-top: 6px;">
+                        <span style="color: #555;"></span>
+                        <strong>₹${totalRatePerGram.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Weight</span>
+                        <strong>${weight.toFixed(2)} gm</strong>
+                    </div>
+                `;
             }
-            if (item.makingOverride && item.makingOverride.makingType === 'MRP') {
-                return { kind: 'mrp', mrp: item.makingOverride.makingInput, otherCharge, finalPrice: item.finalPrice };
-            }
-
-            const rate = (rates[d.metal] && rates[d.metal][d.stamp]) || 0;
-            const metalVal = weight * rate;
-            let making = 0, makingLabel = '—';
-
-            if (item.makingOverride && item.makingOverride.makingType) {
-                const mt = item.makingOverride.makingType, mi = item.makingOverride.makingInput;
-                if (mt === 'per pc') { making = mi; makingLabel = `₹${mi} flat (manual)`; }
-                else if (mt === 'wastage') { const pr = getPureRate(d.metal) || 0; making = pr * weight * (mi / 100); makingLabel = `${mi}% wastage (manual)`; }
-                else if (mt === 'per g') { making = mi * weight; makingLabel = `₹${mi}/g (manual)`; }
-                else if (mt === '%') { making = metalVal * (mi / 100); makingLabel = `${mi}% (manual)`; }
-            } else if (d.makingPerPc > 0) { making = d.makingPerPc; makingLabel = `₹${d.makingPerPc} flat`; }
-            else if (d.makingWastage > 0) { const pr = getPureRate(d.metal) || 0; making = pr * weight * (d.makingWastage / 100); makingLabel = `${d.makingWastage}% wastage`; }
-            else if (d.makingPerGram > 0) { making = d.makingPerGram * weight; makingLabel = `₹${d.makingPerGram}/g`; }
-            else if (d.makingPercent > 0) { making = metalVal * (d.makingPercent / 100); makingLabel = `${d.makingPercent}%`; }
-
-            return { kind: 'standard', weight, metal: d.metal, stamp: d.stamp, rate, pureRate: getPureRate(d.metal) || 0, metalVal, making, makingLabel, otherCharge, finalPrice: item.finalPrice };
+            // per pc / unrecognized — same simple two-line fallback the
+            // reference function itself uses for this case.
+            const metalVal = rate * weight;
+            const makingAmt = makingType === 'per pc' ? makingInput : 0;
+            return `
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="color: #555;">Metal (${weight.toFixed(2)}g × ₹${rate.toFixed(2)}):</span>
+                    <strong>₹${metalVal.toFixed(2)}</strong>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                    <span style="color: #555;">Making (₹${makingAmt.toFixed(2)}/pc):</span>
+                    <strong>₹${makingAmt.toFixed(2)}</strong>
+                </div>
+            `;
         }
 
         function openInstallmentItemPriceDetail(item){
-            document.getElementById('installment-item-price-title').textContent = item.itemName;
-            const b = getInstallmentItemPriceBreakdown(item);
-            const bodyEl = document.getElementById('installment-item-price-body');
-            const row = (label, val) => `<div style="display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0;"><span style="color:var(--text2);">${label}</span><span style="font-weight:600;">${val}</span></div>`;
-
-            let html = '';
-            if (b.kind === 'repair') {
-                html = row('Type', 'Repair / flat charge') + row('Amount', `₹${b.finalPrice.toFixed(2)}`);
-            } else if (b.kind === 'unavailable') {
-                html = `<p class="note">This item's stock record is no longer available — showing the price locked in when it was added to this plan.</p>` + row('Price', `₹${b.finalPrice.toFixed(2)}`);
-            } else if (b.kind === 'mrp') {
-                html = row('Pricing', 'MRP') + row('MRP', `₹${b.mrp.toFixed(2)}`) + row('Other Charges', `₹${b.otherCharge.toFixed(2)}`) + row('Final (incl. tax)', `₹${b.finalPrice.toFixed(2)}`);
-            } else {
-                html = row('Weight', `${b.weight.toFixed(3)} g`)
-                     + row('Purity', b.stamp || '—')
-                     + row('Rate Applied', `₹${b.rate.toFixed(2)}/g`)
-                     + row('Pure Rate', `₹${b.pureRate.toFixed(2)}/g`)
-                     + row('Making Charge', b.makingLabel)
-                     + (b.otherCharge ? row('Other Charges', `₹${b.otherCharge.toFixed(2)}`) : '')
-                     + `<div style="border-top:1px solid var(--border); margin-top:6px; padding-top:6px;">${row('Final (incl. tax)', `₹${b.finalPrice.toFixed(2)}`)}</div>`;
+            if (item.type === 'repair') {
+                showCustomAlert(`<div style="text-align:left; font-size:15px; background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee; margin-top:10px;">
+                    <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;">
+                        <span>Repair / Flat Charge:</span><span>₹${item.finalPrice.toFixed(2)}</span>
+                    </div></div>`, 'Complete Price Breakdown');
+                return;
             }
-            bodyEl.innerHTML = html;
-            document.getElementById('installment-item-price-modal').style.display = 'flex';
+
+            let rate, pureRate, weight, makingType, makingInput, otherCharge;
+
+            if (item.type === 'loose') {
+                rate = (rates[item.metal] && rates[item.metal][item.stamp]) || 0;
+                pureRate = getPureRate(item.metal) || 0;
+                weight = item.weight || 0;
+                otherCharge = 0;
+                // Loose uses 'per_g'/'per_pc' — normalize to the same
+                // 'per g'/'per pc' labels the shared renderer expects.
+                makingType = item.makingType === 'per_g' ? 'per g' : item.makingType === 'per_pc' ? 'per pc' : item.makingType;
+                makingInput = item.makingValue || 0;
+            } else {
+                const d = productData[item.barcode];
+                if (!d) {
+                    showCustomAlert(`<div style="text-align:left; font-size:15px; background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee; margin-top:10px;">
+                        <p style="color:#555; margin-bottom:10px;">This item's stock record is no longer available — showing the price locked in when it was added to this plan.</p>
+                        <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;">
+                            <span>Final Total:</span><span>₹${item.finalPrice.toFixed(2)}</span>
+                        </div></div>`, 'Complete Price Breakdown');
+                    return;
+                }
+                weight = d.netWeight || 0;
+                otherCharge = d.otherCharge || 0;
+
+                if (_productUsesMrp(d) && !item.makingOverride) {
+                    showCustomAlert(`<div style="text-align:left; font-size:15px; background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee; margin-top:10px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">MRP:</span><strong>₹${d.mrp.toFixed(2)}</strong></div>
+                        ${otherCharge ? `<div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">Other Charges:</span><strong>₹${otherCharge.toFixed(2)}</strong></div>` : ''}
+                        <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;">
+                            <span>Final Total:</span><span>₹${item.finalPrice.toFixed(2)}</span>
+                        </div></div>`, 'Complete Price Breakdown');
+                    return;
+                }
+                if (item.makingOverride && item.makingOverride.makingType === 'MRP') {
+                    showCustomAlert(`<div style="text-align:left; font-size:15px; background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee; margin-top:10px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">MRP (manual):</span><strong>₹${item.makingOverride.makingInput.toFixed(2)}</strong></div>
+                        ${otherCharge ? `<div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">Other Charges:</span><strong>₹${otherCharge.toFixed(2)}</strong></div>` : ''}
+                        <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;">
+                            <span>Final Total:</span><span>₹${item.finalPrice.toFixed(2)}</span>
+                        </div></div>`, 'Complete Price Breakdown');
+                    return;
+                }
+
+                rate = (rates[d.metal] && rates[d.metal][d.stamp]) || 0;
+                pureRate = getPureRate(d.metal) || 0;
+
+                if (item.makingOverride && item.makingOverride.makingType) {
+                    makingType = item.makingOverride.makingType;
+                    makingInput = item.makingOverride.makingInput;
+                } else if (d.makingWastage > 0) { makingType = 'wastage'; makingInput = d.makingWastage; }
+                else if (d.makingPercent > 0) { makingType = '%'; makingInput = d.makingPercent; }
+                else if (d.makingPerGram > 0) { makingType = 'per g'; makingInput = d.makingPerGram; }
+                else { makingType = 'per pc'; makingInput = d.makingPerPc || 0; }
+            }
+
+            const rateSectionHtml = _installmentBreakdownRateSection(rate, pureRate, weight, makingType, makingInput);
+
+            // Subtotal/tax/final always derived from the item's own actual
+            // finalPrice (already correct, already locked in) rather than
+            // re-deriving it from the displayed per-gram breakdown — the
+            // breakdown above is for transparency, not a second source of
+            // truth that could drift from the real price.
+            const subtotal = item.finalPrice / (1 + taxRate / 100);
+            const taxAmount = item.finalPrice - subtotal;
+
+            let html = `<div style="text-align: left; font-size: 15px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #eee; margin-top: 10px;">`;
+            html += rateSectionHtml;
+            if (otherCharge > 0) {
+                html += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Other Charges:</span>
+                        <strong>₹${otherCharge.toFixed(2)}</strong>
+                    </div>
+                `;
+            }
+            html += `
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                        <span style="color: #333; font-weight: bold;">Subtotal:</span>
+                        <strong style="color: #333;">₹${subtotal.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">Tax (${taxRate}%):</span>
+                        <strong>₹${taxAmount.toFixed(2)}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; border-top: 2px solid #333; padding-top: 12px; font-size: 18px; color: #4CAF50; font-weight: bold;">
+                        <span>Final Total:</span>
+                        <span>₹${item.finalPrice.toFixed(2)}</span>
+                    </div>
+                </div>
+            `;
+            showCustomAlert(html, 'Complete Price Breakdown');
         }
 
         function renderInstallmentPreview(){
@@ -13558,16 +13683,6 @@ const badge = '';
                 <button onclick="document.getElementById('installment-detail-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
             <div id="installment-detail-body"></div>
-        </div>
-    </div>
-
-    <div id="installment-item-price-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:520; align-items:center; justify-content:center;">
-        <div style="background:white; border-radius:18px; margin:16px; max-width:380px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                <span style="font-size:15px; font-weight:800; color:var(--text);" id="installment-item-price-title">Price Breakdown</span>
-                <button onclick="document.getElementById('installment-item-price-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
-            </div>
-            <div id="installment-item-price-body"></div>
         </div>
     </div>
 
