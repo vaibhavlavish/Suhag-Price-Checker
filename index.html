@@ -13502,13 +13502,6 @@ const badge = '';
             </div>
 
             <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
-                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Adjust Final Amount</div>
-                <label style="font-size:12.5px; color:var(--text2); font-weight:600;">Discount (+) / Extra Return (−), in ₹</label>
-                <input type="number" id="inst-cart-adjustment" step="1" placeholder="0" style="margin:0;" oninput="applyInstallmentCartAdjustment()">
-                <p class="note" style="margin-top:4px;">Same adjustment as the cart's own ⚙ Adjust panel — a positive number reduces the amount, negative increases it.</p>
-            </div>
-
-            <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Customer</div>
                 <div style="display:flex; flex-direction:column; gap:7px;">
                     <input type="text" id="inst-cust-name" placeholder="Customer Name" style="margin:0;">
@@ -13536,6 +13529,13 @@ const badge = '';
             <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:16px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Preview</div>
                 <div id="inst-preview" style="font-size:13.5px; color:var(--text);"></div>
+            </div>
+
+            <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:16px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Adjust Final Amount</div>
+                <label style="font-size:12.5px; color:var(--text2); font-weight:600;">Discount (+) / Extra Return (−), in ₹</label>
+                <input type="number" id="inst-cart-adjustment" step="1" placeholder="0" style="margin:0;" oninput="applyInstallmentCartAdjustment()">
+                <p class="note" style="margin-top:4px;">Same adjustment as the cart's own ⚙ Adjust panel — a positive number reduces the amount, negative increases it.</p>
             </div>
 
             <button onclick="createInstallmentPlan()" style="background:var(--gold); color:#fff; font-weight:800; padding:14px; border-radius:var(--radius); border:none; font-size:15px;">Create Installment Plan</button>
