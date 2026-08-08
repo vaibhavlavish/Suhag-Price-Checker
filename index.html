@@ -7022,7 +7022,7 @@
                     <button onclick="cancelInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">✕ Cancel Plan</button>
                     <p class="note" id="inst-cancel-status" style="margin-top:6px; text-align:center;"></p>
                 ` : ''}
-                ${isCancelled ? `
+                ${(isCancelled || plan.status === 'completed') ? `
                     <button onclick="deleteInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🗑️ Delete This Plan</button>
                     <p class="note" id="inst-delete-status" style="margin-top:6px; text-align:center;"></p>
                 ` : ''}
@@ -7175,17 +7175,17 @@
             }
         }
 
-        // Only ever offered on an already-cancelled plan (the button itself
-        // is hidden otherwise) — an active or completed plan should never
-        // be deletable, since that would erase a real financial record.
-        // A cancelled plan has already had its items released back to the
-        // catalogue; this is purely for cleaning up the record once
-        // whatever refund was owed has actually been settled.
+        // Offered on cancelled or fully-paid-off plans — an active plan
+        // (still owing money) should never be deletable, since that would
+        // erase a real, ongoing financial commitment. A cancelled plan has
+        // already had its items released back to the catalogue; a
+        // completed one is fully settled either way — both are done, just
+        // for different reasons.
         async function deleteInstallmentPlan(){
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
-            if (!plan || plan.status !== 'cancelled') return;
+            if (!plan || plan.status === 'active') return;
             if (!checkPin()) return;
-            if (!confirm(`Permanently delete this cancelled plan for ${plan.customerName}? This cannot be undone.`)) return;
+            if (!confirm(`Permanently delete this plan for ${plan.customerName}? This cannot be undone.`)) return;
 
             const statusEl = document.getElementById('inst-delete-status');
             statusEl.textContent = 'Deleting…';
@@ -7245,6 +7245,30 @@
         // Deliberately does NOT touch #inv-date — the invoice gets saved
         // with whatever date it's actually saved on, exactly like any other
         // invoice, not backdated to when the plan was created or paid off.
+        // Sums up how an installment plan was actually paid, across every
+        // logged payment, into cash/upi/card totals — a 'partial' payment
+        // splits by its own recorded details; anything without a method on
+        // it (shouldn't happen going forward, but old data might lack it)
+        // falls back to cash, the safest assumption for unspecified mode.
+        function computeInstallmentPaymentBreakdown(plan){
+            let cash = 0, upi = 0, card = 0;
+            (plan.payments || []).forEach(p => {
+                const amt = p.amount || 0;
+                if (p.method === 'partial' && p.details) {
+                    cash += p.details.cash || 0;
+                    upi += p.details.upi || 0;
+                    card += p.details.card || 0;
+                } else if (p.method === 'upi') {
+                    upi += amt;
+                } else if (p.method === 'card') {
+                    card += amt;
+                } else {
+                    cash += amt;
+                }
+            });
+            return { cash, upi, card };
+        }
+
         function saveInstallmentToInvoice(){
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan || plan.status === 'cancelled') return;
@@ -7265,8 +7289,28 @@
             invRows = _invRowsFromCartItems(plan.items);
             invRenderRows();
             invRecalc();
+
+            // Fill Payment Received to match exactly how this plan was
+            // actually paid — all cash, all UPI, all card, or split across
+            // more than one, using the plan's own recorded payment history
+            // rather than leaving it for manual re-entry.
+            const breakdown = computeInstallmentPaymentBreakdown(plan);
+            const modesUsed = [breakdown.cash, breakdown.upi, breakdown.card].filter(v => v > 0).length;
+            if (modesUsed === 1) {
+                const mode = breakdown.cash > 0 ? 'cash' : breakdown.upi > 0 ? 'upi' : 'card';
+                invSelectPayMode(mode); // sets UI state; overridden with the real total right after
+                document.getElementById('inv-receipt').value = (breakdown.cash + breakdown.upi + breakdown.card).toFixed(0);
+            } else if (modesUsed > 1) {
+                invSelectPayMode('partial'); // sets UI state; fields overridden with the real split right after
+                document.getElementById('inv-pay-cash-amt').value = breakdown.cash > 0 ? breakdown.cash.toFixed(0) : '';
+                document.getElementById('inv-pay-upi-amt').value = breakdown.upi > 0 ? breakdown.upi.toFixed(0) : '';
+                document.getElementById('inv-pay-card-amt').value = breakdown.card > 0 ? breakdown.card.toFixed(0) : '';
+                invSyncPartial();
+            }
+
             showCustomAlert('Items loaded — review and Save to generate the invoice.');
         }
+
 
         function copyInstallmentLink(planId){
             const link = INSTALLMENT_CUSTOMER_SITE_URL + '?id=' + planId;
