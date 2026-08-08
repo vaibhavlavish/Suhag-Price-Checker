@@ -6957,6 +6957,61 @@
             showCustomAlert(html, 'Complete Price Breakdown');
         }
 
+        // Computes the actual due dates for a plan given its cycle type —
+        // shared by both the live preview and plan creation, so they can
+        // never compute two different schedules for the same inputs.
+        // 'custom' doesn't compute anything; it just uses whatever the
+        // shopkeeper typed into the individual date fields.
+        function computeInstallmentDueDates(firstDueStr, count, cycleType, customDates){
+            if (cycleType === 'custom') {
+                return (customDates || []).filter(Boolean).map(ds => new Date(ds + 'T00:00:00'));
+            }
+            if (!firstDueStr) return [];
+            const base = new Date(firstDueStr + 'T00:00:00');
+            const dates = [];
+            for (let i = 0; i < count; i++) {
+                const d = new Date(base);
+                if (cycleType === 'twice_monthly') d.setDate(d.getDate() + i * 15);
+                else d.setMonth(d.getMonth() + i); // monthly — same day each month, correctly handles year rollover
+                dates.push(d);
+            }
+            return dates;
+        }
+
+        function onInstallmentCycleTypeChange(){
+            const cycleType = document.getElementById('inst-cycle-type').value;
+            document.getElementById('inst-first-due-wrap').style.display = cycleType === 'custom' ? 'none' : 'block';
+            document.getElementById('inst-custom-dates-wrap').style.display = cycleType === 'custom' ? 'block' : 'none';
+            if (cycleType === 'custom') renderInstallmentCustomDateInputs();
+            renderInstallmentPreview();
+        }
+
+        function onInstallmentCountChange(){
+            if (document.getElementById('inst-cycle-type').value === 'custom') {
+                renderInstallmentCustomDateInputs();
+            }
+            renderInstallmentPreview();
+        }
+
+        // Rebuilds the list of individual date pickers to match the current
+        // installment count — preserves whatever's already been typed into
+        // the existing ones so changing the count doesn't wipe out dates
+        // the shopkeeper already set for the earlier installments.
+        function renderInstallmentCustomDateInputs(){
+            const count = Math.max(1, parseInt(document.getElementById('inst-count').value) || 1);
+            const container = document.getElementById('inst-custom-dates-list');
+            const existing = Array.from(container.querySelectorAll('.inst-custom-date-input')).map(el => el.value);
+            let html = '';
+            for (let i = 0; i < count; i++) {
+                html += `<input type="date" class="inst-custom-date-input" data-idx="${i}" value="${existing[i] || ''}" style="margin:0;" oninput="renderInstallmentPreview()">`;
+            }
+            container.innerHTML = html;
+        }
+
+        function getInstallmentCustomDates(){
+            return Array.from(document.querySelectorAll('.inst-custom-date-input')).map(el => el.value);
+        }
+
         function renderInstallmentPreview(){
             const previewEl = document.getElementById('inst-preview');
             const principal = getCartNetPayable();
@@ -6967,21 +7022,14 @@
             const count = Math.max(1, parseInt(document.getElementById('inst-count').value) || 1);
             const interestRate = Math.max(0, parseFloat(document.getElementById('inst-interest').value) || 0);
             const downPayment = Math.max(0, parseFloat(document.getElementById('inst-downpayment').value) || 0);
-            const intervalDays = Math.max(1, parseInt(document.getElementById('inst-interval-days').value) || 30);
+            const cycleType = document.getElementById('inst-cycle-type').value;
             const total = principal * (1 + interestRate / 100);
             const afterDownPayment = Math.max(0, total - downPayment);
             const perInstallment = afterDownPayment / count;
 
             const firstDue = document.getElementById('inst-first-due').value;
-            let dueDates = [];
-            if (firstDue) {
-                const base = new Date(firstDue + 'T00:00:00');
-                for (let i = 0; i < count; i++) {
-                    const d = new Date(base);
-                    d.setDate(d.getDate() + i * intervalDays);
-                    dueDates.push(d);
-                }
-            }
+            const customDates = cycleType === 'custom' ? getInstallmentCustomDates() : null;
+            const dueDates = computeInstallmentDueDates(firstDue, count, cycleType, customDates);
 
             let html = `<div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Principal:</span><span>₹${principal.toFixed(2)}</span></div>`;
             if (interestRate > 0) {
@@ -7014,9 +7062,19 @@
             const count = Math.max(1, parseInt(document.getElementById('inst-count').value) || 1);
             const interestRate = Math.max(0, parseFloat(document.getElementById('inst-interest').value) || 0);
             const downPayment = Math.max(0, parseFloat(document.getElementById('inst-downpayment').value) || 0);
-            const intervalDays = Math.max(1, parseInt(document.getElementById('inst-interval-days').value) || 30);
+            const cycleType = document.getElementById('inst-cycle-type').value;
             const firstDue = document.getElementById('inst-first-due').value;
-            if (!firstDue) { statusEl.textContent = 'Set the first payment due date.'; return; }
+            let rawCustomDates = null;
+            if (cycleType === 'custom') {
+                rawCustomDates = getInstallmentCustomDates();
+                if (rawCustomDates.length < count || rawCustomDates.some(d => !d)) {
+                    statusEl.textContent = `Set all ${count} payment dates before creating the plan.`;
+                    return;
+                }
+            } else if (!firstDue) {
+                statusEl.textContent = 'Set the first payment due date.';
+                return;
+            }
 
             const total = Math.round((principal * (1 + interestRate / 100)) * 100) / 100;
             if (downPayment > total) { statusEl.textContent = 'Down payment cannot be more than the total payable.'; return; }
@@ -7031,13 +7089,8 @@
                 ? [{ amount: downPayment, date: new Date().toISOString().slice(0, 10), note: 'Down payment' }]
                 : [];
 
-            const dueDates = [];
-            const base = new Date(firstDue + 'T00:00:00');
-            for (let i = 0; i < count; i++) {
-                const d = new Date(base);
-                d.setDate(d.getDate() + i * intervalDays);
-                dueDates.push(d.toISOString().slice(0, 10));
-            }
+            const dueDates = computeInstallmentDueDates(firstDue, count, cycleType, rawCustomDates)
+                .map(d => d.toISOString().slice(0, 10));
 
             // Snapshot the cart items exactly as they stand right now, as
             // full copies (not a trimmed field list) — the same shape a
@@ -7107,6 +7160,9 @@
                 document.getElementById('inst-cust-mob').value = '';
                 document.getElementById('inst-cust-addr').value = '';
                 document.getElementById('inst-first-due').value = '';
+                document.getElementById('inst-cycle-type').value = 'monthly';
+                document.getElementById('inst-custom-dates-list').innerHTML = '';
+                onInstallmentCycleTypeChange();
                 document.getElementById('inst-downpayment').value = '0';
                 renderNewInstallmentPane();
             } catch (e) {
@@ -13810,15 +13866,25 @@ const badge = '';
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Plan Details</div>
                 <div style="display:flex; flex-direction:column; gap:7px;">
                     <label style="font-size:12.5px; color:var(--text2); font-weight:600;">Number of Installments</label>
-                    <input type="number" id="inst-count" min="1" step="1" value="3" style="margin:0;" oninput="renderInstallmentPreview()">
+                    <input type="number" id="inst-count" min="1" step="1" value="3" style="margin:0;" oninput="onInstallmentCountChange()">
                     <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Interest Rate (%) — default 0</label>
                     <input type="number" id="inst-interest" min="0" step="0.01" value="0" style="margin:0;" oninput="renderInstallmentPreview()">
                     <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Down Payment (optional) — paid today, logged automatically</label>
                     <input type="number" id="inst-downpayment" min="0" step="0.01" value="0" style="margin:0;" oninput="renderInstallmentPreview()">
-                    <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">First Payment Due Date</label>
-                    <input type="date" id="inst-first-due" style="margin:0;">
-                    <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Days Between Installments</label>
-                    <input type="number" id="inst-interval-days" min="1" step="1" value="30" style="margin:0;" oninput="renderInstallmentPreview()">
+                    <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Payment Cycle</label>
+                    <select id="inst-cycle-type" style="margin:0;" onchange="onInstallmentCycleTypeChange()">
+                        <option value="monthly">Monthly</option>
+                        <option value="twice_monthly">Twice a Month</option>
+                        <option value="custom">Custom Dates</option>
+                    </select>
+                    <div id="inst-first-due-wrap">
+                        <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">First Payment Due Date</label>
+                        <input type="date" id="inst-first-due" style="margin:0;" oninput="renderInstallmentPreview()">
+                    </div>
+                    <div id="inst-custom-dates-wrap" style="display:none;">
+                        <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Set Each Payment Date</label>
+                        <div id="inst-custom-dates-list" style="display:flex; flex-direction:column; gap:6px;"></div>
+                    </div>
                 </div>
             </div>
 
