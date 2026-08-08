@@ -6770,7 +6770,7 @@
                 else if (item.makingType === 'wastage') { const pr = getPureRate(item.metal) || 0; making = pr * weight * ((item.makingValue || 0) / 100); makingLabel = `${item.makingValue}% wastage`; }
                 else if (item.makingType === 'per_g') { making = (item.makingValue || 0) * weight; makingLabel = `₹${item.makingValue}/g`; }
                 else if (item.makingType === 'per_pc') { making = item.makingValue || 0; makingLabel = `₹${item.makingValue} flat`; }
-                return { kind: 'loose', weight, metal: item.metal, stamp: item.stamp, rate, metalVal, making, makingLabel, otherCharge: 0, finalPrice: item.finalPrice };
+                return { kind: 'loose', weight, metal: item.metal, stamp: item.stamp, rate, pureRate: getPureRate(item.metal) || 0, metalVal, making, makingLabel, otherCharge: 0, finalPrice: item.finalPrice };
             }
             // Standard (barcode) item
             const d = productData[item.barcode];
@@ -6800,7 +6800,7 @@
             else if (d.makingPerGram > 0) { making = d.makingPerGram * weight; makingLabel = `₹${d.makingPerGram}/g`; }
             else if (d.makingPercent > 0) { making = metalVal * (d.makingPercent / 100); makingLabel = `${d.makingPercent}%`; }
 
-            return { kind: 'standard', weight, metal: d.metal, stamp: d.stamp, rate, metalVal, making, makingLabel, otherCharge, finalPrice: item.finalPrice };
+            return { kind: 'standard', weight, metal: d.metal, stamp: d.stamp, rate, pureRate: getPureRate(d.metal) || 0, metalVal, making, makingLabel, otherCharge, finalPrice: item.finalPrice };
         }
 
         function openInstallmentItemPriceDetail(item){
@@ -6820,8 +6820,8 @@
                 html = row('Weight', `${b.weight.toFixed(3)} g`)
                      + row('Purity', b.stamp || '—')
                      + row('Rate Applied', `₹${b.rate.toFixed(2)}/g`)
-                     + row('Metal Value', `₹${b.metalVal.toFixed(2)}`)
-                     + row('Making Charge', `${b.makingLabel} = ₹${b.making.toFixed(2)}`)
+                     + row('Pure Rate', `₹${b.pureRate.toFixed(2)}/g`)
+                     + row('Making Charge', b.makingLabel)
                      + (b.otherCharge ? row('Other Charges', `₹${b.otherCharge.toFixed(2)}`) : '')
                      + `<div style="border-top:1px solid var(--border); margin-top:6px; padding-top:6px;">${row('Final (incl. tax)', `₹${b.finalPrice.toFixed(2)}`)}</div>`;
             }
