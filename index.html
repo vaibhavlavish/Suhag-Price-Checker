@@ -6698,12 +6698,40 @@
                 emptyNote.style.display = 'block';
             } else {
                 emptyNote.style.display = 'none';
-                itemsEl.innerHTML = cart.map(item => `
-                    <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--border);">
+                itemsEl.innerHTML = cart.map((item, idx) => `
+                    <div class="inst-cart-item-row" data-cart-idx="${idx}" style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border); cursor:pointer; user-select:none; -webkit-user-select:none;">
                         <span>${item.itemName}</span><span>₹${item.finalPrice.toFixed(2)}</span>
                     </div>
                 `).join('');
             }
+            // Delegated, wired once — same reasoning as the plan list: a
+            // listener on the stable container survives re-renders (this
+            // pane re-renders on Refresh and after adjustment changes)
+            // without losing the click the way a per-row onclick could.
+            if (!itemsEl.dataset.delegatedClickWired) {
+                itemsEl.dataset.delegatedClickWired = '1';
+                itemsEl.addEventListener('click', e => {
+                    const row = e.target.closest('.inst-cart-item-row');
+                    if (!row) return;
+                    const idx = parseInt(row.dataset.cartIdx, 10);
+                    if (!isNaN(idx) && cart[idx]) openInstallmentItemPriceDetail(cart[idx]);
+                });
+            }
+
+            const oldGoldCard = document.getElementById('inst-oldgold-card');
+            const oldGoldEl = document.getElementById('inst-oldgold-items');
+            if (oldGoldItems.length) {
+                oldGoldCard.style.display = 'block';
+                oldGoldEl.innerHTML = oldGoldItems.map(og => `
+                    <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--border);">
+                        <span>${og.desc}</span><span>₹${og.value.toFixed(2)}</span>
+                    </div>
+                `).join('');
+            } else {
+                oldGoldCard.style.display = 'none';
+            }
+
+            document.getElementById('inst-cart-adjustment').value = cartAdjustment !== 0 ? cartAdjustment.toFixed(2) : '';
             document.getElementById('inst-cust-name').value = cartCustomer.name || '';
             document.getElementById('inst-cust-mob').value = cartCustomer.mobile || '';
             document.getElementById('inst-cust-addr').value = cartCustomer.address || '';
@@ -6712,6 +6740,93 @@
                 document.getElementById('inst-first-due').value = d.toISOString().slice(0, 10);
             }
             renderInstallmentPreview();
+        }
+
+        // Mirrors the cart's own ⚙ Adjust panel, in miniature — same shared
+        // cartAdjustment variable, so this stays in sync with the cart
+        // modal regardless of which one was used most recently.
+        function applyInstallmentCartAdjustment(){
+            const val = parseFloat(document.getElementById('inst-cart-adjustment').value);
+            cartAdjustment = isNaN(val) ? 0 : val;
+            cartAdjustmentAuto = false;
+            renderInstallmentPreview();
+        }
+
+        // Shows exactly how one cart item's price was built — rate applied,
+        // making charge (type and amount), weight, purity — without
+        // navigating away from the New Plan form the way the cart's own
+        // "tap item" (viewItemFromCart) does, since that would lose
+        // whatever the shopkeeper has already filled in here.
+        function getInstallmentItemPriceBreakdown(item){
+            if (item.type === 'repair') {
+                return { kind: 'repair', finalPrice: item.finalPrice };
+            }
+            if (item.type === 'loose') {
+                const rate = (rates[item.metal] && rates[item.metal][item.stamp]) || 0;
+                const weight = item.weight || 0;
+                const metalVal = weight * rate;
+                let making = 0, makingLabel = '—';
+                if (item.makingType === '%') { making = metalVal * ((item.makingValue || 0) / 100); makingLabel = `${item.makingValue}%`; }
+                else if (item.makingType === 'wastage') { const pr = getPureRate(item.metal) || 0; making = pr * weight * ((item.makingValue || 0) / 100); makingLabel = `${item.makingValue}% wastage`; }
+                else if (item.makingType === 'per_g') { making = (item.makingValue || 0) * weight; makingLabel = `₹${item.makingValue}/g`; }
+                else if (item.makingType === 'per_pc') { making = item.makingValue || 0; makingLabel = `₹${item.makingValue} flat`; }
+                return { kind: 'loose', weight, metal: item.metal, stamp: item.stamp, rate, metalVal, making, makingLabel, otherCharge: 0, finalPrice: item.finalPrice };
+            }
+            // Standard (barcode) item
+            const d = productData[item.barcode];
+            if (!d) return { kind: 'unavailable', finalPrice: item.finalPrice };
+            const weight = d.netWeight || 0;
+            const otherCharge = d.otherCharge || 0;
+
+            if (_productUsesMrp(d) && !item.makingOverride) {
+                return { kind: 'mrp', mrp: d.mrp, otherCharge, finalPrice: item.finalPrice };
+            }
+            if (item.makingOverride && item.makingOverride.makingType === 'MRP') {
+                return { kind: 'mrp', mrp: item.makingOverride.makingInput, otherCharge, finalPrice: item.finalPrice };
+            }
+
+            const rate = (rates[d.metal] && rates[d.metal][d.stamp]) || 0;
+            const metalVal = weight * rate;
+            let making = 0, makingLabel = '—';
+
+            if (item.makingOverride && item.makingOverride.makingType) {
+                const mt = item.makingOverride.makingType, mi = item.makingOverride.makingInput;
+                if (mt === 'per pc') { making = mi; makingLabel = `₹${mi} flat (manual)`; }
+                else if (mt === 'wastage') { const pr = getPureRate(d.metal) || 0; making = pr * weight * (mi / 100); makingLabel = `${mi}% wastage (manual)`; }
+                else if (mt === 'per g') { making = mi * weight; makingLabel = `₹${mi}/g (manual)`; }
+                else if (mt === '%') { making = metalVal * (mi / 100); makingLabel = `${mi}% (manual)`; }
+            } else if (d.makingPerPc > 0) { making = d.makingPerPc; makingLabel = `₹${d.makingPerPc} flat`; }
+            else if (d.makingWastage > 0) { const pr = getPureRate(d.metal) || 0; making = pr * weight * (d.makingWastage / 100); makingLabel = `${d.makingWastage}% wastage`; }
+            else if (d.makingPerGram > 0) { making = d.makingPerGram * weight; makingLabel = `₹${d.makingPerGram}/g`; }
+            else if (d.makingPercent > 0) { making = metalVal * (d.makingPercent / 100); makingLabel = `${d.makingPercent}%`; }
+
+            return { kind: 'standard', weight, metal: d.metal, stamp: d.stamp, rate, metalVal, making, makingLabel, otherCharge, finalPrice: item.finalPrice };
+        }
+
+        function openInstallmentItemPriceDetail(item){
+            document.getElementById('installment-item-price-title').textContent = item.itemName;
+            const b = getInstallmentItemPriceBreakdown(item);
+            const bodyEl = document.getElementById('installment-item-price-body');
+            const row = (label, val) => `<div style="display:flex; justify-content:space-between; font-size:13.5px; padding:4px 0;"><span style="color:var(--text2);">${label}</span><span style="font-weight:600;">${val}</span></div>`;
+
+            let html = '';
+            if (b.kind === 'repair') {
+                html = row('Type', 'Repair / flat charge') + row('Amount', `₹${b.finalPrice.toFixed(2)}`);
+            } else if (b.kind === 'unavailable') {
+                html = `<p class="note">This item's stock record is no longer available — showing the price locked in when it was added to this plan.</p>` + row('Price', `₹${b.finalPrice.toFixed(2)}`);
+            } else if (b.kind === 'mrp') {
+                html = row('Pricing', 'MRP') + row('MRP', `₹${b.mrp.toFixed(2)}`) + row('Other Charges', `₹${b.otherCharge.toFixed(2)}`) + row('Final (incl. tax)', `₹${b.finalPrice.toFixed(2)}`);
+            } else {
+                html = row('Weight', `${b.weight.toFixed(3)} g`)
+                     + row('Purity', b.stamp || '—')
+                     + row('Rate Applied', `₹${b.rate.toFixed(2)}/g`)
+                     + row('Metal Value', `₹${b.metalVal.toFixed(2)}`)
+                     + row('Making Charge', `${b.makingLabel} = ₹${b.making.toFixed(2)}`)
+                     + (b.otherCharge ? row('Other Charges', `₹${b.otherCharge.toFixed(2)}`) : '')
+                     + `<div style="border-top:1px solid var(--border); margin-top:6px; padding-top:6px;">${row('Final (incl. tax)', `₹${b.finalPrice.toFixed(2)}`)}</div>`;
+            }
+            bodyEl.innerHTML = html;
+            document.getElementById('installment-item-price-modal').style.display = 'flex';
         }
 
         function renderInstallmentPreview(){
@@ -13372,9 +13487,25 @@ const badge = '';
         <!-- ══ PANE: NEW PLAN ══ -->
         <div id="inst-pane-new">
             <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
-                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Items From Cart</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">Items From Cart</div>
+                    <button onclick="renderNewInstallmentPane()" style="background:none; border:1px solid var(--border); color:var(--text2); font-weight:700; padding:4px 10px; border-radius:8px; font-size:11px; width:auto; margin:0;">🔄 Refresh</button>
+                </div>
                 <div id="inst-cart-items" style="font-size:13px; color:var(--text);"></div>
                 <p class="note" id="inst-cart-empty-note" style="display:none; margin:4px 0 0; font-size:12.5px; color:var(--text2);">Cart is empty — add items to the cart first, then come back here to split the total into an installment plan.</p>
+                <p class="note" style="margin:6px 0 0; font-size:11.5px;">Tap any item for its price breakdown.</p>
+            </div>
+
+            <div id="inst-oldgold-card" style="display:none; background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Old Jewellery (Exchange)</div>
+                <div id="inst-oldgold-items" style="font-size:13px; color:var(--text);"></div>
+            </div>
+
+            <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Adjust Final Amount</div>
+                <label style="font-size:12.5px; color:var(--text2); font-weight:600;">Discount (+) / Extra Return (−), in ₹</label>
+                <input type="number" id="inst-cart-adjustment" step="1" placeholder="0" style="margin:0;" oninput="applyInstallmentCartAdjustment()">
+                <p class="note" style="margin-top:4px;">Same adjustment as the cart's own ⚙ Adjust panel — a positive number reduces the amount, negative increases it.</p>
             </div>
 
             <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
@@ -13427,6 +13558,16 @@ const badge = '';
                 <button onclick="document.getElementById('installment-detail-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
             <div id="installment-detail-body"></div>
+        </div>
+    </div>
+
+    <div id="installment-item-price-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:520; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:380px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:15px; font-weight:800; color:var(--text);" id="installment-item-price-title">Price Breakdown</span>
+                <button onclick="document.getElementById('installment-item-price-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <div id="installment-item-price-body"></div>
         </div>
     </div>
 
