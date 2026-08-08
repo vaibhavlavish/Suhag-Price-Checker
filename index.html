@@ -7381,7 +7381,7 @@
 
                 <button onclick="copyInstallmentLink('${plan.id}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:14px;">🔗 Copy Customer Link</button>
                 ${plan.status !== 'completed' && !isCancelled ? `
-                    <button onclick="changeInstallmentToTodaysRate()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">📈 Change Rate (Today's / Custom)</button>
+                    <button onclick="openInstallmentRateModal()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">📈 Change Rate (Today's / Custom)</button>
                     <p class="note" id="inst-rate-status" style="margin-top:6px; text-align:center;"></p>
                 ` : ''}
                 ${plan.status === 'completed' ? `<button onclick="saveInstallmentToInvoice()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🧾 Save to Invoice</button>` : ''}
@@ -7483,22 +7483,30 @@
         // either way, only the metal value itself changes. Falls back to
         // the item's existing frozen price if it can no longer be priced
         // (e.g. the barcode was since sold/removed from stock).
-        function recalcInstallmentItemPrice(item, customRateOverrides){
+        function recalcInstallmentItemPrice(item, customPureRates){
             if (item.type === 'repair') return item.finalPrice;
 
-            // Custom overrides take priority when supplied; otherwise this
-            // falls back to today's live rates, exactly as before this
-            // feature existed.
+            // A custom pure rate is the only thing ever entered manually —
+            // the purity-specific rate is always DERIVED from it, by
+            // preserving the shop's own current ratio between that purity's
+            // rate and the pure rate (e.g. if 22K is normally priced at
+            // 91.6% of pure, a custom pure rate keeps that same 91.6%
+            // relationship). This is what keeps wastage-making (always
+            // pure-rate based) and metal value (always purity-rate based)
+            // mathematically consistent with each other — they're both
+            // derived from the one number actually entered, never two
+            // independently-typed figures that could drift apart.
             function resolveRate(metal, stamp){
-                if (customRateOverrides && customRateOverrides.rates && customRateOverrides.rates[metal + '|' + stamp] != null) {
-                    return customRateOverrides.rates[metal + '|' + stamp];
+                const liveRate = (rates[metal] && rates[metal][stamp]) || 0;
+                if (customPureRates && customPureRates[metal] != null) {
+                    const livePure = getPureRate(metal) || 0;
+                    if (!livePure || !liveRate) return customPureRates[metal]; // no ratio to preserve — use the pure rate directly as a fallback
+                    return customPureRates[metal] * (liveRate / livePure);
                 }
-                return (rates[metal] && rates[metal][stamp]) || 0;
+                return liveRate;
             }
             function resolvePureRate(metal){
-                if (customRateOverrides && customRateOverrides.pureRates && customRateOverrides.pureRates[metal] != null) {
-                    return customRateOverrides.pureRates[metal];
-                }
+                if (customPureRates && customPureRates[metal] != null) return customPureRates[metal];
                 return getPureRate(metal) || 0;
             }
 
@@ -7527,7 +7535,7 @@
 
             // No custom rate given — keep using the exact shared pricing
             // functions, completely unchanged, same as always.
-            if (!customRateOverrides) {
+            if (!customPureRates) {
                 const result = item.makingOverride
                     ? calcProductFinalPriceWithMakingOverride(item.barcode, item.makingOverride)
                     : calcProductFinalPrice(item.barcode);
@@ -7634,57 +7642,78 @@
             }
         }
 
-        async function changeInstallmentToTodaysRate(){
+        function openInstallmentRateModal(){
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan || plan.status === 'cancelled') return;
+            document.getElementById('installment-rate-title').textContent = 'Change Rate';
+            document.getElementById('installment-rate-body').innerHTML = `
+                <p class="note" style="margin-bottom:14px;">Choose how to recalculate this plan's items.</p>
+                <button onclick="chooseInstallmentRateMode('today')" style="width:100%; background:var(--gold); color:#fff; font-weight:800; padding:12px; border-radius:var(--radius); border:none; font-size:14px; margin-bottom:10px;">📅 Today's Rate</button>
+                <button onclick="chooseInstallmentRateMode('custom')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:12px; border-radius:var(--radius); font-size:14px;">✏️ Custom Rate</button>
+            `;
+            document.getElementById('installment-rate-modal').style.display = 'flex';
+        }
+
+        function chooseInstallmentRateMode(mode){
             if (!checkPin()) return;
-            const statusEl = document.getElementById('inst-rate-status');
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
 
-            const useCustom = confirm("Recalculate using a CUSTOM rate instead of today's live rate?\n\nOK = Enter a custom rate\nCancel = Use today's live rate");
-
-            let customRateOverrides = null;
-            if (useCustom) {
-                customRateOverrides = { rates: {}, pureRates: {} };
-                const rateCombos = new Map(); // 'metal|stamp' -> {metal, stamp}
-                const pureRateMetals = new Set();
-
-                plan.items.forEach(item => {
-                    if (item.type === 'repair') return;
-                    let metal, stamp, isWastage;
-                    if (item.type === 'loose') {
-                        metal = item.metal; stamp = item.stamp;
-                        isWastage = item.makingType === 'wastage';
-                    } else {
-                        const d = productData[item.barcode];
-                        if (!d) return;
-                        metal = d.metal; stamp = d.stamp;
-                        const mt = (item.makingOverride && item.makingOverride.makingType) || (d.makingWastage > 0 ? 'wastage' : null);
-                        isWastage = mt === 'wastage';
-                    }
-                    if (metal && stamp) rateCombos.set(metal + '|' + stamp, { metal, stamp });
-                    if (isWastage && metal) pureRateMetals.add(metal);
-                });
-
-                for (const [key, combo] of rateCombos) {
-                    const currentRate = (rates[combo.metal] && rates[combo.metal][combo.stamp]) || 0;
-                    const input = prompt(`Custom rate for ${combo.metal} ${combo.stamp} (₹ per gram):`, currentRate ? currentRate.toFixed(2) : '');
-                    if (input === null) return; // cancelled — no changes made
-                    const val = parseFloat(input);
-                    if (isNaN(val) || val < 0) { showCustomAlert('Invalid rate entered — no changes made.'); return; }
-                    customRateOverrides.rates[key] = val;
-                }
-                for (const metal of pureRateMetals) {
-                    const currentPure = getPureRate(metal) || 0;
-                    const input = prompt(`Custom PURE rate for ${metal} — used for wastage-based making (₹ per gram):`, currentPure ? currentPure.toFixed(2) : '');
-                    if (input === null) return;
-                    const val = parseFloat(input);
-                    if (isNaN(val) || val < 0) { showCustomAlert('Invalid pure rate entered — no changes made.'); return; }
-                    customRateOverrides.pureRates[metal] = val;
-                }
+            if (mode === 'today') {
+                document.getElementById('installment-rate-modal').style.display = 'none';
+                applyInstallmentRateChange(plan, null, false);
+                return;
             }
 
+            // Custom — one Pure Rate input per distinct metal in the plan.
+            // Nothing else is asked for: the purity-specific rate always
+            // gets derived from this (see recalcInstallmentItemPrice), so
+            // wastage-making and metal value can never end up based on two
+            // inconsistent numbers.
+            const metals = new Set();
+            plan.items.forEach(item => {
+                if (item.type === 'repair') return;
+                if (item.type === 'loose') { if (item.metal) metals.add(item.metal); return; }
+                const d = productData[item.barcode];
+                if (d && d.metal) metals.add(d.metal);
+            });
+
+            if (!metals.size) {
+                showCustomAlert('No rate-based items in this plan to recalculate.');
+                document.getElementById('installment-rate-modal').style.display = 'none';
+                return;
+            }
+
+            let html = `<p class="note" style="margin-bottom:12px;">Set Pure Rate</p>`;
+            metals.forEach(metal => {
+                const currentPure = getPureRate(metal) || 0;
+                html += `<label style="font-size:12.5px; color:var(--text2); font-weight:600;">${metal} Pure Rate (₹ per gram)</label>
+                          <input type="number" class="inst-custom-pure-rate-input" data-metal="${metal}" value="${currentPure ? currentPure.toFixed(2) : ''}" step="0.01" style="margin:0 0 10px;">`;
+            });
+            html += `<button onclick="confirmInstallmentCustomRate()" style="width:100%; background:var(--gold); color:#fff; font-weight:800; padding:12px; border-radius:var(--radius); border:none; font-size:14px;">Apply Custom Rate</button>`;
+            document.getElementById('installment-rate-title').textContent = 'Set Pure Rate';
+            document.getElementById('installment-rate-body').innerHTML = html;
+        }
+
+        function confirmInstallmentCustomRate(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            const inputs = document.querySelectorAll('.inst-custom-pure-rate-input');
+            const customPureRates = {};
+            for (const el of inputs) {
+                const val = parseFloat(el.value);
+                if (isNaN(val) || val < 0) { showCustomAlert('Enter a valid pure rate for every metal shown.'); return; }
+                customPureRates[el.dataset.metal] = val;
+            }
+            document.getElementById('installment-rate-modal').style.display = 'none';
+            applyInstallmentRateChange(plan, customPureRates, true);
+        }
+
+        async function applyInstallmentRateChange(plan, customPureRates, isCustom){
+            const statusEl = document.getElementById('inst-rate-status');
+
             const newItems = plan.items.map(item => {
-                const newPrice = recalcInstallmentItemPrice(item, customRateOverrides);
+                const newPrice = recalcInstallmentItemPrice(item, customPureRates);
                 return { ...item, finalPrice: (typeof newPrice === 'number' && !isNaN(newPrice)) ? newPrice : item.finalPrice };
             });
             const newPrincipal = newItems.reduce((s, i) => s + i.finalPrice, 0);
@@ -7692,7 +7721,7 @@
             const newRemaining = Math.round((newTotal - plan.amountPaid) * 100) / 100;
             const remainingCount = Math.max(1, plan.installmentCount);
 
-            const rateDescription = useCustom ? 'the custom rate you entered' : "today's rate";
+            const rateDescription = isCustom ? 'the custom pure rate you entered' : "today's rate";
             if (!confirm(`Recalculate this plan's items at ${rateDescription}?\n\nOld total: ₹${plan.totalAmount.toFixed(2)}\nNew total: ₹${newTotal.toFixed(2)}\n\nWhat's already been paid (₹${plan.amountPaid.toFixed(2)}) stays exactly as logged — only the remaining balance changes.`)) return;
 
             statusEl.textContent = 'Saving…';
@@ -13938,6 +13967,16 @@ const badge = '';
                 <button onclick="document.getElementById('installment-detail-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
             <div id="installment-detail-body"></div>
+        </div>
+    </div>
+
+    <div id="installment-rate-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:520; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:380px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);" id="installment-rate-title">Change Rate</span>
+                <button onclick="document.getElementById('installment-rate-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <div id="installment-rate-body"></div>
         </div>
     </div>
 
