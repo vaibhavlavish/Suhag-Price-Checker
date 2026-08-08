@@ -6912,7 +6912,7 @@
                 const badgeColor = p.status === 'completed' ? '#2E7D32' : (p.status === 'cancelled' ? '#C62828' : '#E65100');
                 const badgeLabel = p.status === 'completed' ? 'PAID OFF' : (p.status === 'cancelled' ? 'CANCELLED' : 'ACTIVE');
                 return `
-                <div class="inst-list-row" data-plan-id="${p.id}" style="background:var(--surface); border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06); cursor:pointer; ${p.status === 'cancelled' ? 'opacity:0.6;' : ''}">
+                <div class="inst-list-row" data-plan-id="${p.id}" style="background:var(--surface); border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06); cursor:pointer; user-select:none; -webkit-user-select:none; ${p.status === 'cancelled' ? 'opacity:0.6;' : ''}">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="font-weight:700;">${p.customerName}</span>
                         <span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; background:${badgeBg}; color:${badgeColor};">${badgeLabel}</span>
@@ -6962,8 +6962,8 @@
                     <span>${i.itemName}</span><span>₹${i.finalPrice.toFixed(2)}</span>
                 </div>
             `).join('');
-            const paymentsHtml = plan.payments.length
-                ? plan.payments.slice().reverse().map(pmt => `
+            const paymentsHtml = (plan.payments || []).length
+                ? (plan.payments || []).slice().reverse().map(pmt => `
                     <div style="display:flex; justify-content:space-between; font-size:12.5px; padding:3px 0; border-bottom:1px solid var(--border);">
                         <span>${new Date(pmt.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pmt.note ? ' · ' + pmt.note : ''}</span>
                         <span>₹${pmt.amount.toFixed(2)}</span>
@@ -7049,7 +7049,12 @@
             // doesn't need to match any specific installment precisely.
             // amountPaid/remainingAmount are the only numbers that actually
             // matter going forward.
-            const payments = [...plan.payments, { amount, date, note: note || null, method, details }];
+            // Firebase Realtime Database silently drops an empty array on
+            // write, so a plan created with no down payment (payments: [])
+            // reads back with the field missing entirely, not an empty
+            // array — (plan.payments || []) guards every read of it against
+            // that, here and in renderInstallmentDetailBody above.
+            const payments = [...(plan.payments || []), { amount, date, note: note || null, method, details }];
             const amountPaid = Math.round((plan.amountPaid + amount) * 100) / 100;
             const remainingAmount = Math.round((plan.totalAmount - amountPaid) * 100) / 100;
             const status = remainingAmount <= 0 ? 'completed' : 'active';
