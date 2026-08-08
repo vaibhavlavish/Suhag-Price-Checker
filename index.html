@@ -7025,9 +7025,7 @@
             const cycleType = document.getElementById('inst-cycle-type').value;
             const total = principal * (1 + interestRate / 100);
             const afterDownPayment = Math.max(0, total - downPayment);
-            const roundUnit = parseInt(document.getElementById('inst-round-unit').value) || 0;
-            const rawPerInstallment = afterDownPayment / count;
-            const perInstallment = roundUnit > 0 ? Math.ceil(rawPerInstallment / roundUnit) * roundUnit : rawPerInstallment;
+            const perInstallment = afterDownPayment / count;
 
             const firstDue = document.getElementById('inst-first-due').value;
             const customDates = cycleType === 'custom' ? getInstallmentCustomDates() : null;
@@ -7082,9 +7080,7 @@
             if (downPayment > total) { statusEl.textContent = 'Down payment cannot be more than the total payable.'; return; }
             const amountPaid = downPayment;
             const remainingAmount = Math.round((total - amountPaid) * 100) / 100;
-            const roundUnit = parseInt(document.getElementById('inst-round-unit').value) || 0;
-            const rawPerInstallment = remainingAmount / count;
-            const perInstallment = roundUnit > 0 ? Math.ceil(rawPerInstallment / roundUnit) * roundUnit : Math.round(rawPerInstallment * 100) / 100;
+            const perInstallment = Math.round((remainingAmount / count) * 100) / 100;
             // Down payment is logged the exact same way any other payment is
             // — just dated today, at creation time — so it shows up in the
             // payment history like any other entry, not as a separate
@@ -13875,15 +13871,6 @@ const badge = '';
                     <input type="number" id="inst-interest" min="0" step="0.01" value="0" style="margin:0;" oninput="renderInstallmentPreview()">
                     <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Down Payment (optional) — paid today, logged automatically</label>
                     <input type="number" id="inst-downpayment" min="0" step="0.01" value="0" style="margin:0;" oninput="renderInstallmentPreview()">
-                    <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Round Each Installment To Nearest</label>
-                    <select id="inst-round-unit" style="margin:0;" onchange="renderInstallmentPreview()">
-                        <option value="0">No rounding</option>
-                        <option value="10">₹10</option>
-                        <option value="50">₹50</option>
-                        <option value="100" selected>₹100</option>
-                        <option value="500">₹500</option>
-                        <option value="1000">₹1000</option>
-                    </select>
                     <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Payment Cycle</label>
                     <select id="inst-cycle-type" style="margin:0;" onchange="onInstallmentCycleTypeChange()">
                         <option value="monthly">Monthly</option>
