@@ -7303,6 +7303,25 @@
             window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(message)}`, '_blank');
         }
 
+        // Sends the customer's own plan-tracking link (installments-view.html
+        // with this plan's id) via WhatsApp — separate from the payment
+        // reminder above, since this one's purpose is just getting the
+        // link into the customer's hands (e.g. right after creating the
+        // plan, or if they've misplaced it), not nudging them about an
+        // upcoming payment.
+        function sendInstallmentLinkWhatsApp(planArg){
+            const plan = planArg || installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            if (!plan.customerMobile) { showCustomAlert('No mobile number on file for this customer.'); return; }
+
+            const link = INSTALLMENT_CUSTOMER_SITE_URL + '?id=' + plan.id;
+            const message = `Dear ${plan.customerName},\n\nhere is your installment plan link from Suhag Jewellers — you can check your payment schedule and history here:\n${link}`;
+
+            let mobile = plan.customerMobile.replace(/\D/g, '');
+            if (mobile.length === 10) mobile = '91' + mobile; // assume Indian number when no country code was entered
+            window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(message)}`, '_blank');
+        }
+
         function renderInstallmentReminders(){
             const bodyEl = document.getElementById('inst-reminders-body');
             const upcoming = installmentPlans
@@ -7327,7 +7346,10 @@
                             <span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; background:${overdue ? '#FFEBEE' : '#FFF3E0'}; color:${overdue ? '#C62828' : '#E65100'};">${overdue ? 'OVERDUE' : dateLabel}</span>
                         </div>
                         <div style="font-size:12.5px; color:var(--text2); margin-top:4px;">${plan.customerMobile || 'No mobile'} · Remaining: ₹${plan.remainingAmount.toFixed(2)}</div>
-                        <button onclick='sendInstallmentWhatsAppReminder(installmentPlans.find(p => p.id === "${plan.id}"))' style="background:#25D366; color:#fff; font-weight:700; padding:9px; border-radius:8px; border:none; font-size:13px; margin-top:8px;">💬 Send WhatsApp Reminder</button>
+                        <div style="display:flex; gap:6px; margin-top:8px;">
+                            <button onclick='sendInstallmentWhatsAppReminder(installmentPlans.find(p => p.id === "${plan.id}"))' style="flex:1; background:#25D366; color:#fff; font-weight:700; padding:9px 4px; border-radius:8px; border:none; font-size:12px;">💬 Send Reminder</button>
+                            <button onclick='sendInstallmentLinkWhatsApp(installmentPlans.find(p => p.id === "${plan.id}"))' style="flex:1; background:#128C7E; color:#fff; font-weight:700; padding:9px 4px; border-radius:8px; border:none; font-size:12px;">🔗 Send Link</button>
+                        </div>
                     </div>
                 `;
             }).join('');
@@ -7374,15 +7396,13 @@
                 <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#2E7D32;"><span>Paid So Far:</span><span>₹${plan.amountPaid.toFixed(2)}</span></div>
                 <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-weight:800;"><span>Remaining:</span><span>₹${plan.remainingAmount.toFixed(2)}</span></div>
 
-                ${plan.appliedPureRates && Object.keys(plan.appliedPureRates).length ? `
-                    <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Pure Rate Applied</div>
-                    <div style="margin-bottom:12px;">${Object.entries(plan.appliedPureRates).map(([metal, rate]) => `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>${metal}</span><span>₹${rate.toFixed(2)}/g</span></div>`).join('')}</div>
-                ` : ''}
-
                 ${isActive && plan.dueDates && plan.dueDates.length ? `
                     <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Payment Dates</div>
                     <div style="margin-bottom:10px;">${plan.dueDates.map(d => `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span><span>₹${plan.installmentAmount.toFixed(2)}</span></div>`).join('')}</div>
-                    <button onclick="sendInstallmentWhatsAppReminder()" style="background:#25D366; color:#fff; font-weight:700; padding:10px; border-radius:var(--radius); border:none; font-size:13px; margin-bottom:14px;">💬 Send WhatsApp Reminder</button>
+                    <div style="display:flex; gap:8px; margin-bottom:14px;">
+                        <button onclick="sendInstallmentWhatsAppReminder()" style="flex:1; background:#25D366; color:#fff; font-weight:700; padding:10px 6px; border-radius:var(--radius); border:none; font-size:12.5px;">💬 Send Reminder</button>
+                        <button onclick="sendInstallmentLinkWhatsApp()" style="flex:1; background:#128C7E; color:#fff; font-weight:700; padding:10px 6px; border-radius:var(--radius); border:none; font-size:12.5px;">🔗 Send Link</button>
+                    </div>
                 ` : ''}
 
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Payment History</div>
@@ -7677,7 +7697,16 @@
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan || plan.status === 'cancelled') return;
             document.getElementById('installment-rate-title').textContent = 'Change Rate';
+
+            const currentRateHtml = (plan.appliedPureRates && Object.keys(plan.appliedPureRates).length) ? `
+                <div style="background:var(--bg); border-radius:10px; padding:10px 12px; margin-bottom:14px;">
+                    <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Pure Rate Applied</div>
+                    ${Object.entries(plan.appliedPureRates).map(([metal, rate]) => `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>${metal}</span><span>₹${rate.toFixed(2)}/g</span></div>`).join('')}
+                </div>
+            ` : '';
+
             document.getElementById('installment-rate-body').innerHTML = `
+                ${currentRateHtml}
                 <p class="note" style="margin-bottom:14px;">Choose how to recalculate this plan's items.</p>
                 <button onclick="chooseInstallmentRateMode('today')" style="width:100%; background:var(--gold); color:#fff; font-weight:800; padding:12px; border-radius:var(--radius); border:none; font-size:14px; margin-bottom:10px;">📅 Today's Rate</button>
                 <button onclick="chooseInstallmentRateMode('custom')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:12px; border-radius:var(--radius); font-size:14px;">✏️ Custom Rate</button>
