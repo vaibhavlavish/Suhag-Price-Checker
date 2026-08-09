@@ -7490,10 +7490,13 @@
                 </div>
             `).join('');
             const paymentsHtml = (plan.payments || []).length
-                ? (plan.payments || []).slice().reverse().map(pmt => `
-                    <div style="display:flex; justify-content:space-between; font-size:12.5px; padding:3px 0; border-bottom:1px solid var(--border);">
+                ? (plan.payments || []).map((pmt, idx) => ({ pmt, idx })).reverse().map(({ pmt, idx }) => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:12.5px; padding:3px 0; border-bottom:1px solid var(--border);">
                         <span>${new Date(pmt.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pmt.note ? ' · ' + pmt.note : ''}</span>
-                        <span>₹${pmt.amount.toFixed(2)}</span>
+                        <span style="display:flex; align-items:center; gap:8px;">
+                            <span>₹${pmt.amount.toFixed(2)}</span>
+                            ${!isCancelled ? `<button onclick="deleteInstallmentPayment(${idx})" title="Delete this payment" style="background:none; border:none; color:#C62828; font-size:14px; font-weight:800; padding:0; cursor:pointer; box-shadow:none; margin:0; width:auto; line-height:1;">✕</button>` : ''}
+                        </span>
                     </div>
                 `).join('')
                 : '<p class="note">No payments logged yet.</p>';
@@ -7615,7 +7618,8 @@
             // reads back with the field missing entirely, not an empty
             // array — (plan.payments || []) guards every read of it against
             // that, here and in renderInstallmentDetailBody above.
-            const payments = [...(plan.payments || []), { amount, date, note: note || null, method, details }];
+            const paymentId = crypto.randomUUID();
+            const payments = [...(plan.payments || []), { id: paymentId, amount, date, note: note || null, method, details }];
             const amountPaid = Math.round((plan.amountPaid + amount) * 100) / 100;
             const remainingAmount = Math.round((plan.totalAmount - amountPaid) * 100) / 100;
             const status = remainingAmount <= 0 ? 'completed' : 'active';
@@ -7633,8 +7637,10 @@
                 // (_recordSaleLedgerEntry) — dated today, same as any other
                 // cash-received-today entry, since installment payments are
                 // always logged the same day they're actually collected,
-                // never backdated.
-                _recordSaleLedgerEntry(amount, amount, method, details, 'installment');
+                // never backdated. Tagged with the plan/payment id so a
+                // later "delete this payment" can find and remove the
+                // matching ledger entry too, instead of leaving it stranded.
+                _recordSaleLedgerEntry(amount, amount, method, details, 'installment', { installmentPlanId: plan.id, installmentPaymentId: paymentId });
                 document.getElementById('inst-pay-amount').value = '';
                 document.getElementById('inst-pay-note').value = '';
                 renderInstallmentDetailBody(plan);
@@ -7642,6 +7648,61 @@
             } catch (e) {
                 console.error(e);
                 statusEl.textContent = 'Could not save — try again.';
+            }
+        }
+
+        // Removes one payment entry from a plan — for a mistaken/duplicate
+        // log — and recalculates amountPaid/remainingAmount/status around
+        // what's left. If the plan had gone to 'completed' because of this
+        // payment, it correctly reopens to 'active' once the payment is
+        // gone (never stays cancelled — cancellation is left alone here).
+        // Also removes the matching Cash Ledger entry when one can be
+        // reliably identified (payments logged after this feature shipped
+        // carry a stable id their ledger entry is tagged with); for older
+        // payments logged before that, no ledger entry can be matched with
+        // certainty, so none is touched automatically — the shopkeeper is
+        // told to check Ledger manually in that case instead of risking
+        // deleting the wrong entry.
+        async function deleteInstallmentPayment(idx){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan || plan.status === 'cancelled') return;
+            const payment = (plan.payments || [])[idx];
+            if (!payment) return;
+            if (!checkPin()) return;
+            const dateLabel = new Date(payment.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+            if (!confirm(`Delete this payment of ₹${payment.amount.toFixed(2)} logged on ${dateLabel}?\n\nThis recalculates what's paid and remaining. This can't be undone.`)) return;
+
+            const newPayments = plan.payments.filter((_, i) => i !== idx);
+            const amountPaid = Math.round(newPayments.reduce((s, p) => s + (p.amount || 0), 0) * 100) / 100;
+            const remainingAmount = Math.round((plan.totalAmount - amountPaid) * 100) / 100;
+            const status = remainingAmount <= 0 ? 'completed' : 'active';
+
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), {
+                    payments: newPayments, amountPaid, remainingAmount, status,
+                });
+                plan.payments = newPayments;
+                plan.amountPaid = amountPaid;
+                plan.remainingAmount = remainingAmount;
+                plan.status = status;
+
+                let ledgerNote = '';
+                if (payment.id) {
+                    const matchingEntry = ledgerEntries.find(e => e.installmentPlanId === plan.id && e.installmentPaymentId === payment.id);
+                    if (matchingEntry) {
+                        _deleteLedgerRecord(matchingEntry.id, () => {});
+                        ledgerNote = ' The matching Cash Ledger entry was removed too.';
+                    }
+                } else {
+                    ledgerNote = ' This payment predates automatic ledger linking — check the Cash Ledger and remove the matching entry there yourself if needed.';
+                }
+
+                renderInstallmentDetailBody(plan);
+                renderInstallmentsList();
+                showCustomAlert('Payment deleted.' + ledgerNote);
+            } catch (e) {
+                console.error(e);
+                showCustomAlert('Could not delete — try again.');
             }
         }
 
@@ -10249,7 +10310,7 @@
         // Invoice tab. `source` is kept distinct purely for the entry's display
         // label ('checkout' vs 'invoice') — both count identically toward Sales
         // totals and the cash-in-drawer total.
-        function _recordSaleLedgerEntry(netAfterOG, receipt, method, details, source) {
+        function _recordSaleLedgerEntry(netAfterOG, receipt, method, details, source, extraFields) {
             const _now = Date.now();
             if (netAfterOG < 0) {
                 // Refund scenario — old jewellery value exceeds the item total.
@@ -10259,7 +10320,7 @@
                 const entry = {
                     id: crypto.randomUUID(), type: 'out', amount: amt, cashPortion: amt,
                     note: 'Refund to customer (old jewellery > item price)',
-                    timestamp: new Date().toISOString(), source
+                    timestamp: new Date().toISOString(), source, ...(extraFields || {})
                 };
                 ledgerEntries.push(entry); _saveLedgerLocal(); _saveLedgerRecord(entry); renderLedger();
                 return;
@@ -10286,7 +10347,7 @@
 
             const entry = {
                 id: crypto.randomUUID(), type: 'sale', amount: amt, cashPortion: Math.round(cashPortion),
-                note, timestamp: new Date().toISOString(), source
+                note, timestamp: new Date().toISOString(), source, ...(extraFields || {})
             };
             ledgerEntries.push(entry); _saveLedgerLocal(); _saveLedgerRecord(entry); renderLedger();
             invSyncCatalogueAvailability();
@@ -11426,6 +11487,148 @@
             });
         }
 
+
+        // Lets the shopkeeper log an installment payment directly from the
+        // Ledger screen without navigating to Installments first — picks
+        // an ACTIVE plan (only those can still take a payment), then opens
+        // a focused payment dialog (not the full plan detail modal, which
+        // carries a lot of other actions — Change Rate, Cancel, Edit
+        // Customer — that don't belong in a quick from-the-ledger flow).
+        function openLedgerInstallmentPicker(){
+            document.getElementById('ledger-installment-picker-search').value = '';
+            renderLedgerInstallmentPickerList();
+            document.getElementById('ledger-installment-picker-modal').style.display = 'flex';
+        }
+
+        function renderLedgerInstallmentPickerList(){
+            const q = (document.getElementById('ledger-installment-picker-search').value || '').trim().toLowerCase();
+            const listEl = document.getElementById('ledger-installment-picker-list');
+            const active = installmentPlans
+                .filter(p => p.status === 'active')
+                .filter(p => !q || (p.customerName || '').toLowerCase().includes(q) || (p.customerMobile || '').includes(q));
+
+            if (!active.length) {
+                listEl.innerHTML = '<p class="note" style="text-align:center; padding:16px 0;">No active installment plans found.</p>';
+                return;
+            }
+
+            listEl.innerHTML = active.map(p => `
+                <div onclick="selectLedgerInstallmentPlan('${p.id}')" style="background:var(--bg); border-radius:10px; padding:11px 13px; margin-bottom:8px; cursor:pointer; user-select:none; -webkit-user-select:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700; font-size:14px;">${p.customerName}</span>
+                        <span style="font-weight:800; font-size:13px; color:#E65100;">₹${p.remainingAmount.toFixed(2)}</span>
+                    </div>
+                    <div style="font-size:12px; color:var(--text2); margin-top:2px;">${p.customerMobile || 'No mobile'}</div>
+                </div>
+            `).join('');
+        }
+
+        let _ledgerInstPaymentPlanId = null;
+        let _ledgerInstPayMode = 'cash';
+
+        function selectLedgerInstallmentPlan(planId){
+            document.getElementById('ledger-installment-picker-modal').style.display = 'none';
+            const plan = installmentPlans.find(p => p.id === planId);
+            if (!plan) return;
+            _ledgerInstPaymentPlanId = planId;
+
+            document.getElementById('ledger-inst-pay-title').textContent = plan.customerName + (plan.customerAddress ? ` (${plan.customerAddress})` : '');
+            document.getElementById('ledger-inst-pay-mobile').textContent = plan.customerMobile || '';
+
+            const nextDue = getInstallmentNextDueDate(plan);
+            const nextDueLabel = nextDue
+                ? new Date(nextDue + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                : '—';
+            document.getElementById('ledger-inst-pay-info').innerHTML = `
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Remaining Amount</span><strong>₹${plan.remainingAmount.toFixed(2)}</strong></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Installment Amount</span><strong>₹${plan.installmentAmount.toFixed(2)}</strong></div>
+                <div style="display:flex; justify-content:space-between;"><span>Next Installment Date</span><strong>${nextDueLabel}</strong></div>
+            `;
+
+            const suggested = Math.min(plan.installmentAmount, plan.remainingAmount);
+            document.getElementById('ledger-inst-pay-amount').value = suggested > 0 ? suggested.toFixed(2) : '';
+            document.getElementById('ledger-inst-pay-date').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('ledger-inst-pay-note').value = '';
+            document.getElementById('ledger-inst-pay-status').textContent = '';
+            selectLedgerInstPayMode('cash');
+            document.getElementById('ledger-installment-payment-modal').style.display = 'flex';
+        }
+
+        function selectLedgerInstPayMode(mode){
+            _ledgerInstPayMode = mode;
+            document.querySelectorAll('.ledger-inst-pay-mode-btn').forEach(b => b.classList.remove('selected'));
+            const btn = document.getElementById('ledger-inst-pay-mode-' + mode);
+            if (btn) btn.classList.add('selected');
+            const partialSection = document.getElementById('ledger-inst-pay-partial-section');
+            if (partialSection) partialSection.style.display = mode === 'partial' ? 'grid' : 'none';
+            if (mode === 'partial') {
+                const amt = parseFloat(document.getElementById('ledger-inst-pay-amount').value) || 0;
+                document.getElementById('ledger-inst-pay-split-cash').value = amt > 0 ? amt.toFixed(0) : '';
+                document.getElementById('ledger-inst-pay-split-upi').value = '';
+                document.getElementById('ledger-inst-pay-split-card').value = '';
+            }
+        }
+
+        // Mirrors logInstallmentPayment()'s exact math (amountPaid,
+        // remainingAmount, status transition, and the same
+        // _recordSaleLedgerEntry ledger tie-in) — kept as its own function
+        // rather than reusing that one directly, since this dialog uses
+        // its own dedicated element ids instead of the ones that only
+        // exist inside the full plan detail modal.
+        async function saveLedgerInstallmentPayment(){
+            const plan = installmentPlans.find(p => p.id === _ledgerInstPaymentPlanId);
+            if (!plan || plan.status !== 'active') return;
+            const statusEl = document.getElementById('ledger-inst-pay-status');
+
+            const amount = parseFloat(document.getElementById('ledger-inst-pay-amount').value);
+            const date = document.getElementById('ledger-inst-pay-date').value;
+            const note = document.getElementById('ledger-inst-pay-note').value.trim();
+            const method = _ledgerInstPayMode;
+            if (isNaN(amount) || amount <= 0) { statusEl.textContent = 'Enter a valid amount.'; return; }
+            if (!date) { statusEl.textContent = 'Pick a date.'; return; }
+
+            let details = null;
+            if (method === 'partial') {
+                const cashPart = parseFloat(document.getElementById('ledger-inst-pay-split-cash').value) || 0;
+                const upiPart = parseFloat(document.getElementById('ledger-inst-pay-split-upi').value) || 0;
+                const cardPart = parseFloat(document.getElementById('ledger-inst-pay-split-card').value) || 0;
+                if (Math.abs((cashPart + upiPart + cardPart) - amount) > 0.5) {
+                    statusEl.textContent = 'Cash + UPI + Card must add up to the payment amount.';
+                    return;
+                }
+                details = { cash: cashPart, upi: upiPart, card: cardPart };
+            }
+
+            const paymentId = crypto.randomUUID();
+            const payments = [...(plan.payments || []), { id: paymentId, amount, date, note: note || null, method, details }];
+            const amountPaid = Math.round((plan.amountPaid + amount) * 100) / 100;
+            const remainingAmount = Math.round((plan.totalAmount - amountPaid) * 100) / 100;
+            const status = remainingAmount <= 0 ? 'completed' : 'active';
+
+            statusEl.textContent = 'Saving…';
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), {
+                    payments, amountPaid, remainingAmount, status,
+                });
+                plan.payments = payments;
+                plan.amountPaid = amountPaid;
+                plan.remainingAmount = remainingAmount;
+                plan.status = status;
+                _recordSaleLedgerEntry(amount, amount, method, details, 'installment', { installmentPlanId: plan.id, installmentPaymentId: paymentId });
+                document.getElementById('ledger-installment-payment-modal').style.display = 'none';
+                renderInstallmentsList();
+                showCustomAlert('Payment logged.');
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not save — try again.';
+            }
+        }
+
+        window.openLedgerInstallmentPicker = openLedgerInstallmentPicker;
+        window.renderLedgerInstallmentPickerList = renderLedgerInstallmentPickerList;
+        window.selectLedgerInstallmentPlan = selectLedgerInstallmentPlan;
+        window.selectLedgerInstPayMode = selectLedgerInstPayMode;
+        window.saveLedgerInstallmentPayment = saveLedgerInstallmentPayment;
 
         // Expose ledger functions
         window.openLedgerEntryModal  = openLedgerEntryModal;
@@ -14034,6 +14237,10 @@ const badge = '';
             </button>
         </div>
 
+        <div style="padding:0 14px 12px;">
+            <button onclick="openLedgerInstallmentPicker()" style="width:100%; background:var(--gold); color:#fff; border:none; border-radius:12px; padding:13px; font-size:14px; font-weight:800; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.10); margin:0;">＋ Add Installment Payment</button>
+        </div>
+
         <!-- Tabs -->
         <div class="ledger-tabs">
             <button class="ledger-tab active" onclick="switchLedgerTab('all')"       id="ltab-all">All Entries</button>
@@ -14098,6 +14305,59 @@ const badge = '';
                 style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">
                 ✓ Save Entry
             </button>
+        </div>
+    </div>
+
+    <!-- Picks an active installment plan to log a payment against, from the
+         Ledger screen — selecting one opens the normal plan detail modal
+         (its existing Log a Payment form), so this never duplicates that
+         logic, it just gets the shopkeeper there faster from Ledger. -->
+    <div id="ledger-installment-picker-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:540; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);">Select Plan</span>
+                <button onclick="document.getElementById('ledger-installment-picker-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <input type="text" id="ledger-installment-picker-search" placeholder="🔍 Search by customer name or mobile…" style="margin-bottom:10px;" oninput="renderLedgerInstallmentPickerList()">
+            <div id="ledger-installment-picker-list"></div>
+        </div>
+    </div>
+
+    <!-- Focused payment-entry dialog — deliberately NOT the full plan
+         detail modal (which also has Change Rate, Cancel, Edit Customer,
+         etc.) — just what's needed to log one payment from Ledger. -->
+    <div id="ledger-installment-payment-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:550; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px;">
+                <div>
+                    <div style="font-size:16px; font-weight:800; color:var(--text);" id="ledger-inst-pay-title">Customer</div>
+                    <div style="font-size:12.5px; color:var(--text2); margin-top:2px;" id="ledger-inst-pay-mobile"></div>
+                </div>
+                <button onclick="document.getElementById('ledger-installment-payment-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0; flex-shrink:0;">✕</button>
+            </div>
+            <div id="ledger-inst-pay-info" style="background:var(--bg); border-radius:10px; padding:12px; margin:12px 0 14px; font-size:13px;"></div>
+
+            <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">AMOUNT (₹)</label>
+            <input type="number" id="ledger-inst-pay-amount" step="0.01" style="margin:0 0 10px; width:100%;">
+            <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">DATE</label>
+            <input type="date" id="ledger-inst-pay-date" style="margin:0 0 12px; width:100%;">
+
+            <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:6px;">PAYMENT METHOD</label>
+            <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:6px; margin-bottom:10px;">
+                <button type="button" onclick="selectLedgerInstPayMode('cash')" id="ledger-inst-pay-mode-cash" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">💵<br><span style="font-size:10px;">Cash</span></button>
+                <button type="button" onclick="selectLedgerInstPayMode('upi')" id="ledger-inst-pay-mode-upi" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">📱<br><span style="font-size:10px;">UPI</span></button>
+                <button type="button" onclick="selectLedgerInstPayMode('card')" id="ledger-inst-pay-mode-card" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">💳<br><span style="font-size:10px;">Card</span></button>
+                <button type="button" onclick="selectLedgerInstPayMode('partial')" id="ledger-inst-pay-mode-partial" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">🔀<br><span style="font-size:10px;">Partial</span></button>
+            </div>
+            <div id="ledger-inst-pay-partial-section" style="display:none; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:12px;">
+                <div><label style="font-size:10px; display:block; margin-bottom:2px;">Cash</label><input type="number" id="ledger-inst-pay-split-cash" placeholder="0" step="0.01" style="margin:0; padding:8px; font-size:13px; width:100%;"></div>
+                <div><label style="font-size:10px; display:block; margin-bottom:2px;">UPI</label><input type="number" id="ledger-inst-pay-split-upi" placeholder="0" step="0.01" style="margin:0; padding:8px; font-size:13px; width:100%;"></div>
+                <div><label style="font-size:10px; display:block; margin-bottom:2px;">Card</label><input type="number" id="ledger-inst-pay-split-card" placeholder="0" step="0.01" style="margin:0; padding:8px; font-size:13px; width:100%;"></div>
+            </div>
+
+            <input type="text" id="ledger-inst-pay-note" placeholder="Note (optional)" style="margin:0 0 12px; width:100%;">
+            <button onclick="saveLedgerInstallmentPayment()" style="width:100%; background:var(--gold); color:#fff; font-weight:800; padding:12px; border-radius:var(--radius); border:none; font-size:14px;">Add Payment</button>
+            <p class="note" id="ledger-inst-pay-status" style="text-align:center; margin-top:8px;"></p>
         </div>
     </div>
 
@@ -15052,6 +15312,11 @@ const badge = '';
             color: #fff !important;
             box-shadow: 0 4px 14px rgba(229,57,53,0.45);
             transform: translateY(-1px);
+        }
+        .ledger-inst-pay-mode-btn.selected {
+            border-color: var(--gold) !important;
+            background: var(--gold) !important;
+            color: #fff !important;
         }
     </style>
 
