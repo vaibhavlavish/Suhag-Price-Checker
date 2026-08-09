@@ -7025,7 +7025,46 @@
             if (document.getElementById('inst-cycle-type').value === 'custom') {
                 renderInstallmentCustomDateInputs();
             }
+            if (document.getElementById('inst-amount-mode').value === 'custom') {
+                renderInstallmentCustomAmountInputs();
+            }
             renderInstallmentPreview();
+        }
+
+        function onInstallmentAmountModeChange(){
+            const mode = document.getElementById('inst-amount-mode').value;
+            document.getElementById('inst-custom-amounts-wrap').style.display = mode === 'custom' ? 'block' : 'none';
+            if (mode === 'custom') renderInstallmentCustomAmountInputs();
+            renderInstallmentPreview();
+        }
+
+        // Rebuilds the list of individual amount inputs to match the
+        // current installment count — same preserve-what's-already-typed
+        // behavior as renderInstallmentCustomDateInputs. Each field starts
+        // pre-filled with an equal split of what's actually payable, so
+        // the shopkeeper only has to ADJUST amounts (e.g. front-load one,
+        // reduce another) rather than type every figure from scratch.
+        function renderInstallmentCustomAmountInputs(){
+            const count = Math.max(1, parseInt(document.getElementById('inst-count').value) || 1);
+            const container = document.getElementById('inst-custom-amounts-list');
+            const existing = Array.from(container.querySelectorAll('.inst-custom-amount-input')).map(el => el.value);
+
+            const principal = getCartNetPayable();
+            const interestRate = Math.max(0, parseFloat(document.getElementById('inst-interest').value) || 0);
+            const downPayment = Math.max(0, parseFloat(document.getElementById('inst-downpayment').value) || 0);
+            const afterDownPayment = Math.max(0, principal * (1 + interestRate / 100) - downPayment);
+            const suggested = count > 0 ? afterDownPayment / count : 0;
+
+            let html = '';
+            for (let i = 0; i < count; i++) {
+                const val = (existing[i] !== undefined && existing[i] !== '') ? existing[i] : (suggested > 0 ? suggested.toFixed(2) : '');
+                html += `<input type="number" class="inst-custom-amount-input" data-idx="${i}" value="${val}" step="0.01" placeholder="Installment #${i + 1} amount" style="margin:0;" oninput="renderInstallmentPreview()">`;
+            }
+            container.innerHTML = html;
+        }
+
+        function getInstallmentCustomAmounts(){
+            return Array.from(document.querySelectorAll('.inst-custom-amount-input')).map(el => parseFloat(el.value) || 0);
         }
 
         // Rebuilds the list of individual date pickers to match the current
@@ -7058,9 +7097,11 @@
             const interestRate = Math.max(0, parseFloat(document.getElementById('inst-interest').value) || 0);
             const downPayment = Math.max(0, parseFloat(document.getElementById('inst-downpayment').value) || 0);
             const cycleType = document.getElementById('inst-cycle-type').value;
+            const amountMode = document.getElementById('inst-amount-mode').value;
             const total = principal * (1 + interestRate / 100);
             const afterDownPayment = Math.max(0, total - downPayment);
             const perInstallment = afterDownPayment / count;
+            const customAmounts = amountMode === 'custom' ? getInstallmentCustomAmounts() : null;
 
             const firstDue = document.getElementById('inst-first-due').value;
             const customDates = cycleType === 'custom' ? getInstallmentCustomDates() : null;
@@ -7077,10 +7118,21 @@
             } else {
                 html += `<div style="margin-bottom:6px;"></div>`;
             }
-            html += `<div style="font-size:12.5px; color:var(--text2); margin-bottom:6px;">${count} installment${count === 1 ? '' : 's'} of ~₹${perInstallment.toFixed(2)} each:</div>`;
-            dueDates.forEach((d, i) => {
-                html += `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>#${i + 1}</span><span>${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} — ~₹${perInstallment.toFixed(2)}</span></div>`;
-            });
+
+            if (amountMode === 'custom') {
+                const sum = customAmounts.reduce((s, v) => s + v, 0);
+                const diff = Math.round((afterDownPayment - sum) * 100) / 100;
+                const balanced = Math.abs(diff) < 1;
+                html += `<div style="font-size:12.5px; margin-bottom:6px; font-weight:700; color:${balanced ? '#2E7D32' : '#C62828'};">${balanced ? '✓ Balanced' : (diff > 0 ? `₹${diff.toFixed(2)} short` : `₹${Math.abs(diff).toFixed(2)} over`)} — entered ₹${sum.toFixed(2)} of ₹${afterDownPayment.toFixed(2)}</div>`;
+                dueDates.forEach((d, i) => {
+                    html += `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>#${i + 1}</span><span>${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} — ₹${(customAmounts[i] || 0).toFixed(2)}</span></div>`;
+                });
+            } else {
+                html += `<div style="font-size:12.5px; color:var(--text2); margin-bottom:6px;">${count} installment${count === 1 ? '' : 's'} of ~₹${perInstallment.toFixed(2)} each:</div>`;
+                dueDates.forEach((d, i) => {
+                    html += `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>#${i + 1}</span><span>${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} — ~₹${perInstallment.toFixed(2)}</span></div>`;
+                });
+            }
             previewEl.innerHTML = html;
         }
 
@@ -7115,7 +7167,26 @@
             if (downPayment > total) { statusEl.textContent = 'Down payment cannot be more than the total payable.'; return; }
             const amountPaid = downPayment;
             const remainingAmount = Math.round((total - amountPaid) * 100) / 100;
-            const perInstallment = Math.round((remainingAmount / count) * 100) / 100;
+
+            const amountMode = document.getElementById('inst-amount-mode').value;
+            let customInstallmentAmounts = null;
+            let perInstallment;
+            if (amountMode === 'custom') {
+                const rawAmounts = getInstallmentCustomAmounts();
+                if (rawAmounts.length < count || rawAmounts.some(a => !a || a <= 0)) {
+                    statusEl.textContent = `Enter a valid amount for all ${count} installments before creating the plan.`;
+                    return;
+                }
+                const sum = Math.round(rawAmounts.reduce((s, v) => s + v, 0) * 100) / 100;
+                if (Math.abs(sum - remainingAmount) > 1) {
+                    statusEl.textContent = `Installment amounts add up to ₹${sum.toFixed(2)}, but ₹${remainingAmount.toFixed(2)} needs to be split — adjust them to match.`;
+                    return;
+                }
+                customInstallmentAmounts = rawAmounts.map(a => Math.round(a * 100) / 100);
+                perInstallment = Math.round((remainingAmount / count) * 100) / 100; // representative average only — real amounts are per-installment
+            } else {
+                perInstallment = Math.round((remainingAmount / count) * 100) / 100;
+            }
             // Down payment is logged the exact same way any other payment is
             // — just dated today, at creation time — so it shows up in the
             // payment history like any other entry, not as a separate
@@ -7177,6 +7248,8 @@
                 totalAmount: total,
                 installmentCount: count,
                 installmentAmount: perInstallment,
+                installmentAmountMode: amountMode,
+                customInstallmentAmounts: customInstallmentAmounts,
                 dueDates,
                 payments,
                 amountPaid,
@@ -7218,6 +7291,9 @@
                 document.getElementById('inst-cycle-type').value = 'monthly';
                 document.getElementById('inst-custom-dates-list').innerHTML = '';
                 onInstallmentCycleTypeChange();
+                document.getElementById('inst-amount-mode').value = 'equal';
+                document.getElementById('inst-custom-amounts-list').innerHTML = '';
+                onInstallmentAmountModeChange();
                 document.getElementById('inst-downpayment').value = '0';
                 renderNewInstallmentPane();
             } catch (e) {
@@ -7315,12 +7391,37 @@
         // don't tie to a specific installment number, so this is always
         // "what's the next date worth nudging about," not "which exact
         // installment is unpaid."
-        function getInstallmentNextDueDate(plan){
-            if (!plan.dueDates || !plan.dueDates.length) return null;
+        // Finds the ARRAY INDEX (not just the date) of the next due
+        // installment — needed so callers can look up that specific
+        // installment's amount via getInstallmentAmountForIndex, which for
+        // a custom-amount plan can differ installment to installment.
+        // Sorts a copy paired with original indices rather than sorting
+        // dueDates directly, so the returned index always still lines up
+        // correctly with customInstallmentAmounts even if dates were ever
+        // entered out of chronological order.
+        function getInstallmentNextDueIndex(plan){
+            if (!plan.dueDates || !plan.dueDates.length) return -1;
             const todayStr = new Date().toISOString().slice(0, 10);
-            const sorted = plan.dueDates.slice().sort();
-            const upcoming = sorted.find(d => d >= todayStr);
-            return upcoming || sorted[sorted.length - 1];
+            const sorted = plan.dueDates.map((d, i) => ({ d, i })).sort((a, b) => a.d.localeCompare(b.d));
+            const upcoming = sorted.find(x => x.d >= todayStr);
+            const chosen = upcoming || sorted[sorted.length - 1];
+            return chosen ? chosen.i : -1;
+        }
+
+        function getInstallmentNextDueDate(plan){
+            const idx = getInstallmentNextDueIndex(plan);
+            return idx === -1 ? null : plan.dueDates[idx];
+        }
+
+        // The amount for one specific installment — a custom-amount plan
+        // looks up its own per-index figure; every other plan (the
+        // overwhelming majority) just uses the single uniform
+        // installmentAmount, exactly as before this feature existed.
+        function getInstallmentAmountForIndex(plan, idx){
+            if (plan.installmentAmountMode === 'custom' && Array.isArray(plan.customInstallmentAmounts) && plan.customInstallmentAmounts[idx] != null) {
+                return plan.customInstallmentAmounts[idx];
+            }
+            return plan.installmentAmount;
         }
 
         function sendInstallmentWhatsAppReminder(planArg){
@@ -7328,7 +7429,9 @@
             if (!plan) return;
             if (!plan.customerMobile) { showCustomAlert('No mobile number on file for this customer.'); return; }
 
-            const nextDue = getInstallmentNextDueDate(plan);
+            const nextDueIdx = getInstallmentNextDueIndex(plan);
+            const nextDue = nextDueIdx === -1 ? null : plan.dueDates[nextDueIdx];
+            const nextAmount = nextDueIdx === -1 ? plan.installmentAmount : getInstallmentAmountForIndex(plan, nextDueIdx);
             const dueDateStr = nextDue
                 ? new Date(nextDue + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
                 : 'soon';
@@ -7336,7 +7439,7 @@
             const message = template
                 .replace(/\{name\}/g, plan.customerName)
                 .replace(/\{date\}/g, dueDateStr)
-                .replace(/\{amount\}/g, plan.installmentAmount.toFixed(2))
+                .replace(/\{amount\}/g, nextAmount.toFixed(2))
                 .replace(/\{remaining\}/g, plan.remainingAmount.toFixed(2));
 
             let mobile = plan.customerMobile.replace(/\D/g, '');
@@ -7550,7 +7653,7 @@
 
                 ${isActive && plan.dueDates && plan.dueDates.length ? `
                     <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Payment Dates</div>
-                    <div style="margin-bottom:10px;">${plan.dueDates.map(d => `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span><span>₹${plan.installmentAmount.toFixed(2)}</span></div>`).join('')}</div>
+                    <div style="margin-bottom:10px;">${plan.dueDates.map((d, i) => `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span><span>₹${getInstallmentAmountForIndex(plan, i).toFixed(2)}</span></div>`).join('')}</div>
                     <div style="display:flex; gap:8px; margin-bottom:14px;">
                         <button onclick="sendInstallmentWhatsAppReminder()" style="flex:1; background:#25D366; color:#fff; font-weight:700; padding:10px 6px; border-radius:var(--radius); border:none; font-size:12.5px;">💬 Send Reminder</button>
                         <button onclick="sendInstallmentLinkWhatsApp()" style="flex:1; background:#128C7E; color:#fff; font-weight:700; padding:10px 6px; border-radius:var(--radius); border:none; font-size:12.5px;">🔗 Send Link</button>
@@ -7877,13 +7980,35 @@
             const newRemaining = Math.round((newTotal - plan.amountPaid) * 100) / 100;
             const remainingCount = Math.max(1, plan.installmentCount);
 
+            let newCustomAmounts = null;
+            let newInstallmentAmount;
+            if (plan.installmentAmountMode === 'custom' && Array.isArray(plan.customInstallmentAmounts)) {
+                // Same absorb-from-the-end logic as a rate decrease — a
+                // removed item only ever reduces what's owed, so this
+                // reuses that same branch of applyInstallmentRateChange's
+                // reasoning rather than recomputing a fresh equal split
+                // that would silently discard the agreed custom amounts.
+                const amounts = plan.customInstallmentAmounts.slice();
+                let toAbsorb = Math.round((plan.totalAmount - newTotal) * 100) / 100;
+                for (let i = amounts.length - 1; i >= 0 && toAbsorb > 0.01; i--) {
+                    const reduceBy = Math.min(amounts[i], toAbsorb);
+                    amounts[i] = Math.round((amounts[i] - reduceBy) * 100) / 100;
+                    toAbsorb = Math.round((toAbsorb - reduceBy) * 100) / 100;
+                }
+                newCustomAmounts = amounts;
+                newInstallmentAmount = Math.round((newRemaining / Math.max(1, amounts.length)) * 100) / 100;
+            } else {
+                newInstallmentAmount = Math.round((Math.max(0, newRemaining) / remainingCount) * 100) / 100;
+            }
+
             try {
                 const updates = {
                     items: newItems,
                     principalAmount: newPrincipal,
                     totalAmount: newTotal,
                     remainingAmount: newRemaining,
-                    installmentAmount: Math.round((Math.max(0, newRemaining) / remainingCount) * 100) / 100,
+                    installmentAmount: newInstallmentAmount,
+                    customInstallmentAmounts: newCustomAmounts,
                     status: newRemaining <= 0 ? 'completed' : 'active',
                 };
                 await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), updates);
@@ -8062,6 +8187,59 @@
             const newRemaining = Math.round((newTotal - plan.amountPaid) * 100) / 100;
             const remainingCount = Math.max(1, plan.installmentCount);
 
+            // Custom-amount plans handle a rate change differently from an
+            // equal-split plan: rather than reflowing every installment,
+            // the ORIGINAL agreed amounts stay put. Rate went up → the
+            // extra becomes a brand-new installment tacked onto the end.
+            // Rate went down → the decrease comes off the LAST
+            // installment, spilling backward into earlier ones (never
+            // letting one go negative) only if it's bigger than the last
+            // one alone can absorb. Equal-split plans (the default, and
+            // every plan created before this existed) are entirely
+            // unaffected — they keep exactly the behavior they always had.
+            let newDueDates = plan.dueDates;
+            let newCustomAmounts = null;
+            let newInstallmentCount = plan.installmentCount;
+            let newInstallmentAmount;
+
+            if (plan.installmentAmountMode === 'custom' && Array.isArray(plan.customInstallmentAmounts)) {
+                const delta = Math.round((newTotal - plan.totalAmount) * 100) / 100;
+                const amounts = plan.customInstallmentAmounts.slice();
+                const dates = plan.dueDates.slice();
+
+                if (delta > 0.01) {
+                    amounts.push(delta);
+                    let nextDate;
+                    if (dates.length >= 2) {
+                        const last = new Date(dates[dates.length - 1] + 'T00:00:00');
+                        const secondLast = new Date(dates[dates.length - 2] + 'T00:00:00');
+                        const intervalMs = last - secondLast;
+                        nextDate = new Date(last.getTime() + (intervalMs > 0 ? intervalMs : 30 * 24 * 60 * 60 * 1000));
+                    } else if (dates.length === 1) {
+                        nextDate = new Date(dates[0] + 'T00:00:00');
+                        nextDate.setMonth(nextDate.getMonth() + 1);
+                    } else {
+                        nextDate = new Date();
+                        nextDate.setDate(nextDate.getDate() + 30);
+                    }
+                    dates.push(nextDate.toISOString().slice(0, 10));
+                } else if (delta < -0.01) {
+                    let toAbsorb = Math.abs(delta);
+                    for (let i = amounts.length - 1; i >= 0 && toAbsorb > 0.01; i--) {
+                        const reduceBy = Math.min(amounts[i], toAbsorb);
+                        amounts[i] = Math.round((amounts[i] - reduceBy) * 100) / 100;
+                        toAbsorb = Math.round((toAbsorb - reduceBy) * 100) / 100;
+                    }
+                }
+
+                newCustomAmounts = amounts;
+                newDueDates = dates;
+                newInstallmentCount = dates.length;
+                newInstallmentAmount = Math.round((newRemaining / Math.max(1, dates.length)) * 100) / 100; // representative average only
+            } else {
+                newInstallmentAmount = Math.round((Math.max(0, newRemaining) / remainingCount) * 100) / 100;
+            }
+
             // Records exactly what pure rate this recalculation actually
             // used, per metal — custom input directly, or today's live
             // pure rate otherwise — so the plan always shows what its
@@ -8082,7 +8260,10 @@
                     principalAmount: newPrincipal,
                     totalAmount: newTotal,
                     remainingAmount: newRemaining,
-                    installmentAmount: Math.round((Math.max(0, newRemaining) / remainingCount) * 100) / 100,
+                    installmentAmount: newInstallmentAmount,
+                    installmentCount: newInstallmentCount,
+                    dueDates: newDueDates,
+                    customInstallmentAmounts: newCustomAmounts,
                     status: newRemaining <= 0 ? 'completed' : 'active',
                     appliedPureRates,
                 };
@@ -8225,35 +8406,43 @@
             const downPaymentEntry = (plan.payments || []).find(p => p.note === 'Down payment');
             const downPaymentStr = downPaymentEntry ? `₹${downPaymentEntry.amount.toFixed(2)}` : '';
 
-            const itemRows = plan.items.map(it => `<tr><td style="padding:8px 0; border-bottom:1px solid #ccc;">${it.printName || it.itemName}</td><td style="padding:8px 0; border-bottom:1px solid #ccc; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
+            const itemRows = plan.items.map(it => `<tr><td style="padding:6px 0; border-bottom:1px solid #ccc;">${it.printName || it.itemName}</td><td style="padding:6px 0; border-bottom:1px solid #ccc; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
             const dateRows = (plan.dueDates || []).map((d, i) => `<tr>
-                <td style="padding:8px 4px; border-bottom:1px solid #ddd;">${i + 1}</td>
-                <td style="padding:8px 4px; border-bottom:1px solid #ddd;">${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                <td style="padding:8px 4px; border-bottom:1px solid #ddd;">₹${plan.installmentAmount.toFixed(2)}</td>
-                <td style="padding:8px 4px; border-bottom:1px solid #ddd;">&nbsp;</td>
-                <td style="padding:8px 4px; border-bottom:1px solid #ddd;">&nbsp;</td>
+                <td style="padding:5px 4px; border-bottom:1px solid #ddd;">${i + 1}</td>
+                <td style="padding:5px 4px; border-bottom:1px solid #ddd;">${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                <td style="padding:5px 4px; border-bottom:1px solid #ddd;">₹${getInstallmentAmountForIndex(plan, i).toFixed(2)}</td>
+                <td style="padding:5px 4px; border-bottom:1px solid #ddd;">&nbsp;</td>
+                <td style="padding:5px 4px; border-bottom:1px solid #ddd;">&nbsp;</td>
             </tr>`).join('');
 
             const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
                 * { box-sizing:border-box; }
-                body { font-family:Arial,'Helvetica Neue',Helvetica,sans-serif; padding:30px; color:#1a1a1a; }
-                h1 { font-size:20px; margin:0 0 20px; }
-                .field { font-size:14px; margin-bottom:6px; }
+                body { font-family:Arial,'Helvetica Neue',Helvetica,sans-serif; padding:22px; color:#1a1a1a; }
+                h1 { font-size:19px; margin:0 0 14px; }
+                .field { font-size:13px; margin-bottom:5px; }
                 .field b { display:inline-block; min-width:70px; }
-                hr { border:none; border-top:1.5px solid #333; margin:16px 0; }
+                hr { border:none; border-top:1.5px solid #333; margin:12px 0; }
                 table { width:100%; border-collapse:collapse; }
-                th { text-align:left; font-size:12px; color:#555; padding-bottom:6px; border-bottom:1.5px solid #333; }
+                th { text-align:left; font-size:12px; color:#555; padding-bottom:5px; border-bottom:1.5px solid #333; }
                 .item-table th:last-child, .item-table td:last-child { text-align:right; }
-                .row-line td { padding:8px 0; border-bottom:1px solid #ccc; font-size:14px; }
+                .row-line td { padding:6px 0; border-bottom:1px solid #ccc; font-size:13px; }
                 .row-line td:last-child { text-align:right; }
-                .total-row td { font-weight:800; font-size:15px; padding:10px 0; border-bottom:1.5px solid #333; }
+                .total-row td { font-weight:800; font-size:14px; padding:8px 0; border-bottom:1.5px solid #333; }
                 .total-row td:last-child { text-align:right; }
-                .sched-title { text-align:center; font-weight:700; font-size:14px; margin:20px 0 10px; }
-                .sched th { padding:6px 4px; }
-                .sched td { padding:8px 4px; font-size:13px; border-bottom:1px solid #ddd; }
-                .tc-title { font-weight:700; font-size:14px; margin-top:26px; margin-bottom:8px; }
-                .tc-body { font-size:11px; color:#444; line-height:1.7; white-space:pre-wrap; min-height:40px; }
-                @media print { @page { margin:16mm; } }
+                .sched-title { text-align:center; font-weight:700; font-size:13px; margin:14px 0 6px; }
+                .sched th { padding:5px 4px; }
+                .sched td { padding:5px 4px; font-size:12.5px; border-bottom:1px solid #ddd; }
+                .tc-title { font-weight:700; font-size:14px; margin-top:16px; margin-bottom:6px; }
+                .tc-body { font-size:11px; color:#444; line-height:1.6; white-space:pre-wrap; min-height:30px; }
+                /* Print page-break control — a plan with many installments
+                   can genuinely need more than one sheet, but it should
+                   never split mid-row or lose its column headers on the
+                   next page the way it did before this was added. */
+                tr, .item-table tr { page-break-inside: avoid; break-inside: avoid; }
+                .sched thead, .item-table thead { display: table-header-group; }
+                .tc-title { page-break-after: avoid; break-after: avoid; }
+                .tc-body { page-break-before: avoid; break-before: avoid; }
+                @media print { @page { margin:12mm; } }
             </style></head><body>
                 <h1>Suhag Jewellers — Installment Plan</h1>
                 <div class="field"><b>Name:</b> ${plan.customerName || ''}</div>
@@ -11576,17 +11765,19 @@
             document.getElementById('ledger-inst-pay-title').textContent = plan.customerName + (plan.customerAddress ? ` (${plan.customerAddress})` : '');
             document.getElementById('ledger-inst-pay-mobile').textContent = plan.customerMobile || '';
 
-            const nextDue = getInstallmentNextDueDate(plan);
+            const nextDueIdx = getInstallmentNextDueIndex(plan);
+            const nextDue = nextDueIdx === -1 ? null : plan.dueDates[nextDueIdx];
+            const nextAmount = nextDueIdx === -1 ? plan.installmentAmount : getInstallmentAmountForIndex(plan, nextDueIdx);
             const nextDueLabel = nextDue
                 ? new Date(nextDue + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
                 : '—';
             document.getElementById('ledger-inst-pay-info').innerHTML = `
                 <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Remaining Amount</span><strong>₹${plan.remainingAmount.toFixed(2)}</strong></div>
-                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Installment Amount</span><strong>₹${plan.installmentAmount.toFixed(2)}</strong></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Installment Amount</span><strong>₹${nextAmount.toFixed(2)}</strong></div>
                 <div style="display:flex; justify-content:space-between;"><span>Next Installment Date</span><strong>${nextDueLabel}</strong></div>
             `;
 
-            const suggested = Math.min(plan.installmentAmount, plan.remainingAmount);
+            const suggested = Math.min(nextAmount, plan.remainingAmount);
             document.getElementById('ledger-inst-pay-amount').value = suggested > 0 ? suggested.toFixed(2) : '';
             document.getElementById('ledger-inst-pay-date').value = new Date().toISOString().slice(0, 10);
             document.getElementById('ledger-inst-pay-note').value = '';
@@ -14634,6 +14825,15 @@ const badge = '';
                     <div id="inst-custom-dates-wrap" style="display:none;">
                         <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Set Each Payment Date</label>
                         <div id="inst-custom-dates-list" style="display:flex; flex-direction:column; gap:6px;"></div>
+                    </div>
+                    <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Installment Amounts</label>
+                    <select id="inst-amount-mode" style="margin:0;" onchange="onInstallmentAmountModeChange()">
+                        <option value="equal">Equal Split</option>
+                        <option value="custom">Custom Amounts</option>
+                    </select>
+                    <div id="inst-custom-amounts-wrap" style="display:none;">
+                        <label style="font-size:12.5px; color:var(--text2); font-weight:600; margin-top:6px;">Set Each Installment Amount</label>
+                        <div id="inst-custom-amounts-list" style="display:flex; flex-direction:column; gap:6px;"></div>
                     </div>
                 </div>
             </div>
