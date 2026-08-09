@@ -3525,6 +3525,12 @@
         const INSTALLMENT_CUSTOMER_SITE_URL = 'https://vaibhavlavish.github.io/Customer_Book/';
         let installmentPlans = []; // cached list, (re)loaded each time the All Plans tab opens
         let currentInstallmentDetailId = null;
+        // Shop-wide, cloud-synced reminder message wording — editable via
+        // the Reminders tab's "Edit Reminder Message" button. Empty/unset
+        // means "use the default below". Placeholders {name}/{date}/
+        // {amount}/{remaining} are substituted per-customer at send time.
+        let installmentReminderTemplate = '';
+        const DEFAULT_INSTALLMENT_REMINDER_TEMPLATE = 'Dear {name},\n\nthis is a installment payment reminder from suhag jewellers\npayment date = {date}\ninstallment amount = ₹ {amount}\nremaining amount = ₹ {remaining}';
         // NEW: Global for Presets - Now synced from cloud, default empty
         let loosePresets = [];
         // Making Charge Profiles
@@ -3725,6 +3731,7 @@
             }
             invStampPrintToggle = cloudData.invStampPrintToggle || {};
             invTandC = cloudData.invTandC || '';
+            installmentReminderTemplate = cloudData.installmentReminderTemplate || '';
             // Bill number format (literal prefix + editable start number) — cloud-synced, offline fallback via localStorage
             if (cloudData.invBillPrefix !== undefined && cloudData.invBillPrefix !== null) {
                 invoiceSettings.invPrefix = cloudData.invBillPrefix;
@@ -3968,6 +3975,7 @@
                 invItemSettings:  config.invItemSettings  || {},
                 invStampPrintToggle: config.invStampPrintToggle || {},
                 invTandC: config.invTandC || '',
+                installmentReminderTemplate: config.installmentReminderTemplate || '',
                 invBillPrefix: config.invBillPrefix || null,
                 invBillStartNumber: config.invBillStartNumber || null,
                 productDataImportedAt: config.productDataImportedAt || 0,
@@ -7228,6 +7236,14 @@
         }
 
         function renderInstallmentsList(){
+            const summaryEl = document.getElementById('inst-list-summary');
+            if (summaryEl) {
+                const activePlans = installmentPlans.filter(p => p.status === 'active');
+                const totalDue = activePlans.reduce((s, p) => s + (p.remainingAmount || 0), 0);
+                summaryEl.innerHTML = activePlans.length
+                    ? `<div style="font-size:22px; font-weight:800; color:var(--gold);">₹${totalDue.toFixed(2)}</div><div style="font-size:11px; color:var(--text2); font-weight:700; text-transform:uppercase; letter-spacing:.06em; margin-top:2px;">Outstanding across ${activePlans.length} active plan${activePlans.length === 1 ? '' : 's'}</div>`
+                    : `<div style="font-size:13px; color:var(--text2);">No active plans right now</div>`;
+            }
             const q = (document.getElementById('inst-search').value || '').trim().toLowerCase();
             const listEl = document.getElementById('inst-list-body');
             const filtered = installmentPlans.filter(p =>
@@ -7296,11 +7312,37 @@
             const dueDateStr = nextDue
                 ? new Date(nextDue + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
                 : 'soon';
-            const message = `Dear ${plan.customerName},\n\nthis is a installment payment reminder from suhag jewellers\npayment date = ${dueDateStr}\ninstallment amount = ₹ ${plan.installmentAmount.toFixed(2)}\nremaining amount = ₹ ${plan.remainingAmount.toFixed(2)}`;
+            const template = (installmentReminderTemplate && installmentReminderTemplate.trim()) ? installmentReminderTemplate : DEFAULT_INSTALLMENT_REMINDER_TEMPLATE;
+            const message = template
+                .replace(/\{name\}/g, plan.customerName)
+                .replace(/\{date\}/g, dueDateStr)
+                .replace(/\{amount\}/g, plan.installmentAmount.toFixed(2))
+                .replace(/\{remaining\}/g, plan.remainingAmount.toFixed(2));
 
             let mobile = plan.customerMobile.replace(/\D/g, '');
             if (mobile.length === 10) mobile = '91' + mobile; // assume Indian number when no country code was entered
             window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(message)}`, '_blank');
+        }
+
+        function openInstallmentReminderTemplateModal(){
+            const ta = document.getElementById('inst-reminder-template-textarea');
+            ta.value = (installmentReminderTemplate && installmentReminderTemplate.trim()) ? installmentReminderTemplate : DEFAULT_INSTALLMENT_REMINDER_TEMPLATE;
+            document.getElementById('inst-reminder-template-status').textContent = '';
+            document.getElementById('installment-reminder-template-modal').style.display = 'flex';
+        }
+
+        function saveInstallmentReminderTemplate(){
+            if (!checkPin()) return;
+            const val = document.getElementById('inst-reminder-template-textarea').value;
+            const statusEl = document.getElementById('inst-reminder-template-status');
+            installmentReminderTemplate = val.trim();
+            statusEl.textContent = 'Saving…';
+            window.dbSafeUpdate({ 'jewelryData/config/installmentReminderTemplate': installmentReminderTemplate })
+                .then(() => {
+                    statusEl.textContent = 'Saved.';
+                    setTimeout(() => { document.getElementById('installment-reminder-template-modal').style.display = 'none'; }, 500);
+                })
+                .catch(() => { statusEl.textContent = 'Could not save — try again.'; });
         }
 
         // Sends the customer's own plan-tracking link (installments-view.html
@@ -7355,6 +7397,40 @@
             }).join('');
         }
 
+        function openInstallmentEditCustomerModal(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            document.getElementById('inst-edit-name').value = plan.customerName || '';
+            document.getElementById('inst-edit-mob').value = plan.customerMobile || '';
+            document.getElementById('inst-edit-addr').value = plan.customerAddress || '';
+            document.getElementById('inst-edit-status').textContent = '';
+            document.getElementById('installment-edit-modal').style.display = 'flex';
+        }
+
+        async function saveInstallmentCustomerEdit(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            const name = document.getElementById('inst-edit-name').value.trim();
+            const mobile = document.getElementById('inst-edit-mob').value.trim();
+            const address = document.getElementById('inst-edit-addr').value.trim();
+            const statusEl = document.getElementById('inst-edit-status');
+            if (!name) { statusEl.textContent = "Name can't be empty."; return; }
+
+            statusEl.textContent = 'Saving…';
+            try {
+                const updates = { customerName: name, customerMobile: mobile || null, customerAddress: address || null };
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), updates);
+                Object.assign(plan, updates);
+                document.getElementById('installment-edit-modal').style.display = 'none';
+                document.getElementById('installment-detail-title').textContent = plan.customerName;
+                renderInstallmentDetailBody(plan);
+                renderInstallmentsList();
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not save — try again.';
+            }
+        }
+
         function openInstallmentDetail(planId){
             currentInstallmentDetailId = planId;
             const plan = installmentPlans.find(p => p.id === planId);
@@ -7370,9 +7446,13 @@
 
         function renderInstallmentDetailBody(plan){
             const bodyEl = document.getElementById('installment-detail-body');
+            const isActive = plan.status === 'active';
+            const isCancelled = plan.status === 'cancelled';
             const itemsHtml = plan.items.map((i, idx) => `
-                <div class="inst-detail-item-row" data-item-idx="${idx}" style="display:flex; justify-content:space-between; font-size:13px; padding:3px 0; cursor:pointer; user-select:none; -webkit-user-select:none;">
-                    <span>${i.itemName}</span><span>₹${i.finalPrice.toFixed(2)}</span>
+                <div class="inst-detail-item-row" data-item-idx="${idx}" style="display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:3px 0; cursor:pointer; user-select:none; -webkit-user-select:none;">
+                    <span style="flex:1;">${i.itemName}</span>
+                    <span>₹${i.finalPrice.toFixed(2)}</span>
+                    ${isActive ? `<button class="inst-detail-item-remove-btn" data-item-idx="${idx}" title="Remove item" style="background:none; border:none; color:#C62828; font-size:15px; font-weight:800; padding:0 0 0 10px; cursor:pointer; box-shadow:none; margin:0; width:auto; line-height:1;">✕</button>` : ''}
                 </div>
             `).join('');
             const paymentsHtml = (plan.payments || []).length
@@ -7384,11 +7464,11 @@
                 `).join('')
                 : '<p class="note">No payments logged yet.</p>';
 
-            const isActive = plan.status === 'active';
-            const isCancelled = plan.status === 'cancelled';
-
             bodyEl.innerHTML = `
-                <div style="font-size:12.5px; color:var(--text2); margin-bottom:2px;">${plan.customerMobile || 'No mobile on file'}</div>
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:2px;">
+                    <div style="font-size:12.5px; color:var(--text2);">${plan.customerMobile || 'No mobile on file'}</div>
+                    <button onclick="openInstallmentEditCustomerModal()" style="background:none; border:none; color:var(--text2); font-size:11px; font-weight:700; cursor:pointer; box-shadow:none; margin:0; padding:0; width:auto; text-decoration:underline; flex-shrink:0;">✏️ Edit</button>
+                </div>
                 <div style="font-size:12.5px; color:var(--text2); margin-bottom:10px;">${plan.customerAddress ? plan.customerAddress.replace(/\n/g, '<br>') : 'No address on file'}</div>
                 ${isCancelled ? `<div style="background:#FFEBEE; color:#C62828; font-weight:700; text-align:center; padding:8px; border-radius:8px; margin-bottom:12px; font-size:13px;">✕ This plan was cancelled — items were made visible on the catalogue again (unless already sold separately).</div>` : ''}
                 <div id="inst-detail-items-container" style="background:var(--bg); border-radius:10px; padding:10px 12px; margin-bottom:4px;">${itemsHtml}</div>
@@ -7431,6 +7511,9 @@
                 ` : (plan.status === 'completed' ? `<p class="note" style="text-align:center; font-weight:700; color:#2E7D32;">✅ This plan is fully paid off.</p>` : '')}
 
                 <button onclick="copyInstallmentLink('${plan.id}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:14px;">🔗 Copy Customer Link</button>
+                <button onclick="regenerateInstallmentLink()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🔄 Regenerate Link</button>
+                <p class="note" id="inst-link-status" style="margin-top:6px; text-align:center;"></p>
+                ${isActive ? `<button onclick="printInstallmentSchedule()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🖨️ Print Payment Schedule</button>` : ''}
                 ${plan.status !== 'completed' && !isCancelled ? `
                     <button onclick="openInstallmentRateModal()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">📈 Change Rate (Today's / Custom)</button>
                     <p class="note" id="inst-rate-status" style="margin-top:6px; text-align:center;"></p>
@@ -7451,6 +7534,12 @@
             // innerHTML on every render, unlike the plan list or New Plan
             // cart preview where only rows inside a stable parent change.
             document.getElementById('inst-detail-items-container').addEventListener('click', e => {
+                const removeBtn = e.target.closest('.inst-detail-item-remove-btn');
+                if (removeBtn) {
+                    const idx = parseInt(removeBtn.dataset.itemIdx, 10);
+                    if (!isNaN(idx)) removeInstallmentPlanItem(idx);
+                    return;
+                }
                 const row = e.target.closest('.inst-detail-item-row');
                 if (!row) return;
                 const idx = parseInt(row.dataset.itemIdx, 10);
@@ -7634,6 +7723,58 @@
         // getSoldBarcodesForStock, the same source of truth used
         // everywhere else in this app) — those are left exactly as they
         // are, since they're actually gone, not just pending.
+        // Drops one item from an active plan (e.g. it was physically
+        // returned) and recalculates the plan's totals around what's left.
+        // amountPaid is untouched — only the total/remaining shift, exactly
+        // like a rate-change recalculation does. The removed item is
+        // restored to catalogue visibility unless it's already genuinely
+        // sold elsewhere (same check cancelInstallmentPlan uses).
+        async function removeInstallmentPlanItem(idx){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan || plan.status !== 'active') return;
+            const item = plan.items[idx];
+            if (!item) return;
+            if (plan.items.length <= 1) {
+                showCustomAlert("A plan needs at least one item — cancel the whole plan instead if removing the last one.");
+                return;
+            }
+            if (!checkPin()) return;
+            if (!confirm(`Remove "${item.itemName}" (₹${item.finalPrice.toFixed(2)}) from this plan?\n\nThe total and remaining balance will be recalculated. What's already been paid (₹${plan.amountPaid.toFixed(2)}) stays exactly as logged. This can't be undone.`)) return;
+
+            const newItems = plan.items.filter((_, i) => i !== idx);
+            const newPrincipal = newItems.reduce((s, i) => s + i.finalPrice, 0);
+            const newTotal = Math.round((newPrincipal * (1 + (plan.interestRate || 0) / 100)) * 100) / 100;
+            const newRemaining = Math.round((newTotal - plan.amountPaid) * 100) / 100;
+            const remainingCount = Math.max(1, plan.installmentCount);
+
+            try {
+                const updates = {
+                    items: newItems,
+                    principalAmount: newPrincipal,
+                    totalAmount: newTotal,
+                    remainingAmount: newRemaining,
+                    installmentAmount: Math.round((Math.max(0, newRemaining) / remainingCount) * 100) / 100,
+                    status: newRemaining <= 0 ? 'completed' : 'active',
+                };
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), updates);
+                Object.assign(plan, updates);
+
+                if (item.barcode) {
+                    const sold = getSoldBarcodesForStock();
+                    const bc = String(item.barcode).trim().toUpperCase();
+                    if (!sold.has(bc)) {
+                        await window.dbUpdate(window.dbRef(window.firebaseDB, '/'), { ['catalogue/items/' + item.barcode + '/hidden']: false });
+                    }
+                }
+
+                renderInstallmentDetailBody(plan);
+                renderInstallmentsList();
+            } catch (e) {
+                console.error(e);
+                showCustomAlert('Could not remove item — try again.');
+            }
+        }
+
         async function cancelInstallmentPlan(){
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan) return;
@@ -7903,6 +8044,83 @@
         function copyInstallmentLink(planId){
             const link = INSTALLMENT_CUSTOMER_SITE_URL + '?id=' + planId;
             navigator.clipboard.writeText(link).then(() => showCustomAlert('Link copied!')).catch(() => prompt('Copy this link:', link));
+        }
+
+        // The plan's id doubles as its customer-facing access token (see
+        // the comment on planId in createInstallmentPlan), so "regenerate
+        // the link" really means "move this plan to a new id" — write it
+        // under a fresh unguessable id, then remove the old one. The old
+        // link stops working the moment this completes; there's no way to
+        // recover it afterward, which is the whole point if it was shared
+        // with the wrong person.
+        async function regenerateInstallmentLink(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            if (!checkPin()) return;
+            if (!confirm(`Generate a new link for ${plan.customerName}?\n\nThe OLD link will stop working immediately and can't be recovered. You'll need to share the new link with the customer.`)) return;
+
+            const statusEl = document.getElementById('inst-link-status');
+            if (statusEl) statusEl.textContent = 'Generating…';
+            const oldId = plan.id;
+            const newId = crypto.randomUUID();
+            const newPlan = { ...plan, id: newId };
+            try {
+                await window.dbSet(window.dbRef(window.firebaseDB, 'installments/' + newId), newPlan);
+                await window.dbRemove(window.dbRef(window.firebaseDB, 'installments/' + oldId));
+                installmentPlans = installmentPlans.map(p => p.id === oldId ? newPlan : p);
+                currentInstallmentDetailId = newId;
+                renderInstallmentDetailBody(newPlan);
+                renderInstallmentsList();
+                const link = INSTALLMENT_CUSTOMER_SITE_URL + '?id=' + newId;
+                showCustomAlert(`New link generated. Share this with the customer:<br><b style="word-break:break-all;">${link}</b>`);
+            } catch (e) {
+                console.error(e);
+                if (statusEl) statusEl.textContent = 'Could not generate a new link — try again.';
+            }
+        }
+
+        // A plain, standalone printable slip — items, total, and the payment
+        // schedule — for customers who won't engage with the WhatsApp link
+        // at all. Reuses the same hidden #inv-print-frame the invoice
+        // screen already uses for printing, but writes its own simple HTML
+        // directly rather than going through any of the invoice-specific
+        // save/afterprint plumbing — this never touches invoice records.
+        function printInstallmentSchedule(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+
+            const itemRows = plan.items.map(it => `<tr><td style="padding:6px 8px; border-bottom:1px solid #ddd;">${it.itemName}</td><td style="padding:6px 8px; border-bottom:1px solid #ddd; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
+            const dateRows = (plan.dueDates || []).map((d, i) => `<tr><td style="padding:6px 8px; border-bottom:1px solid #ddd;">${i + 1}</td><td style="padding:6px 8px; border-bottom:1px solid #ddd;">${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td><td style="padding:6px 8px; border-bottom:1px solid #ddd; text-align:right;">₹${plan.installmentAmount.toFixed(2)}</td></tr>`).join('');
+
+            const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+                * { box-sizing:border-box; }
+                body { font-family:Arial,'Helvetica Neue',Helvetica,sans-serif; padding:28px; color:#1a1a1a; }
+                h2 { margin:0 0 2px; font-size:19px; }
+                .sub { color:#666; font-size:12px; margin-bottom:18px; }
+                table { width:100%; border-collapse:collapse; margin-top:10px; }
+                th { text-align:left; padding:6px 8px; font-size:11px; color:#888; text-transform:uppercase; letter-spacing:.04em; border-bottom:2px solid #333; }
+                th:last-child { text-align:right; }
+                .tot { display:flex; justify-content:space-between; font-weight:800; font-size:15px; margin-top:10px; padding-top:8px; border-top:2px solid #333; }
+                .foot { margin-top:26px; font-size:10.5px; color:#999; }
+                @media print { @page { margin:14mm; } }
+            </style></head><body>
+                <h2>Suhag Jewellers — Installment Plan</h2>
+                <div class="sub">${plan.customerName}${plan.customerMobile ? ' · ' + plan.customerMobile : ''}${plan.customerAddress ? ' · ' + plan.customerAddress : ''}</div>
+                <table><thead><tr><th>Item</th><th>Price</th></tr></thead><tbody>${itemRows}</tbody></table>
+                <div class="tot"><span>Total Payable</span><span>₹${plan.totalAmount.toFixed(2)}</span></div>
+                <table style="margin-top:20px;"><thead><tr><th>#</th><th>Date</th><th>Amount</th></tr></thead><tbody>${dateRows}</tbody></table>
+                <div class="foot">Generated ${new Date().toLocaleDateString('en-IN')} — for reference only; the actual balance owed may differ if payments have already been made.</div>
+            </body></html>`;
+
+            const pf = document.getElementById('inv-print-frame');
+            pf.style.display = 'block';
+            const doc = pf.contentDocument || pf.contentWindow.document;
+            doc.open(); doc.write(html); doc.close();
+            pf.contentWindow.focus();
+            setTimeout(() => {
+                pf.contentWindow.print();
+                setTimeout(() => { pf.style.display = 'none'; }, 500);
+            }, 300);
         }
 
         function openCart() {
@@ -14026,6 +14244,7 @@ const badge = '';
 
         <!-- ══ PANE: ALL PLANS ══ -->
         <div id="inst-pane-list" style="display:none;">
+            <div id="inst-list-summary" style="background:var(--surface); border-radius:var(--radius); padding:12px 14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06); text-align:center;"></div>
             <input type="text" id="inst-search" placeholder="🔍 Search by customer name or mobile…" style="margin-bottom:12px;" oninput="renderInstallmentsList()">
             <div id="inst-list-body"></div>
             <p class="note" id="inst-list-status" style="text-align:center;"></p>
@@ -14034,6 +14253,7 @@ const badge = '';
         <!-- ══ PANE: REMINDERS ══ -->
         <div id="inst-pane-reminders" style="display:none;">
             <p class="note" style="margin-bottom:12px;">Every active plan's next payment date, soonest first. Tap Send to open a pre-filled WhatsApp reminder.</p>
+            <button onclick="openInstallmentReminderTemplateModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:14px;">✏️ Edit Reminder Message</button>
             <div id="inst-reminders-body"></div>
         </div>
 
@@ -14056,6 +14276,35 @@ const badge = '';
                 <button onclick="document.getElementById('installment-rate-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
             <div id="installment-rate-body"></div>
+        </div>
+    </div>
+
+    <div id="installment-reminder-template-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:530; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);">Reminder Message</span>
+                <button onclick="document.getElementById('installment-reminder-template-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <p class="note" style="margin-bottom:10px;">Use {name}, {date}, {amount}, {remaining} — filled in automatically for each customer when the reminder is sent.</p>
+            <textarea id="inst-reminder-template-textarea" rows="8" style="width:100%; box-sizing:border-box; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:13px; line-height:1.5; resize:vertical; font-family:inherit; margin:0 0 12px 0;"></textarea>
+            <button onclick="saveInstallmentReminderTemplate()" style="width:100%; background:var(--gold); border:none; border-radius:11px; padding:13px; font-size:14px; font-weight:700; color:white; cursor:pointer; box-shadow:none; margin:0;">Save</button>
+            <p class="note" id="inst-reminder-template-status" style="text-align:center; margin-top:8px;"></p>
+        </div>
+    </div>
+
+    <div id="installment-edit-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:520; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:380px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);">Edit Customer Details</span>
+                <button onclick="document.getElementById('installment-edit-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <input type="text" id="inst-edit-name" placeholder="Customer Name" style="margin:0;">
+                <input type="tel" id="inst-edit-mob" placeholder="Mobile Number" style="margin:0;">
+                <textarea id="inst-edit-addr" placeholder="Address (optional)" rows="2" style="margin:0; padding:12px; border:1.5px solid var(--border); border-radius:var(--radius-sm); width:100%; font-size:15px; font-family:'Inter', sans-serif; box-sizing:border-box; resize:none;"></textarea>
+                <button onclick="saveInstallmentCustomerEdit()" style="background:var(--gold); color:#fff; font-weight:800; padding:12px; border-radius:var(--radius); border:none; font-size:14px; margin-top:6px;">Save</button>
+                <p class="note" id="inst-edit-status" style="text-align:center; margin:0;"></p>
+            </div>
         </div>
     </div>
 
