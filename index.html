@@ -9658,6 +9658,12 @@
                 _renderUpiQrCore(shopUpiIds[idx], amt, { box: 'pay-partial-upi-qr-box', label: 'pay-partial-upi-qr-label', switchWrap: 'pay-partial-upi-switch-wrap' });
                 return;
             }
+            if (window._upiQrContext === 'installment') {
+                window._selectedLedgerInstUpiEntry = shopUpiIds[idx];
+                const amt = parseFloat(document.getElementById('ledger-inst-pay-amount').value) || 0;
+                _renderUpiQrCore(shopUpiIds[idx], amt, { box: 'ledger-inst-pay-upi-qr-box', label: 'ledger-inst-pay-upi-qr-label', switchWrap: 'ledger-inst-pay-upi-switch-wrap' });
+                return;
+            }
             _renderUpiQr(shopUpiIds[idx]);
         }
         window.chooseUpiForPayment = chooseUpiForPayment;
@@ -11550,6 +11556,7 @@
             document.getElementById('ledger-inst-pay-date').value = new Date().toISOString().slice(0, 10);
             document.getElementById('ledger-inst-pay-note').value = '';
             document.getElementById('ledger-inst-pay-status').textContent = '';
+            window._selectedLedgerInstUpiEntry = null;
             selectLedgerInstPayMode('cash');
             document.getElementById('ledger-installment-payment-modal').style.display = 'flex';
         }
@@ -11561,12 +11568,44 @@
             if (btn) btn.classList.add('selected');
             const partialSection = document.getElementById('ledger-inst-pay-partial-section');
             if (partialSection) partialSection.style.display = mode === 'partial' ? 'grid' : 'none';
+            const qrSection = document.getElementById('ledger-inst-pay-upi-qr-section');
+            if (qrSection) qrSection.style.display = mode === 'upi' ? 'block' : 'none';
             if (mode === 'partial') {
                 const amt = parseFloat(document.getElementById('ledger-inst-pay-amount').value) || 0;
                 document.getElementById('ledger-inst-pay-split-cash').value = amt > 0 ? amt.toFixed(0) : '';
                 document.getElementById('ledger-inst-pay-split-upi').value = '';
                 document.getElementById('ledger-inst-pay-split-card').value = '';
             }
+            if (mode === 'upi') _handleLedgerInstUpiModeSelect();
+        }
+
+        // Decides what to show for the UPI QR in the installment payment
+        // dialog — same three-way logic checkout already uses (0/1/2+
+        // configured UPI IDs): none configured shows a setup hint, exactly
+        // one renders straight away, more than one opens the same chooser
+        // checkout's own UPI button uses.
+        function _handleLedgerInstUpiModeSelect(){
+            const amt = parseFloat(document.getElementById('ledger-inst-pay-amount').value) || 0;
+            if (!shopUpiIds || shopUpiIds.length === 0) {
+                document.getElementById('ledger-inst-pay-upi-qr-box').style.display = 'none';
+                document.getElementById('ledger-inst-pay-upi-qr-label').innerHTML = '⚠️ No UPI ID set. <span style="text-decoration:underline; cursor:pointer; color:#1565C0;" onclick="openUpiIdSetting()">Add it in More → Settings</span>';
+                return;
+            }
+            if (shopUpiIds.length === 1) {
+                window._selectedLedgerInstUpiEntry = shopUpiIds[0];
+                _renderUpiQrCore(shopUpiIds[0], amt, { box: 'ledger-inst-pay-upi-qr-box', label: 'ledger-inst-pay-upi-qr-label', switchWrap: 'ledger-inst-pay-upi-switch-wrap' });
+                return;
+            }
+            window._upiQrContext = 'installment';
+            openUpiPaySelectModal();
+        }
+
+        // Keeps the QR in sync as the amount field changes, if UPI is the
+        // currently selected mode and a UPI id is already chosen.
+        function _updateLedgerInstUpiQrAmount(){
+            if (_ledgerInstPayMode !== 'upi' || !window._selectedLedgerInstUpiEntry) return;
+            const amt = parseFloat(document.getElementById('ledger-inst-pay-amount').value) || 0;
+            _renderUpiQrCore(window._selectedLedgerInstUpiEntry, amt, { box: 'ledger-inst-pay-upi-qr-box', label: 'ledger-inst-pay-upi-qr-label', switchWrap: 'ledger-inst-pay-upi-switch-wrap' });
         }
 
         // Mirrors logInstallmentPayment()'s exact math (amountPaid,
@@ -14338,16 +14377,23 @@ const badge = '';
             <div id="ledger-inst-pay-info" style="background:var(--bg); border-radius:10px; padding:12px; margin:12px 0 14px; font-size:13px;"></div>
 
             <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">AMOUNT (₹)</label>
-            <input type="number" id="ledger-inst-pay-amount" step="0.01" style="margin:0 0 10px; width:100%;">
+            <input type="number" id="ledger-inst-pay-amount" step="0.01" style="margin:0 0 10px; width:100%;" oninput="_updateLedgerInstUpiQrAmount()">
             <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">DATE</label>
             <input type="date" id="ledger-inst-pay-date" style="margin:0 0 12px; width:100%;">
 
             <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:6px;">PAYMENT METHOD</label>
             <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:6px; margin-bottom:10px;">
-                <button type="button" onclick="selectLedgerInstPayMode('cash')" id="ledger-inst-pay-mode-cash" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">💵<br><span style="font-size:10px;">Cash</span></button>
-                <button type="button" onclick="selectLedgerInstPayMode('upi')" id="ledger-inst-pay-mode-upi" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">📱<br><span style="font-size:10px;">UPI</span></button>
-                <button type="button" onclick="selectLedgerInstPayMode('card')" id="ledger-inst-pay-mode-card" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">💳<br><span style="font-size:10px;">Card</span></button>
-                <button type="button" onclick="selectLedgerInstPayMode('partial')" id="ledger-inst-pay-mode-partial" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">🔀<br><span style="font-size:10px;">Partial</span></button>
+                <button type="button" onclick="selectLedgerInstPayMode('cash')" id="ledger-inst-pay-mode-cash" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; color:#333; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">💵<br><span style="font-size:10px;">Cash</span></button>
+                <button type="button" onclick="selectLedgerInstPayMode('upi')" id="ledger-inst-pay-mode-upi" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; color:#333; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">📱<br><span style="font-size:10px;">UPI</span></button>
+                <button type="button" onclick="selectLedgerInstPayMode('card')" id="ledger-inst-pay-mode-card" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; color:#333; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">💳<br><span style="font-size:10px;">Card</span></button>
+                <button type="button" onclick="selectLedgerInstPayMode('partial')" id="ledger-inst-pay-mode-partial" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; color:#333; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">🔀<br><span style="font-size:10px;">Partial</span></button>
+            </div>
+            <div id="ledger-inst-pay-upi-qr-section" style="display:none; text-align:center; background:var(--bg); border-radius:10px; padding:14px; margin-bottom:12px;">
+                <div id="ledger-inst-pay-upi-qr-box" style="display:inline-block; background:white; padding:10px; border-radius:12px; border:2px solid #e0e0e0; margin-bottom:6px;"></div>
+                <div id="ledger-inst-pay-upi-qr-label" style="font-size:12px; color:#888;"></div>
+                <div id="ledger-inst-pay-upi-switch-wrap" style="display:none; margin-top:6px;">
+                    <span onclick="window._upiQrContext='installment'; openUpiPaySelectModal();" style="font-size:12px; color:#1565C0; text-decoration:underline; cursor:pointer;">🔁 Switch UPI ID</span>
+                </div>
             </div>
             <div id="ledger-inst-pay-partial-section" style="display:none; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:12px;">
                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">Cash</label><input type="number" id="ledger-inst-pay-split-cash" placeholder="0" step="0.01" style="margin:0; padding:8px; font-size:13px; width:100%;"></div>
