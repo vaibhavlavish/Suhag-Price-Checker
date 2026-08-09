@@ -3536,6 +3536,13 @@
         // (e.g. what happens on a missed installment), so this is
         // deliberately its own field, edited via its own box, not shared.
         let installmentTandC = '';
+        // A third, separate T&C — for the customer-facing installments-view.html
+        // site. That page has no login and can only ever read its own plan
+        // record (installments/<planId>), never shop config directly, so this
+        // gets baked into each plan at creation time (same reasoning as
+        // printName) rather than fetched live — a plan always shows the T&C
+        // as it stood when created, not whatever it's since been edited to.
+        let installmentWebTandC = '';
         // NEW: Global for Presets - Now synced from cloud, default empty
         let loosePresets = [];
         // Making Charge Profiles
@@ -3738,6 +3745,7 @@
             invTandC = cloudData.invTandC || '';
             installmentReminderTemplate = cloudData.installmentReminderTemplate || '';
             installmentTandC = cloudData.installmentTandC || '';
+            installmentWebTandC = cloudData.installmentWebTandC || '';
             // Bill number format (literal prefix + editable start number) — cloud-synced, offline fallback via localStorage
             if (cloudData.invBillPrefix !== undefined && cloudData.invBillPrefix !== null) {
                 invoiceSettings.invPrefix = cloudData.invBillPrefix;
@@ -3983,6 +3991,7 @@
                 invTandC: config.invTandC || '',
                 installmentReminderTemplate: config.installmentReminderTemplate || '',
                 installmentTandC: config.installmentTandC || '',
+                installmentWebTandC: config.installmentWebTandC || '',
                 invBillPrefix: config.invBillPrefix || null,
                 invBillStartNumber: config.invBillStartNumber || null,
                 productDataImportedAt: config.productDataImportedAt || 0,
@@ -7174,6 +7183,7 @@
                 remainingAmount,
                 status: remainingAmount <= 0 ? 'completed' : 'active',
                 appliedPureRates,
+                webTandC: installmentWebTandC || null,
             };
 
             statusEl.textContent = 'Saving…';
@@ -7375,6 +7385,31 @@
                 .then(() => {
                     statusEl.textContent = 'Saved.';
                     setTimeout(() => { document.getElementById('installment-tandc-modal').style.display = 'none'; }, 500);
+                })
+                .catch(() => { statusEl.textContent = 'Could not save — try again.'; });
+        }
+
+        // Third, separate T&C — for the customer-facing website
+        // (installments-view.html). Saving this only updates what NEW
+        // plans get baked in going forward — see the comment on
+        // installmentWebTandC above for why it can't be fetched live by
+        // that page.
+        function openInstallmentWebTandCModal(){
+            document.getElementById('inst-tandc-textarea-web').value = installmentWebTandC;
+            document.getElementById('inst-tandc-web-status').textContent = '';
+            document.getElementById('installment-web-tandc-modal').style.display = 'flex';
+        }
+
+        function saveInstallmentWebTandC(){
+            if (!checkPin()) return;
+            const val = document.getElementById('inst-tandc-textarea-web').value;
+            const statusEl = document.getElementById('inst-tandc-web-status');
+            installmentWebTandC = val.trim();
+            statusEl.textContent = 'Saving…';
+            window.dbSafeUpdate({ 'jewelryData/config/installmentWebTandC': installmentWebTandC })
+                .then(() => {
+                    statusEl.textContent = 'Saved.';
+                    setTimeout(() => { document.getElementById('installment-web-tandc-modal').style.display = 'none'; }, 500);
                 })
                 .catch(() => { statusEl.textContent = 'Could not save — try again.'; });
         }
@@ -14630,7 +14665,8 @@ const badge = '';
         <div id="inst-pane-reminders" style="display:none;">
             <p class="note" style="margin-bottom:12px;">Every active plan's next payment date, soonest first. Tap Send to open a pre-filled WhatsApp reminder.</p>
             <button onclick="openInstallmentReminderTemplateModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:8px;">✏️ Edit Reminder Message</button>
-            <button onclick="openInstallmentTandCModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:14px;">📋 Edit Installment T&amp;C</button>
+            <button onclick="openInstallmentTandCModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:8px;">📋 Edit Installment T&amp;C</button>
+            <button onclick="openInstallmentWebTandCModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:14px;">🌐 Edit Customer Website T&amp;C</button>
             <div id="inst-reminders-body"></div>
         </div>
 
@@ -14679,6 +14715,19 @@ const badge = '';
             <textarea id="inst-tandc-textarea-installment" rows="8" placeholder="e.g. A missed installment date does not cancel the plan. Contact the shop to reschedule." style="width:100%; box-sizing:border-box; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:13px; line-height:1.5; resize:vertical; font-family:inherit; margin:0 0 12px 0;"></textarea>
             <button onclick="saveInstallmentTandC()" style="width:100%; background:var(--gold); border:none; border-radius:11px; padding:13px; font-size:14px; font-weight:700; color:white; cursor:pointer; box-shadow:none; margin:0;">Save</button>
             <p class="note" id="inst-tandc-installment-status" style="text-align:center; margin-top:8px;"></p>
+        </div>
+    </div>
+
+    <div id="installment-web-tandc-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:530; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);">Customer Website T&amp;C</span>
+                <button onclick="document.getElementById('installment-web-tandc-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <p class="note" style="margin-bottom:10px;">Shows on the customer's own plan link (installments-view.html) — separate from both the Invoice and printed-slip T&C. Only NEW plans created after saving will carry the updated text.</p>
+            <textarea id="inst-tandc-textarea-web" rows="8" placeholder="e.g. Please retain this link for reference. Contact the shop for any payment queries." style="width:100%; box-sizing:border-box; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:13px; line-height:1.5; resize:vertical; font-family:inherit; margin:0 0 12px 0;"></textarea>
+            <button onclick="saveInstallmentWebTandC()" style="width:100%; background:var(--gold); border:none; border-radius:11px; padding:13px; font-size:14px; font-weight:700; color:white; cursor:pointer; box-shadow:none; margin:0;">Save</button>
+            <p class="note" id="inst-tandc-web-status" style="text-align:center; margin-top:8px;"></p>
         </div>
     </div>
 
