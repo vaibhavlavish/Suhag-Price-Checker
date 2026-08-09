@@ -8419,33 +8419,46 @@
             const downPaymentEntry = (plan.payments || []).find(p => p.note === 'Down payment');
             const downPaymentStr = downPaymentEntry ? `₹${downPaymentEntry.amount.toFixed(2)}` : '';
 
-            const itemRows = plan.items.map(it => `<tr><td style="padding:6px 0; border-bottom:1px solid #ccc;">${it.printName || it.itemName}</td><td style="padding:6px 0; border-bottom:1px solid #ccc; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
-            const oldGoldRows = (plan.oldGoldItems || []).map(og => `<tr><td style="padding:6px 0; border-bottom:1px solid #ccc;">${og.desc}</td><td style="padding:6px 0; border-bottom:1px solid #ccc; text-align:right; color:#C62828;">-₹${og.value.toFixed(2)}</td></tr>`).join('');
+            const itemRows = plan.items.map(it => `<tr><td style="padding:6px 0; border-bottom:1px solid #eee;">${it.printName || it.itemName}</td><td style="padding:6px 0; border-bottom:1px solid #eee; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
+            const oldGoldRows = (plan.oldGoldItems || []).map(og => `<tr><td style="padding:6px 0; border-bottom:1px solid #eee;">${og.desc}</td><td style="padding:6px 0; border-bottom:1px solid #eee; text-align:right; color:#C62828;">-₹${og.value.toFixed(2)}</td></tr>`).join('');
             const dateRows = (plan.dueDates || []).map((d, i) => `<tr>
-                <td style="padding:5px 4px; border-bottom:1px solid #ddd;">${i + 1}</td>
-                <td style="padding:5px 4px; border-bottom:1px solid #ddd;">${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                <td style="padding:5px 4px; border-bottom:1px solid #ddd;">₹${getInstallmentAmountForIndex(plan, i).toFixed(2)}</td>
-                <td style="padding:5px 4px; border-bottom:1px solid #ddd;">&nbsp;</td>
-                <td style="padding:5px 4px; border-bottom:1px solid #ddd;">&nbsp;</td>
+                <td style="padding:5px 4px; border-bottom:1px solid #eee;">${i + 1}</td>
+                <td style="padding:5px 4px; border-bottom:1px solid #eee;">${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                <td style="padding:5px 4px; border-bottom:1px solid #eee;">₹${getInstallmentAmountForIndex(plan, i).toFixed(2)}</td>
+                <td style="padding:5px 4px; border-bottom:1px solid #eee;">&nbsp;</td>
+                <td style="padding:5px 4px; border-bottom:1px solid #eee;">&nbsp;</td>
             </tr>`).join('');
+
+            // Reuses the exact same "Embed letterhead background" setting
+            // the Invoice screen already has (Print Options), rather than
+            // introducing a second, separate toggle just for this slip —
+            // one consistent setting for whether the shop prints on plain
+            // paper or pre-printed letterhead stock. When it's off (the
+            // normal case for pre-printed letterhead), this just reserves
+            // blank space at the top instead of an embedded image — the
+            // physical paper already has the shop name printed on it, so
+            // nothing here duplicates it in text either way.
+            const withBg = invGetWithBgPref();
+            const bgCss = withBg ? `background:white url('INVOICES_BEST.png') no-repeat top center/cover;` : 'background:white;';
+            const topSpace = withBg ? '42mm' : '30mm';
 
             const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
                 * { box-sizing:border-box; }
-                body { font-family:Arial,'Helvetica Neue',Helvetica,sans-serif; padding:22px; color:#1a1a1a; }
-                h1 { font-size:19px; margin:0 0 14px; }
+                body { margin:0; font-family:Arial,'Helvetica Neue',Helvetica,sans-serif; color:#1a1a1a; ${bgCss} }
+                .content { padding:${topSpace} 22px 22px; }
                 .field { font-size:13px; margin-bottom:5px; }
                 .field b { display:inline-block; min-width:70px; }
-                hr { border:none; border-top:1.5px solid #333; margin:12px 0; }
                 table { width:100%; border-collapse:collapse; }
                 th { text-align:left; font-size:12px; color:#555; padding-bottom:5px; border-bottom:1.5px solid #333; }
                 .item-table th:last-child, .item-table td:last-child { text-align:right; }
-                .row-line td { padding:6px 0; border-bottom:1px solid #ccc; font-size:13px; }
+                .og-label { font-size:11px; font-weight:700; color:#888; text-transform:uppercase; letter-spacing:.04em; margin:14px 0 4px; }
+                .row-line td { padding:5px 0; font-size:13px; }
                 .row-line td:last-child { text-align:right; }
-                .total-row td { font-weight:800; font-size:14px; padding:8px 0; border-bottom:1.5px solid #333; }
+                .total-row td { font-weight:800; font-size:14px; padding:8px 0; border-top:1.5px solid #333; }
                 .total-row td:last-child { text-align:right; }
-                .sched-title { text-align:center; font-weight:700; font-size:13px; margin:14px 0 6px; }
+                .sched-title { text-align:center; font-weight:700; font-size:13px; margin:18px 0 6px; }
                 .sched th { padding:5px 4px; }
-                .sched td { padding:5px 4px; font-size:12.5px; border-bottom:1px solid #ddd; }
+                .sched td { padding:5px 4px; font-size:12.5px; }
                 .tc-title { font-weight:700; font-size:14px; margin-top:16px; margin-bottom:6px; }
                 .tc-body { font-size:11px; color:#444; line-height:1.6; white-space:pre-wrap; min-height:30px; }
                 /* Print page-break control — a plan with many installments
@@ -8458,24 +8471,22 @@
                 .tc-body { page-break-before: avoid; break-before: avoid; }
                 @media print { @page { margin:12mm; } }
             </style></head><body>
-                <h1>Suhag Jewellers — Installment Plan</h1>
+                <div class="content">
+                <h1 style="font-size:18px; margin:0 0 14px; letter-spacing:.02em;">Installment Plan</h1>
                 <div class="field"><b>Name:</b> ${plan.customerName || ''}</div>
                 <div class="field"><b>Mobile:</b> ${plan.customerMobile || ''}</div>
                 <div class="field"><b>Address:</b> ${plan.customerAddress || ''}</div>
-                <hr>
-                <table class="item-table">
+                <table class="item-table" style="margin-top:14px;">
                     <thead><tr><th>Item</th><th>Price</th></tr></thead>
                     <tbody>${itemRows}</tbody>
                 </table>
                 ${oldGoldRows ? `
-                <hr>
-                <div style="font-size:12px; color:#555; font-weight:700; margin-bottom:4px;">Old Jewellery (Exchange)</div>
+                <div class="og-label">Old Jewellery (Exchange)</div>
                 <table class="item-table">
                     <tbody>${oldGoldRows}</tbody>
                 </table>
                 ` : ''}
-                <hr>
-                <table>
+                <table style="margin-top:16px;">
                     <tr class="row-line"><td>Down Payment</td><td>${downPaymentStr}</td></tr>
                     <tr class="total-row"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>
                 </table>
@@ -8486,6 +8497,7 @@
                 </table>
                 <div class="tc-title">T&amp;C</div>
                 <div class="tc-body">${installmentTandC ? invEscH(installmentTandC).replace(/\n/g, '<br>') : ''}</div>
+                </div>
             </body></html>`;
 
             const pf = document.getElementById('inv-print-frame');
