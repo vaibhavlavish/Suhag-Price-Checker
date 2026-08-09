@@ -3531,6 +3531,11 @@
         // {amount}/{remaining} are substituted per-customer at send time.
         let installmentReminderTemplate = '';
         const DEFAULT_INSTALLMENT_REMINDER_TEMPLATE = 'Dear {name},\n\nthis is a installment payment reminder from suhag jewellers\npayment date = {date}\ninstallment amount = ₹ {amount}\nremaining amount = ₹ {remaining}';
+        // Separate from the Invoice screen's own invTandC — the printed
+        // installment schedule has different terms than a GST invoice
+        // (e.g. what happens on a missed installment), so this is
+        // deliberately its own field, edited via its own box, not shared.
+        let installmentTandC = '';
         // NEW: Global for Presets - Now synced from cloud, default empty
         let loosePresets = [];
         // Making Charge Profiles
@@ -3732,6 +3737,7 @@
             invStampPrintToggle = cloudData.invStampPrintToggle || {};
             invTandC = cloudData.invTandC || '';
             installmentReminderTemplate = cloudData.installmentReminderTemplate || '';
+            installmentTandC = cloudData.installmentTandC || '';
             // Bill number format (literal prefix + editable start number) — cloud-synced, offline fallback via localStorage
             if (cloudData.invBillPrefix !== undefined && cloudData.invBillPrefix !== null) {
                 invoiceSettings.invPrefix = cloudData.invBillPrefix;
@@ -3976,6 +3982,7 @@
                 invStampPrintToggle: config.invStampPrintToggle || {},
                 invTandC: config.invTandC || '',
                 installmentReminderTemplate: config.installmentReminderTemplate || '',
+                installmentTandC: config.installmentTandC || '',
                 invBillPrefix: config.invBillPrefix || null,
                 invBillStartNumber: config.invBillStartNumber || null,
                 productDataImportedAt: config.productDataImportedAt || 0,
@@ -4417,6 +4424,8 @@
         // unhide it first. Destructive/one-shot actions (backup, restore, refresh,
         // clear-*) are included too since "open" for them just means "run it".
         const MENU_ITEMS_REGISTRY = [
+            { key: 'invoice',        label: 'Invoice',            icon: '🧾', action: () => showSection('invoice-screen') },
+            { key: 'installments',   label: 'Installment Plans',  icon: '📆', action: () => showSection('installments-screen') },
             { key: 'update-rates',   label: 'Update Rates',       icon: '💰', action: () => showSection('update-rates') },
             { key: 'excel-upload',   label: 'Upload Excel',       icon: '📂', action: () => showSection('excel-upload') },
             { key: 'stock-view',     label: 'Stock View',         icon: '📦', action: () => showStockSection() },
@@ -4427,6 +4436,7 @@
             { key: 'ledger',         label: 'Cash Ledger',        icon: '💰', action: () => showSection('ledger') },
             { key: 'bulk-check',     label: 'Bulk Price Check',   icon: '📋', action: () => showSection('bulk-check') },
             { key: 'returns',        label: 'Item Returns',        icon: '↩️', action: () => showSection('returns') },
+            { key: 'reminders',      label: 'Reminders',          icon: '🔔', action: () => showSection('reminders') },
             { key: 'backup',         label: 'Download Backup',    icon: '💾', action: () => downloadBackup() },
             { key: 'restore',        label: 'Restore Backup',     icon: '📥', action: () => triggerRestore() },
             { key: 'auto-backup',    label: 'Auto Backup (Drive)', icon: '☁️', action: () => openAutoBackupSettings() },
@@ -7345,6 +7355,30 @@
                 .catch(() => { statusEl.textContent = 'Could not save — try again.'; });
         }
 
+        // Kept entirely separate from invTandC (the Invoice screen's own
+        // T&C) — the printed installment schedule needs its own terms
+        // (missed-installment policy, etc.), not whatever's set for GST
+        // invoices.
+        function openInstallmentTandCModal(){
+            document.getElementById('inst-tandc-textarea-installment').value = installmentTandC;
+            document.getElementById('inst-tandc-installment-status').textContent = '';
+            document.getElementById('installment-tandc-modal').style.display = 'flex';
+        }
+
+        function saveInstallmentTandC(){
+            if (!checkPin()) return;
+            const val = document.getElementById('inst-tandc-textarea-installment').value;
+            const statusEl = document.getElementById('inst-tandc-installment-status');
+            installmentTandC = val.trim();
+            statusEl.textContent = 'Saving…';
+            window.dbSafeUpdate({ 'jewelryData/config/installmentTandC': installmentTandC })
+                .then(() => {
+                    statusEl.textContent = 'Saved.';
+                    setTimeout(() => { document.getElementById('installment-tandc-modal').style.display = 'none'; }, 500);
+                })
+                .catch(() => { statusEl.textContent = 'Could not save — try again.'; });
+        }
+
         // Sends the customer's own plan-tracking link (installments-view.html
         // with this plan's id) via WhatsApp — separate from the payment
         // reminder above, since this one's purpose is just getting the
@@ -8079,37 +8113,73 @@
             }
         }
 
-        // A plain, standalone printable slip — items, total, and the payment
-        // schedule — for customers who won't engage with the WhatsApp link
-        // at all. Reuses the same hidden #inv-print-frame the invoice
-        // screen already uses for printing, but writes its own simple HTML
-        // directly rather than going through any of the invoice-specific
-        // save/afterprint plumbing — this never touches invoice records.
+        // A plain, standalone printable slip — modeled on the shop's own
+        // paper template — for customers who won't engage with the
+        // WhatsApp link at all. Reuses the same hidden #inv-print-frame the
+        // invoice screen already uses for printing, but writes its own
+        // simple HTML directly rather than going through any of the
+        // invoice-specific save/afterprint plumbing — this never touches
+        // invoice records. Paid/Remaining Balance columns in the schedule
+        // are left blank on purpose — they're meant to be filled in by
+        // hand as payments come in, exactly like the paper template.
         function printInstallmentSchedule(){
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan) return;
 
-            const itemRows = plan.items.map(it => `<tr><td style="padding:6px 8px; border-bottom:1px solid #ddd;">${it.itemName}</td><td style="padding:6px 8px; border-bottom:1px solid #ddd; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
-            const dateRows = (plan.dueDates || []).map((d, i) => `<tr><td style="padding:6px 8px; border-bottom:1px solid #ddd;">${i + 1}</td><td style="padding:6px 8px; border-bottom:1px solid #ddd;">${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td><td style="padding:6px 8px; border-bottom:1px solid #ddd; text-align:right;">₹${plan.installmentAmount.toFixed(2)}</td></tr>`).join('');
+            const downPaymentEntry = (plan.payments || []).find(p => p.note === 'Down payment');
+            const downPaymentStr = downPaymentEntry ? `₹${downPaymentEntry.amount.toFixed(2)}` : '';
+
+            const itemRows = plan.items.map(it => `<tr><td style="padding:8px 0; border-bottom:1px solid #ccc;">${it.printName || it.itemName}</td><td style="padding:8px 0; border-bottom:1px solid #ccc; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
+            const dateRows = (plan.dueDates || []).map((d, i) => `<tr>
+                <td style="padding:8px 4px; border-bottom:1px solid #ddd;">${i + 1}</td>
+                <td style="padding:8px 4px; border-bottom:1px solid #ddd;">${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                <td style="padding:8px 4px; border-bottom:1px solid #ddd;">₹${plan.installmentAmount.toFixed(2)}</td>
+                <td style="padding:8px 4px; border-bottom:1px solid #ddd;">&nbsp;</td>
+                <td style="padding:8px 4px; border-bottom:1px solid #ddd;">&nbsp;</td>
+            </tr>`).join('');
 
             const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
                 * { box-sizing:border-box; }
-                body { font-family:Arial,'Helvetica Neue',Helvetica,sans-serif; padding:28px; color:#1a1a1a; }
-                h2 { margin:0 0 2px; font-size:19px; }
-                .sub { color:#666; font-size:12px; margin-bottom:18px; }
-                table { width:100%; border-collapse:collapse; margin-top:10px; }
-                th { text-align:left; padding:6px 8px; font-size:11px; color:#888; text-transform:uppercase; letter-spacing:.04em; border-bottom:2px solid #333; }
-                th:last-child { text-align:right; }
-                .tot { display:flex; justify-content:space-between; font-weight:800; font-size:15px; margin-top:10px; padding-top:8px; border-top:2px solid #333; }
-                .foot { margin-top:26px; font-size:10.5px; color:#999; }
-                @media print { @page { margin:14mm; } }
+                body { font-family:Arial,'Helvetica Neue',Helvetica,sans-serif; padding:30px; color:#1a1a1a; }
+                h1 { font-size:20px; margin:0 0 20px; }
+                .field { font-size:14px; margin-bottom:6px; }
+                .field b { display:inline-block; min-width:70px; }
+                hr { border:none; border-top:1.5px solid #333; margin:16px 0; }
+                table { width:100%; border-collapse:collapse; }
+                th { text-align:left; font-size:12px; color:#555; padding-bottom:6px; border-bottom:1.5px solid #333; }
+                .item-table th:last-child, .item-table td:last-child { text-align:right; }
+                .row-line td { padding:8px 0; border-bottom:1px solid #ccc; font-size:14px; }
+                .row-line td:last-child { text-align:right; }
+                .total-row td { font-weight:800; font-size:15px; padding:10px 0; border-bottom:1.5px solid #333; }
+                .total-row td:last-child { text-align:right; }
+                .sched-title { text-align:center; font-weight:700; font-size:14px; margin:20px 0 10px; }
+                .sched th { padding:6px 4px; }
+                .sched td { padding:8px 4px; font-size:13px; border-bottom:1px solid #ddd; }
+                .tc-title { font-weight:700; font-size:14px; margin-top:26px; margin-bottom:8px; }
+                .tc-body { font-size:11px; color:#444; line-height:1.7; white-space:pre-wrap; min-height:40px; }
+                @media print { @page { margin:16mm; } }
             </style></head><body>
-                <h2>Suhag Jewellers — Installment Plan</h2>
-                <div class="sub">${plan.customerName}${plan.customerMobile ? ' · ' + plan.customerMobile : ''}${plan.customerAddress ? ' · ' + plan.customerAddress : ''}</div>
-                <table><thead><tr><th>Item</th><th>Price</th></tr></thead><tbody>${itemRows}</tbody></table>
-                <div class="tot"><span>Total Payable</span><span>₹${plan.totalAmount.toFixed(2)}</span></div>
-                <table style="margin-top:20px;"><thead><tr><th>#</th><th>Date</th><th>Amount</th></tr></thead><tbody>${dateRows}</tbody></table>
-                <div class="foot">Generated ${new Date().toLocaleDateString('en-IN')} — for reference only; the actual balance owed may differ if payments have already been made.</div>
+                <h1>Suhag Jewellers — Installment Plan</h1>
+                <div class="field"><b>Name:</b> ${plan.customerName || ''}</div>
+                <div class="field"><b>Mobile:</b> ${plan.customerMobile || ''}</div>
+                <div class="field"><b>Address:</b> ${plan.customerAddress || ''}</div>
+                <hr>
+                <table class="item-table">
+                    <thead><tr><th>Item</th><th>Price</th></tr></thead>
+                    <tbody>${itemRows}</tbody>
+                </table>
+                <hr>
+                <table>
+                    <tr class="row-line"><td>Down Payment (Paid if any)</td><td>${downPaymentStr}</td></tr>
+                    <tr class="total-row"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>
+                </table>
+                <div class="sched-title">Payment Schedule</div>
+                <table class="sched">
+                    <thead><tr><th>#</th><th>Date</th><th>Amount</th><th>Paid</th><th>Remaining Balance</th></tr></thead>
+                    <tbody>${dateRows}</tbody>
+                </table>
+                <div class="tc-title">T&amp;C</div>
+                <div class="tc-body">${installmentTandC ? invEscH(installmentTandC).replace(/\n/g, '<br>') : ''}</div>
             </body></html>`;
 
             const pf = document.getElementById('inv-print-frame');
@@ -14253,7 +14323,8 @@ const badge = '';
         <!-- ══ PANE: REMINDERS ══ -->
         <div id="inst-pane-reminders" style="display:none;">
             <p class="note" style="margin-bottom:12px;">Every active plan's next payment date, soonest first. Tap Send to open a pre-filled WhatsApp reminder.</p>
-            <button onclick="openInstallmentReminderTemplateModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:14px;">✏️ Edit Reminder Message</button>
+            <button onclick="openInstallmentReminderTemplateModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:8px;">✏️ Edit Reminder Message</button>
+            <button onclick="openInstallmentTandCModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:14px;">📋 Edit Installment T&amp;C</button>
             <div id="inst-reminders-body"></div>
         </div>
 
@@ -14289,6 +14360,19 @@ const badge = '';
             <textarea id="inst-reminder-template-textarea" rows="8" style="width:100%; box-sizing:border-box; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:13px; line-height:1.5; resize:vertical; font-family:inherit; margin:0 0 12px 0;"></textarea>
             <button onclick="saveInstallmentReminderTemplate()" style="width:100%; background:var(--gold); border:none; border-radius:11px; padding:13px; font-size:14px; font-weight:700; color:white; cursor:pointer; box-shadow:none; margin:0;">Save</button>
             <p class="note" id="inst-reminder-template-status" style="text-align:center; margin-top:8px;"></p>
+        </div>
+    </div>
+
+    <div id="installment-tandc-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:530; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);">Installment T&amp;C</span>
+                <button onclick="document.getElementById('installment-tandc-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <p class="note" style="margin-bottom:10px;">This prints at the bottom of the paper Payment Schedule slip only — separate from the Invoice screen's own T&C.</p>
+            <textarea id="inst-tandc-textarea-installment" rows="8" placeholder="e.g. A missed installment date does not cancel the plan. Contact the shop to reschedule." style="width:100%; box-sizing:border-box; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:13px; line-height:1.5; resize:vertical; font-family:inherit; margin:0 0 12px 0;"></textarea>
+            <button onclick="saveInstallmentTandC()" style="width:100%; background:var(--gold); border:none; border-radius:11px; padding:13px; font-size:14px; font-weight:700; color:white; cursor:pointer; box-shadow:none; margin:0;">Save</button>
+            <p class="note" id="inst-tandc-installment-status" style="text-align:center; margin-top:8px;"></p>
         </div>
     </div>
 
