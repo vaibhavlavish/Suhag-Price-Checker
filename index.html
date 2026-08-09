@@ -7243,6 +7243,15 @@
                 customerAddress: address || null,
                 createdAt: new Date().toISOString(),
                 items,
+                // Snapshot of whatever old jewellery was in the cart at the
+                // moment of creation — principal above already has its
+                // value subtracted out (via getCartNetPayable), but until
+                // now that discount was invisible: nothing recorded WHAT
+                // was exchanged or for how much, on the plan, the printed
+                // slip, or the customer's own page. This is purely
+                // informational — it does not change any of the totals
+                // above, which already account for it.
+                oldGoldItems: oldGoldItems.map(i => ({ ...i })),
                 principalAmount: principal,
                 interestRate,
                 totalAmount: total,
@@ -7647,6 +7656,10 @@
                 <div style="font-size:12.5px; color:var(--text2); margin-bottom:10px;">${plan.customerAddress ? plan.customerAddress.replace(/\n/g, '<br>') : 'No address on file'}</div>
                 ${isCancelled ? `<div style="background:#FFEBEE; color:#C62828; font-weight:700; text-align:center; padding:8px; border-radius:8px; margin-bottom:12px; font-size:13px;">✕ This plan was cancelled — items were made visible on the catalogue again (unless already sold separately).</div>` : ''}
                 <div id="inst-detail-items-container" style="background:var(--bg); border-radius:10px; padding:10px 12px; margin-bottom:4px;">${itemsHtml}</div>
+                ${(plan.oldGoldItems || []).length ? `
+                    <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin:10px 0 6px;">Old Jewellery (Exchange)</div>
+                    <div style="background:var(--bg); border-radius:10px; padding:10px 12px; margin-bottom:10px;">${(plan.oldGoldItems || []).map(og => `<div style="display:flex; justify-content:space-between; font-size:13px; padding:3px 0;"><span>${og.desc}</span><span style="color:#C62828;">-₹${og.value.toFixed(2)}</span></div>`).join('')}</div>
+                ` : ''}
                 <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Total Payable:</span><span>₹${plan.totalAmount.toFixed(2)}</span></div>
                 <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#2E7D32;"><span>Paid So Far:</span><span>₹${plan.amountPaid.toFixed(2)}</span></div>
                 <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-weight:800;"><span>Remaining:</span><span>₹${plan.remainingAmount.toFixed(2)}</span></div>
@@ -8407,6 +8420,7 @@
             const downPaymentStr = downPaymentEntry ? `₹${downPaymentEntry.amount.toFixed(2)}` : '';
 
             const itemRows = plan.items.map(it => `<tr><td style="padding:6px 0; border-bottom:1px solid #ccc;">${it.printName || it.itemName}</td><td style="padding:6px 0; border-bottom:1px solid #ccc; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
+            const oldGoldRows = (plan.oldGoldItems || []).map(og => `<tr><td style="padding:6px 0; border-bottom:1px solid #ccc;">${og.desc}</td><td style="padding:6px 0; border-bottom:1px solid #ccc; text-align:right; color:#C62828;">-₹${og.value.toFixed(2)}</td></tr>`).join('');
             const dateRows = (plan.dueDates || []).map((d, i) => `<tr>
                 <td style="padding:5px 4px; border-bottom:1px solid #ddd;">${i + 1}</td>
                 <td style="padding:5px 4px; border-bottom:1px solid #ddd;">${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
@@ -8453,9 +8467,16 @@
                     <thead><tr><th>Item</th><th>Price</th></tr></thead>
                     <tbody>${itemRows}</tbody>
                 </table>
+                ${oldGoldRows ? `
+                <hr>
+                <div style="font-size:12px; color:#555; font-weight:700; margin-bottom:4px;">Old Jewellery (Exchange)</div>
+                <table class="item-table">
+                    <tbody>${oldGoldRows}</tbody>
+                </table>
+                ` : ''}
                 <hr>
                 <table>
-                    <tr class="row-line"><td>Down Payment (Paid if any)</td><td>${downPaymentStr}</td></tr>
+                    <tr class="row-line"><td>Down Payment</td><td>${downPaymentStr}</td></tr>
                     <tr class="total-row"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>
                 </table>
                 <div class="sched-title">Payment Schedule</div>
