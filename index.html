@@ -8486,10 +8486,18 @@
                     <tbody>${oldGoldRows}</tbody>
                 </table>
                 ` : ''}
-                <table style="margin-top:16px;">
-                    <tr class="row-line"><td>Down Payment</td><td>${downPaymentStr}</td></tr>
-                    <tr class="total-row"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>
-                </table>
+                ${(() => {
+                    const downPaymentAmount = downPaymentEntry ? downPaymentEntry.amount : 0;
+                    if (downPaymentAmount <= 0) {
+                        return `<table style="margin-top:16px;"><tr class="total-row"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr></table>`;
+                    }
+                    const balance = Math.round((plan.totalAmount - downPaymentAmount) * 100) / 100;
+                    return `<table style="margin-top:16px;">
+                        <tr class="row-line"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>
+                        <tr class="row-line"><td>Down Payment</td><td>-${downPaymentStr}</td></tr>
+                        <tr class="total-row"><td>Balance (Paid in Installments)</td><td>₹${balance.toFixed(2)}</td></tr>
+                    </table>`;
+                })()}
                 <div class="sched-title">Payment Schedule</div>
                 <table class="sched">
                     <thead><tr><th>#</th><th>Date</th><th>Amount</th><th>Paid</th><th>Remaining Balance</th></tr></thead>
