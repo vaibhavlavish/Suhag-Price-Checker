@@ -7808,7 +7808,7 @@
         // printed ID page and would slow both the upload and the eventual
         // print (especially over the remote print-queue path, where a
         // different device has to fetch it fresh over the network).
-        function _compressImageFile(file, maxWidth, quality){
+        function _compressImageFile(file, maxWidth, quality, enhanceForPrint){
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onerror = reject;
@@ -7821,6 +7821,18 @@
                         canvas.width = Math.round(img.width * scale);
                         canvas.height = Math.round(img.height * scale);
                         const ctx = canvas.getContext('2d');
+                        // A black-and-white printer at Standard (non-photo)
+                        // quality renders any photo via halftone dithering
+                        // — smooth mid-tones become a grainy dot pattern,
+                        // which is exactly what makes small ID-card text
+                        // look blurry/illegible. That dithering itself is a
+                        // printer limitation no compression setting can
+                        // remove, but a higher-contrast, grayscale source
+                        // gives it much more clearly separated light/dark
+                        // areas to work with, which prints noticeably
+                        // sharper even though the underlying dot pattern is
+                        // still there.
+                        if (enhanceForPrint) ctx.filter = 'grayscale(100%) contrast(145%) brightness(108%)';
                         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                         canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('toBlob failed')), 'image/jpeg', quality);
                     };
@@ -7874,7 +7886,7 @@
             // trades a somewhat larger file for legibility, but is
             // unrelated to and doesn't affect the printer's own DPI/quality
             // setting, which is what actually controls print speed.
-            const compressed = await _compressImageFile(file, 1900, 0.92);
+            const compressed = await _compressImageFile(file, 1900, 0.92, true);
             const path = `installmentIdProofs/${planId}/photo${slot}_${Date.now()}.jpg`;
             const sref = window.storageRef(window.firebaseStorage, path);
             await window.uploadBytes(sref, compressed);
