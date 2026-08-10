@@ -7423,7 +7423,7 @@
                     if (!file) continue;
                     try {
                         const entry = await _uploadIdPhotoCore(planId, slot, file, null);
-                        plan['idProofPhoto' + slot] = entry;
+                        plan[_idPhotoField(slot)] = entry;
                     } catch (e) {
                         console.error('[ID Photo] upload during plan creation failed', e);
                     }
@@ -7822,6 +7822,20 @@
         // turns into an object on read-back, which would make .map/.slice
         // calls elsewhere unreliable. Each slot is either absent or
         // { storagePath, url }.
+        //
+        // The UI's photo loop is 0-indexed ([0,1]) but the actual database
+        // fields are 1-indexed (idProofPhoto1/idProofPhoto2, matching what
+        // the print function and "Photo 1"/"Photo 2" labels use) — this is
+        // the one place that conversion happens, so upload/remove/display
+        // can never drift out of sync with each other again the way they
+        // did before (upload was writing idProofPhoto0/idProofPhoto1,
+        // print was reading idProofPhoto1/idProofPhoto2 — a real bug,
+        // fixed here). _getIdPhotoEntry also checks the old broken field
+        // name as a fallback, so a photo uploaded during that bug isn't
+        // silently lost.
+        function _idPhotoField(slot){ return 'idProofPhoto' + (slot + 1); }
+        function _getIdPhotoEntry(plan, slot){ return plan[_idPhotoField(slot)] || plan['idProofPhoto' + slot] || null; }
+
         // Shared core: compress, upload to Storage, and clean up whatever
         // it's replacing. Used both by the existing plan-detail upload
         // (below) and by the New Plan flow's post-creation photo upload —
@@ -7835,7 +7849,7 @@
             const url = await window.getDownloadURL(sref);
             const entry = { storagePath: path, url };
 
-            await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + planId), { ['idProofPhoto' + slot]: entry });
+            await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + planId), { [_idPhotoField(slot)]: entry });
 
             if (oldEntry && oldEntry.storagePath) {
                 try { await window.deleteObject(window.storageRef(window.firebaseStorage, oldEntry.storagePath)); }
@@ -7851,8 +7865,8 @@
             const statusEl = document.getElementById('inst-id-photo-status');
             if (statusEl) statusEl.textContent = 'Uploading…';
             try {
-                const entry = await _uploadIdPhotoCore(plan.id, slot, file, plan['idProofPhoto' + slot]);
-                plan['idProofPhoto' + slot] = entry;
+                const entry = await _uploadIdPhotoCore(plan.id, slot, file, _getIdPhotoEntry(plan, slot));
+                plan[_idPhotoField(slot)] = entry;
                 if (statusEl) statusEl.textContent = '';
                 renderInstallmentDetailBody(plan);
             } catch (e) {
@@ -7864,15 +7878,17 @@
         async function removeInstallmentIdPhoto(slot){
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan) return;
-            const field = 'idProofPhoto' + slot;
-            const entry = plan[field];
+            const field = _idPhotoField(slot);
+            const oldField = 'idProofPhoto' + slot;
+            const entry = _getIdPhotoEntry(plan, slot);
             if (!entry) return;
             if (!checkPin()) return;
             if (!confirm('Remove this ID photo?')) return;
 
             try {
-                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), { [field]: null });
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), { [field]: null, [oldField]: null });
                 plan[field] = null;
+                plan[oldField] = null;
                 if (entry.storagePath) {
                     try { await window.deleteObject(window.storageRef(window.firebaseStorage, entry.storagePath)); }
                     catch (e) { console.warn('[ID Photo] cleanup failed', e); }
@@ -7961,7 +7977,7 @@
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">ID Proof Photos</div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px;">
                     ${[0, 1].map(slot => {
-                        const entry = plan['idProofPhoto' + slot];
+                        const entry = _getIdPhotoEntry(plan, slot);
                         return `
                         <div style="position:relative;">
                             ${entry ? `<img src="${entry.url}" style="width:100%; aspect-ratio:8/5; object-fit:contain; background:#f4f4f4; border-radius:10px; border:1.5px solid var(--border); display:block;">` : `<div onclick="document.getElementById('inst-id-photo-input-${slot}').click()" style="width:100%; aspect-ratio:8/5; border-radius:10px; border:1.5px dashed var(--border); display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:11px; cursor:pointer; text-align:center; padding:6px;">📷<br>Photo ${slot + 1}</div>`}
