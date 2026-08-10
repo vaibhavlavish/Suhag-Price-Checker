@@ -7842,7 +7842,13 @@
         // written once so the compression/path/cleanup logic can't drift
         // between the two call sites.
         async function _uploadIdPhotoCore(planId, slot, file, oldEntry){
-            const compressed = await _compressImageFile(file, 1400, 0.82);
+            // Higher than a typical web-compressed photo — ID card text
+            // (names, numbers) is fine detail that JPEG compression smudges
+            // first, well before it visibly affects a normal photo. This
+            // trades a somewhat larger file for legibility, but is
+            // unrelated to and doesn't affect the printer's own DPI/quality
+            // setting, which is what actually controls print speed.
+            const compressed = await _compressImageFile(file, 1900, 0.92);
             const path = `installmentIdProofs/${planId}/photo${slot}_${Date.now()}.jpg`;
             const sref = window.storageRef(window.firebaseStorage, path);
             await window.uploadBytes(sref, compressed);
