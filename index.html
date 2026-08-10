@@ -1656,9 +1656,6 @@
             <button onclick="showSection('invoice-screen')" data-menu-key="invoice">
                 <span class="menu-icon" style="background:#FFF8E1;">🧾</span> Invoice
             </button>
-            <button onclick="showSection('installments-screen')" data-menu-key="installments">
-                <span class="menu-icon" style="background:#FCE4EC;">📆</span> Installment Plans
-            </button>
             <button onclick="showSection('update-rates')" data-menu-key="update-rates">
                 <span class="menu-icon" style="background:#e3f2fd;">💰</span> Update Rates
             </button>
@@ -1692,6 +1689,9 @@
             <button onclick="showSection('reminders')" data-menu-key="reminders">
                 <span class="menu-icon" style="background:#f3e5f5;">🔔</span> Reminders
                 <span id="reminder-menu-badge">0</span>
+            </button>
+            <button onclick="showSection('installments-screen')" data-menu-key="installments">
+                <span class="menu-icon" style="background:#FCE4EC;">📆</span> Installment Plans
             </button>
             <button onclick="openPrintServerModal()" data-menu-key="print-server">
                 <span class="menu-icon" style="background:#E0F2F1;">🖨️</span> Print Server
@@ -4558,6 +4558,7 @@
             { key: 'backup',         label: 'Download Backup',    icon: '💾', action: () => downloadBackup() },
             { key: 'restore',        label: 'Restore Backup',     icon: '📥', action: () => triggerRestore() },
             { key: 'auto-backup',    label: 'Auto Backup (Drive)', icon: '☁️', action: () => openAutoBackupSettings() },
+            { key: 'sign-out',       label: 'Sign Out',           icon: '🔓', action: () => window.authSignOut(window.firebaseAuth) },
             { key: 'refresh',        label: 'Refresh App',        icon: '🔄', action: () => location.reload() },
             { key: 'clear-screen',   label: 'Clear Screen',       icon: '🧹', action: () => clearAll() },
             { key: 'clear-cart',     label: 'Clear Cart',         icon: '🛒', action: () => clearCart() },
@@ -7615,6 +7616,20 @@
         // plans get baked in going forward — see the comment on
         // installmentWebTandC above for why it can't be fetched live by
         // that page.
+        // Combines the 3 shop-wide installment settings (reminder message,
+        // printed-slip T&C, customer-website T&C) into one entry point
+        // instead of 3 separate buttons stacked on the Reminders tab.
+        function openInstallmentSettingsModal(){
+            document.getElementById('installment-settings-modal').style.display = 'flex';
+        }
+
+        function _installmentSettingsChosen(which){
+            document.getElementById('installment-settings-modal').style.display = 'none';
+            if (which === 'reminder') openInstallmentReminderTemplateModal();
+            else if (which === 'tandc') openInstallmentTandCModal();
+            else if (which === 'webtandc') openInstallmentWebTandCModal();
+        }
+
         function openInstallmentWebTandCModal(){
             document.getElementById('inst-tandc-textarea-web').value = installmentWebTandC;
             document.getElementById('inst-tandc-web-status').textContent = '';
@@ -7721,6 +7736,34 @@
             }
         }
 
+        // Starts collapsed on every render (renderInstallmentDetailBody
+        // rebuilds this section's innerHTML from scratch each time, so
+        // there's no state to preserve across renders — a fresh open of
+        // any plan always starts collapsed, matching the cleaner default).
+        function toggleInstallmentDatesList(){
+            const el = document.getElementById('inst-detail-dates-list');
+            const arrow = document.getElementById('inst-detail-dates-arrow');
+            if (!el) return;
+            const isHidden = el.style.display === 'none';
+            el.style.display = isHidden ? 'block' : 'none';
+            if (arrow) arrow.textContent = isHidden ? '▾' : '▸';
+        }
+
+        // Copy Customer Link and Regenerate Link merged into one "Link"
+        // button — opens this small chooser instead of two separate
+        // buttons taking up their own row each.
+        function openInstallmentLinkModal(){
+            document.getElementById('link-action-modal').style.display = 'flex';
+        }
+
+        function _linkActionChosen(action){
+            document.getElementById('link-action-modal').style.display = 'none';
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            if (action === 'copy') copyInstallmentLink(plan.id);
+            else if (action === 'regenerate') regenerateInstallmentLink();
+        }
+
         function openInstallmentDetail(planId){
             currentInstallmentDetailId = planId;
             const plan = installmentPlans.find(p => p.id === planId);
@@ -7774,12 +7817,10 @@
                 <div style="display:flex; justify-content:space-between; margin-bottom:12px; font-weight:800;"><span>Remaining:</span><span>₹${plan.remainingAmount.toFixed(2)}</span></div>
 
                 ${isActive && plan.dueDates && plan.dueDates.length ? `
-                    <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Payment Dates</div>
-                    <div style="margin-bottom:10px;">${plan.dueDates.map((d, i) => `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span><span>₹${getInstallmentAmountForIndex(plan, i).toFixed(2)}</span></div>`).join('')}</div>
-                    <div style="display:flex; gap:8px; margin-bottom:14px;">
-                        <button onclick="sendInstallmentWhatsAppReminder()" style="flex:1; background:#25D366; color:#fff; font-weight:700; padding:10px 6px; border-radius:var(--radius); border:none; font-size:12.5px;">💬 Send Reminder</button>
-                        <button onclick="sendInstallmentLinkWhatsApp()" style="flex:1; background:#128C7E; color:#fff; font-weight:700; padding:10px 6px; border-radius:var(--radius); border:none; font-size:12.5px;">🔗 Send Link</button>
+                    <div onclick="toggleInstallmentDatesList()" style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; user-select:none; -webkit-user-select:none; font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">
+                        <span>Payment Dates</span><span id="inst-detail-dates-arrow">▸</span>
                     </div>
+                    <div id="inst-detail-dates-list" style="display:none; margin-bottom:14px;">${plan.dueDates.map((d, i) => `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span><span>₹${getInstallmentAmountForIndex(plan, i).toFixed(2)}</span></div>`).join('')}</div>
                 ` : ''}
 
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Payment History</div>
@@ -7807,25 +7848,18 @@
                     <p class="note" id="inst-pay-status" style="margin-top:6px; text-align:center;"></p>
                 ` : (plan.status === 'completed' ? `<p class="note" style="text-align:center; font-weight:700; color:#2E7D32;">✅ This plan is fully paid off.</p>` : '')}
 
-                <button onclick="copyInstallmentLink('${plan.id}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:14px;">🔗 Copy Customer Link</button>
-                <button onclick="regenerateInstallmentLink()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🔄 Regenerate Link</button>
-                <p class="note" id="inst-link-status" style="margin-top:6px; text-align:center;"></p>
-                ${isActive ? `
-                    <button onclick="chooseInstallmentPrintDestination()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🖨️ Print Payment Schedule</button>
-                ` : ''}
-                ${plan.status !== 'completed' && !isCancelled ? `
-                    <button onclick="openInstallmentRateModal()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">📈 Change Rate (Today's / Custom)</button>
-                    <p class="note" id="inst-rate-status" style="margin-top:6px; text-align:center;"></p>
-                ` : ''}
-                ${plan.status === 'completed' ? `<button onclick="saveInstallmentToInvoice()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🧾 Save to Invoice</button>` : ''}
-                ${isActive ? `
-                    <button onclick="cancelInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">✕ Cancel Plan</button>
-                    <p class="note" id="inst-cancel-status" style="margin-top:6px; text-align:center;"></p>
-                ` : ''}
-                ${(isCancelled || plan.status === 'completed') ? `
-                    <button onclick="deleteInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🗑️ Delete This Plan</button>
-                    <p class="note" id="inst-delete-status" style="margin-top:6px; text-align:center;"></p>
-                ` : ''}
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px;">
+                    <button onclick="openInstallmentLinkModal()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🔗 Link</button>
+                    ${isActive ? `<button onclick="chooseInstallmentPrintDestination()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🖨️ Print Payment Schedule</button>` : ''}
+                    ${plan.status !== 'completed' && !isCancelled ? `<button onclick="openInstallmentRateModal()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">📈 Change Rate (Today's / Custom)</button>` : ''}
+                    ${plan.status === 'completed' ? `<button onclick="saveInstallmentToInvoice()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🧾 Save to Invoice</button>` : ''}
+                    ${isActive ? `<button onclick="cancelInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">✕ Cancel Plan</button>` : ''}
+                    ${(isCancelled || plan.status === 'completed') ? `<button onclick="deleteInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🗑️ Delete This Plan</button>` : ''}
+                </div>
+                <p class="note" id="inst-link-status" style="margin-top:8px; text-align:center;"></p>
+                <p class="note" id="inst-rate-status" style="margin-top:2px; text-align:center;"></p>
+                <p class="note" id="inst-cancel-status" style="margin-top:2px; text-align:center;"></p>
+                <p class="note" id="inst-delete-status" style="margin-top:2px; text-align:center;"></p>
             `;
 
             // Re-wired every call, not idempotent-guarded — this whole body
@@ -8563,18 +8597,18 @@
                 .field { font-size:13px; margin-bottom:5px; }
                 .field b { display:inline-block; min-width:70px; }
                 table { width:100%; border-collapse:collapse; }
-                th { text-align:left; font-size:12px; color:#555; padding-bottom:5px; border-bottom:1.5px solid #333; }
+                th { text-align:left; font-size:12px; color:#1a1a1a; padding-bottom:5px; border-bottom:1.5px solid #333; }
                 .item-table td { font-size:13px; color:#1a1a1a; }
                 .item-table th:last-child, .item-table td:last-child { text-align:right; }
-                .row-line td { padding:5px 0; font-size:13px; }
+                .row-line td { padding:5px 0; font-size:13px; color:#1a1a1a; }
                 .row-line td:last-child { text-align:right; }
-                .total-row td { font-weight:800; font-size:13px; padding:8px 0; border-top:1.5px solid #333; }
+                .total-row td { font-weight:800; font-size:13px; padding:8px 0; border-top:1.5px solid #333; color:#1a1a1a; }
                 .total-row td:last-child { text-align:right; }
-                .sched-title { text-align:center; font-weight:700; font-size:13px; margin:18px 0 6px; }
+                .sched-title { text-align:center; font-weight:700; font-size:13px; margin:18px 0 6px; color:#1a1a1a; }
                 .sched th { padding:5px 4px; }
-                .sched td { padding:5px 4px; font-size:12.5px; }
-                .tc-title { font-weight:700; font-size:14px; margin-top:16px; margin-bottom:6px; }
-                .tc-body { font-size:11px; color:#444; line-height:1.6; white-space:pre-wrap; min-height:30px; }
+                .sched td { padding:5px 4px; font-size:12.5px; color:#1a1a1a; }
+                .tc-title { font-weight:700; font-size:14px; margin-top:16px; margin-bottom:6px; color:#1a1a1a; }
+                .tc-body { font-size:11px; color:#1a1a1a; line-height:1.6; white-space:pre-wrap; min-height:30px; }
                 /* Print page-break control — a plan with many installments
                    can genuinely need more than one sheet, but it should
                    never split mid-row or lose its column headers on the
@@ -14946,6 +14980,25 @@ const badge = '';
         </div>
     </div>
 
+    <div id="installment-settings-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:360px; width:100%; padding:18px;">
+            <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:14px; text-align:center;">Installment Settings</div>
+            <button onclick="_installmentSettingsChosen('reminder')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:13px; border-radius:12px; font-size:14px; margin-bottom:10px;">✏️ Edit Reminder Message</button>
+            <button onclick="_installmentSettingsChosen('tandc')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:13px; border-radius:12px; font-size:14px; margin-bottom:10px;">📋 Edit Installment T&amp;C</button>
+            <button onclick="_installmentSettingsChosen('webtandc')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:13px; border-radius:12px; font-size:14px;">🌐 Edit Customer Website T&amp;C</button>
+            <button onclick="document.getElementById('installment-settings-modal').style.display='none';" style="width:100%; background:none; border:none; color:var(--text2); font-size:12.5px; margin-top:10px; padding:6px; cursor:pointer; box-shadow:none;">Cancel</button>
+        </div>
+    </div>
+
+    <div id="link-action-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:340px; width:100%; padding:18px;">
+            <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:14px; text-align:center;">Customer Link</div>
+            <button onclick="_linkActionChosen('copy')" style="width:100%; background:var(--gold); color:#fff; font-weight:800; padding:13px; border-radius:12px; border:none; font-size:14px; margin-bottom:10px;">🔗 Copy Link</button>
+            <button onclick="_linkActionChosen('regenerate')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:13px; border-radius:12px; font-size:14px;">🔄 Regenerate Link</button>
+            <button onclick="document.getElementById('link-action-modal').style.display='none';" style="width:100%; background:none; border:none; color:var(--text2); font-size:12.5px; margin-top:10px; padding:6px; cursor:pointer; box-shadow:none;">Cancel</button>
+        </div>
+    </div>
+
     <div id="print-destination-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9500; align-items:center; justify-content:center;">
         <div style="background:white; border-radius:18px; margin:16px; max-width:340px; width:100%; padding:18px;">
             <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:14px; text-align:center;">Print</div>
@@ -15202,9 +15255,7 @@ const badge = '';
         <!-- ══ PANE: REMINDERS ══ -->
         <div id="inst-pane-reminders" style="display:none;">
             <p class="note" style="margin-bottom:12px;">Every active plan's next payment date, soonest first. Tap Send to open a pre-filled WhatsApp reminder.</p>
-            <button onclick="openInstallmentReminderTemplateModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:8px;">✏️ Edit Reminder Message</button>
-            <button onclick="openInstallmentTandCModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:8px;">📋 Edit Installment T&amp;C</button>
-            <button onclick="openInstallmentWebTandCModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:14px;">🌐 Edit Customer Website T&amp;C</button>
+            <button onclick="openInstallmentSettingsModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:14px;">⚙️ Settings</button>
             <div id="inst-reminders-body"></div>
         </div>
 
