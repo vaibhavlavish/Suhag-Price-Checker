@@ -8825,7 +8825,7 @@
             })();
 
             const idPhotoCell = (entry, label) => entry
-                ? `<img src="${entry.url}" style="width:100%; height:100%; object-fit:contain; background:#f4f4f4; display:block;">`
+                ? `<img src="${entry.url}" style="width:100%; height:100%; object-fit:cover; display:block;">`
                 : `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#999; font-size:10px;">${label}</div>`;
 
             // Reuses the exact same "Embed letterhead background" setting
@@ -8872,7 +8872,7 @@
                 .sched td { padding:3px 2px; font-size:10px; color:#1a1a1a; }
                 .tc-title { font-weight:700; font-size:11px; margin-top:10px; margin-bottom:4px; color:#1a1a1a; }
                 .tc-body { font-size:9px; color:#1a1a1a; line-height:1.5; white-space:pre-wrap; min-height:20px; }
-                .id-photo-box { border:1.5px solid #333; border-radius:5px; overflow:hidden; aspect-ratio:8/5; }
+                .id-photo-box { width:65mm; height:41mm; border:1.5px solid #333; border-radius:5px; overflow:hidden; }
                 .page-footer { margin-top:10mm; padding:0 6mm 6mm; display:flex; justify-content:space-between; align-items:flex-end; page-break-inside:avoid; break-inside:avoid; }
                 .sig-line { font-size:10px; color:#1a1a1a; }
                 .sig-line div { border-top:1px solid #1a1a1a; width:120px; padding-top:3px; }
