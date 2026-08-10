@@ -3634,6 +3634,11 @@
         // the only change needed once the real URL is known.
         const INSTALLMENT_CUSTOMER_SITE_URL = 'https://vaibhavlavish.github.io/Customer_Book/';
         let installmentPlans = []; // cached list, (re)loaded each time the All Plans tab opens
+        // Files picked in the New Plan form before the plan exists — held
+        // in memory only, previewed via object URL, and actually uploaded
+        // to Storage only after createInstallmentPlan succeeds and a real
+        // plan id exists to attach them to.
+        let _newPlanIdPhotoFiles = [null, null];
         let currentInstallmentDetailId = null;
         // Shop-wide, cloud-synced reminder message wording — editable via
         // the Reminders tab's "Edit Reminder Message" button. Empty/unset
@@ -6832,6 +6837,17 @@
             return cartTotal - oldGoldTotal - cartAdjustment;
         }
 
+        function stageNewPlanIdPhoto(slot, file){
+            if (!file) return;
+            _newPlanIdPhotoFiles[slot] = file;
+            const preview = document.getElementById('inst-new-id-photo-preview-' + slot);
+            if (preview) {
+                const url = URL.createObjectURL(file);
+                preview.style.backgroundImage = `url('${url}')`;
+                preview.textContent = '';
+            }
+        }
+
         function renderNewInstallmentPane(){
             const itemsEl = document.getElementById('inst-cart-items');
             const emptyNote = document.getElementById('inst-cart-empty-note');
@@ -7396,6 +7412,23 @@
                 if (Object.keys(catalogueUpdates).length) {
                     await window.dbUpdate(window.dbRef(window.firebaseDB, '/'), catalogueUpdates);
                 }
+
+                // Upload any ID photos staged in the form now that the plan
+                // actually has an id to attach them to — best-effort, since
+                // a photo upload failing shouldn't undo an otherwise
+                // successful plan creation. Any photo that fails here can
+                // still be added afterward from the plan detail view.
+                for (let slot = 0; slot < 2; slot++) {
+                    const file = _newPlanIdPhotoFiles[slot];
+                    if (!file) continue;
+                    try {
+                        const entry = await _uploadIdPhotoCore(planId, slot, file, null);
+                        plan['idProofPhoto' + slot] = entry;
+                    } catch (e) {
+                        console.error('[ID Photo] upload during plan creation failed', e);
+                    }
+                }
+
                 const link = INSTALLMENT_CUSTOMER_SITE_URL + '?id=' + planId;
                 statusEl.innerHTML = `✅ Plan created! Share this link with the customer:<br><b style="word-break:break-all;">${link}</b>`;
                 // Clear the cart the same way a normal sale would — this
@@ -7416,6 +7449,11 @@
                 document.getElementById('inst-custom-amounts-list').innerHTML = '';
                 onInstallmentAmountModeChange();
                 document.getElementById('inst-downpayment').value = '0';
+                _newPlanIdPhotoFiles = [null, null];
+                [0, 1].forEach(slot => {
+                    const preview = document.getElementById('inst-new-id-photo-preview-' + slot);
+                    if (preview) { preview.style.backgroundImage = ''; preview.innerHTML = '📷<br>Photo ' + (slot + 1); }
+                });
                 renderNewInstallmentPane();
             } catch (e) {
                 console.error(e);
@@ -7784,6 +7822,28 @@
         // turns into an object on read-back, which would make .map/.slice
         // calls elsewhere unreliable. Each slot is either absent or
         // { storagePath, url }.
+        // Shared core: compress, upload to Storage, and clean up whatever
+        // it's replacing. Used both by the existing plan-detail upload
+        // (below) and by the New Plan flow's post-creation photo upload —
+        // written once so the compression/path/cleanup logic can't drift
+        // between the two call sites.
+        async function _uploadIdPhotoCore(planId, slot, file, oldEntry){
+            const compressed = await _compressImageFile(file, 1400, 0.82);
+            const path = `installmentIdProofs/${planId}/photo${slot}_${Date.now()}.jpg`;
+            const sref = window.storageRef(window.firebaseStorage, path);
+            await window.uploadBytes(sref, compressed);
+            const url = await window.getDownloadURL(sref);
+            const entry = { storagePath: path, url };
+
+            await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + planId), { ['idProofPhoto' + slot]: entry });
+
+            if (oldEntry && oldEntry.storagePath) {
+                try { await window.deleteObject(window.storageRef(window.firebaseStorage, oldEntry.storagePath)); }
+                catch (e) { console.warn('[ID Photo] old file cleanup failed', e); }
+            }
+            return entry;
+        }
+
         async function uploadInstallmentIdPhoto(slot, file){
             if (!file) return;
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
@@ -7791,25 +7851,8 @@
             const statusEl = document.getElementById('inst-id-photo-status');
             if (statusEl) statusEl.textContent = 'Uploading…';
             try {
-                const compressed = await _compressImageFile(file, 1100, 0.82);
-                const field = 'idProofPhoto' + slot;
-                const oldEntry = plan[field];
-                const path = `installmentIdProofs/${plan.id}/photo${slot}_${Date.now()}.jpg`;
-                const sref = window.storageRef(window.firebaseStorage, path);
-                await window.uploadBytes(sref, compressed);
-                const url = await window.getDownloadURL(sref);
-                const entry = { storagePath: path, url };
-
-                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), { [field]: entry });
-                plan[field] = entry;
-
-                // Clean up the file it's replacing, if any — best-effort,
-                // same as every other photo-delete path in this app.
-                if (oldEntry && oldEntry.storagePath) {
-                    try { await window.deleteObject(window.storageRef(window.firebaseStorage, oldEntry.storagePath)); }
-                    catch (e) { console.warn('[ID Photo] old file cleanup failed', e); }
-                }
-
+                const entry = await _uploadIdPhotoCore(plan.id, slot, file, plan['idProofPhoto' + slot]);
+                plan['idProofPhoto' + slot] = entry;
                 if (statusEl) statusEl.textContent = '';
                 renderInstallmentDetailBody(plan);
             } catch (e) {
@@ -7921,7 +7964,7 @@
                         const entry = plan['idProofPhoto' + slot];
                         return `
                         <div style="position:relative;">
-                            ${entry ? `<img src="${entry.url}" style="width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:10px; border:1.5px solid var(--border); display:block;">` : `<div onclick="document.getElementById('inst-id-photo-input-${slot}').click()" style="width:100%; aspect-ratio:4/3; border-radius:10px; border:1.5px dashed var(--border); display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:11px; cursor:pointer; text-align:center; padding:6px;">📷<br>Photo ${slot + 1}</div>`}
+                            ${entry ? `<img src="${entry.url}" style="width:100%; aspect-ratio:8/5; object-fit:contain; background:#f4f4f4; border-radius:10px; border:1.5px solid var(--border); display:block;">` : `<div onclick="document.getElementById('inst-id-photo-input-${slot}').click()" style="width:100%; aspect-ratio:8/5; border-radius:10px; border:1.5px dashed var(--border); display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:11px; cursor:pointer; text-align:center; padding:6px;">📷<br>Photo ${slot + 1}</div>`}
                             ${entry ? `
                                 <button onclick="document.getElementById('inst-id-photo-input-${slot}').click()" title="Retake" style="position:absolute; bottom:6px; right:34px; background:var(--gold); color:#fff; border:none; border-radius:8px; padding:5px 8px; font-size:11px; box-shadow:0 2px 6px rgba(0,0,0,.25); cursor:pointer; margin:0; width:auto;">📷</button>
                                 <button onclick="removeInstallmentIdPhoto(${slot})" title="Remove" style="position:absolute; bottom:6px; right:6px; background:#C62828; color:#fff; border:none; border-radius:8px; padding:5px 8px; font-size:11px; box-shadow:0 2px 6px rgba(0,0,0,.25); cursor:pointer; margin:0; width:auto;">✕</button>
@@ -8715,7 +8758,7 @@
             })();
 
             const idPhotoCell = (entry, label) => entry
-                ? `<img src="${entry.url}" style="width:100%; height:100%; object-fit:cover; display:block;">`
+                ? `<img src="${entry.url}" style="width:100%; height:100%; object-fit:contain; background:#f4f4f4; display:block;">`
                 : `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#999; font-size:10px;">${label}</div>`;
 
             // Reuses the exact same "Embed letterhead background" setting
@@ -8762,7 +8805,7 @@
                 .sched td { padding:3px 2px; font-size:10px; color:#1a1a1a; }
                 .tc-title { font-weight:700; font-size:11px; margin-top:10px; margin-bottom:4px; color:#1a1a1a; }
                 .tc-body { font-size:9px; color:#1a1a1a; line-height:1.5; white-space:pre-wrap; min-height:20px; }
-                .id-photo-box { border:1.5px solid #333; border-radius:5px; overflow:hidden; aspect-ratio:4/3; }
+                .id-photo-box { border:1.5px solid #333; border-radius:5px; overflow:hidden; aspect-ratio:8/5; }
                 .page-footer { margin-top:10mm; padding:0 6mm 6mm; display:flex; justify-content:space-between; align-items:flex-end; page-break-inside:avoid; break-inside:avoid; }
                 .sig-line { font-size:10px; color:#1a1a1a; }
                 .sig-line div { border-top:1px solid #1a1a1a; width:120px; padding-top:3px; }
@@ -15371,6 +15414,21 @@ const badge = '';
                     <input type="text" id="inst-cust-name" placeholder="Customer Name" style="margin:0;">
                     <input type="tel" id="inst-cust-mob" placeholder="Mobile Number" style="margin:0;">
                     <textarea id="inst-cust-addr" placeholder="Address (optional)" rows="2" style="margin:8px 0; padding:12px; border:1.5px solid var(--border); border-radius:var(--radius-sm); width:100%; font-size:15px; font-family:'Inter', sans-serif; box-sizing:border-box; resize:none;"></textarea>
+                </div>
+            </div>
+
+            <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">ID Proof Photos (optional)</div>
+                <p class="note" style="margin-bottom:10px;">📱 Turn the phone sideways (landscape) when photographing ID cards — they'll show more clearly than held upright.</p>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px;">
+                    <div style="position:relative;">
+                        <div id="inst-new-id-photo-preview-0" onclick="document.getElementById('inst-new-id-photo-input-0').click()" style="width:100%; aspect-ratio:8/5; border-radius:10px; border:1.5px dashed var(--border); display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:11px; cursor:pointer; text-align:center; padding:6px; overflow:hidden; background-size:contain; background-position:center; background-repeat:no-repeat;">📷<br>Photo 1</div>
+                        <input type="file" accept="image/*" capture="environment" id="inst-new-id-photo-input-0" style="display:none;" onchange="stageNewPlanIdPhoto(0, this.files[0])">
+                    </div>
+                    <div style="position:relative;">
+                        <div id="inst-new-id-photo-preview-1" onclick="document.getElementById('inst-new-id-photo-input-1').click()" style="width:100%; aspect-ratio:8/5; border-radius:10px; border:1.5px dashed var(--border); display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:11px; cursor:pointer; text-align:center; padding:6px; overflow:hidden; background-size:contain; background-position:center; background-repeat:no-repeat;">📷<br>Photo 2</div>
+                        <input type="file" accept="image/*" capture="environment" id="inst-new-id-photo-input-1" style="display:none;" onchange="stageNewPlanIdPhoto(1, this.files[0])">
+                    </div>
                 </div>
             </div>
 
