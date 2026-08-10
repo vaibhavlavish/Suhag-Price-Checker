@@ -1693,6 +1693,9 @@
                 <span class="menu-icon" style="background:#f3e5f5;">🔔</span> Reminders
                 <span id="reminder-menu-badge">0</span>
             </button>
+            <button onclick="openPrintServerModal()" data-menu-key="print-server">
+                <span class="menu-icon" style="background:#E0F2F1;">🖨️</span> Print Server
+            </button>
 
             <div class="menu-divider"></div>
             <div class="menu-section-label">Data</div>
@@ -2460,6 +2463,117 @@
                 // failure mode (it just won't "remember" its slot).
                 return 'dev_' + Date.now() + '_' + Math.random().toString(16).slice(2);
             }
+        }
+
+        // ═══ PRINT SERVER ═══
+        // Lets one specific device (normally the shop PC with the printer
+        // wired to it) auto-print jobs sent from ANY device — phone,
+        // tablet, another PC — instead of everyone needing to be physically
+        // at the printer's computer to print an installment slip.
+        //
+        // How it works: "Print via Main PC" (see queueInstallmentPrintJob)
+        // writes a small job record to Firebase instead of printing
+        // locally. Whichever device has this toggle turned ON watches that
+        // queue and prints each job the moment it appears — this is purely
+        // device-local (localStorage), never synced, so turning it on here
+        // never turns it on anywhere else.
+        //
+        // One thing this can't do from inside the page: by default, a
+        // browser's print() still opens the native print dialog and needs
+        // someone to click "Print" in it. For genuinely zero-click
+        // printing, Chrome needs to be launched with the --kiosk-printing
+        // flag (added to the shortcut used to open this app), which sends
+        // straight to the default printer with no dialog at all. That's a
+        // one-time setup step outside this file, not something JS can do
+        // on its own — without it, this still auto-detects and auto-opens
+        // the print dialog, just needs one click to confirm.
+        const PRINT_SERVER_KEY = 'suhagPrintServerEnabled';
+        let _printQueueListenerStarted = false;
+        const _processingPrintJobIds = new Set();
+
+        function isPrintServerEnabled(){
+            try { return localStorage.getItem(PRINT_SERVER_KEY) === '1'; } catch (e) { return false; }
+        }
+
+        function setPrintServerEnabled(enabled){
+            try { localStorage.setItem(PRINT_SERVER_KEY, enabled ? '1' : '0'); } catch (e) {}
+            if (enabled) startPrintQueueListener();
+        }
+
+        // Safe to call unconditionally at startup — it checks the toggle
+        // itself and does nothing if this device isn't the print server.
+        function initPrintServerIfEnabled(){
+            if (isPrintServerEnabled()) startPrintQueueListener();
+        }
+
+        function startPrintQueueListener(){
+            if (_printQueueListenerStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB || !window.dbRef) {
+                setTimeout(startPrintQueueListener, 1000);
+                return;
+            }
+            _printQueueListenerStarted = true;
+            const queueRef = window.dbRef(window.firebaseDB, 'printQueue');
+            window.dbOnValue(queueRef, (snapshot) => {
+                const jobs = snapshot.val() || {};
+                Object.values(jobs).forEach(job => {
+                    if (job && job.status === 'pending') _processPrintJob(job);
+                });
+            }, (error) => {
+                console.error('[PrintServer] queue read failed', error);
+            });
+        }
+
+        // Retries briefly if the target plan isn't in memory yet — e.g.
+        // this PC only just started up and installmentPlans hasn't
+        // finished its own initial sync when a job arrives a moment later.
+        async function _processPrintJob(job, attempt){
+            attempt = attempt || 0;
+            if (_processingPrintJobIds.has(job.id)) return; // already being handled this session
+            let plan = null;
+            if (job.type === 'installment') {
+                plan = installmentPlans.find(p => p.id === job.targetId);
+            }
+            if (!plan && attempt < 10) {
+                setTimeout(() => _processPrintJob(job, attempt + 1), 500);
+                return;
+            }
+            _processingPrintJobIds.add(job.id);
+
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'printQueue/' + job.id), { status: 'printing' });
+            } catch (e) { /* proceed anyway — better to risk a double-print than silently drop the job */ }
+
+            const html = plan && job.type === 'installment' ? buildInstallmentScheduleHtml(plan) : null;
+            if (html) {
+                _executeLocalPrint(html);
+            } else {
+                console.warn('[PrintServer] could not build a document for job', job);
+            }
+
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'printQueue/' + job.id), { status: 'done', printedAt: new Date().toISOString() });
+            } catch (e) {}
+        }
+
+        function openPrintServerModal(){
+            closeOptions();
+            document.getElementById('print-server-toggle').checked = isPrintServerEnabled();
+            _updatePrintServerStatus();
+            document.getElementById('print-server-modal').style.display = 'flex';
+        }
+
+        function onPrintServerToggle(checked){
+            setPrintServerEnabled(checked);
+            _updatePrintServerStatus();
+        }
+
+        function _updatePrintServerStatus(){
+            const el = document.getElementById('print-server-status');
+            if (!el) return;
+            el.textContent = isPrintServerEnabled()
+                ? '✓ Active — watching for print jobs sent from other devices.'
+                : 'Off — this device will not auto-print anything sent to it.';
         }
 
         function getDeviceLabel() {
@@ -4446,6 +4560,7 @@
             { key: 'bulk-check',     label: 'Bulk Price Check',   icon: '📋', action: () => showSection('bulk-check') },
             { key: 'returns',        label: 'Item Returns',        icon: '↩️', action: () => showSection('returns') },
             { key: 'reminders',      label: 'Reminders',          icon: '🔔', action: () => showSection('reminders') },
+            { key: 'print-server',   label: 'Print Server',       icon: '🖨️', action: () => openPrintServerModal() },
             { key: 'backup',         label: 'Download Backup',    icon: '💾', action: () => downloadBackup() },
             { key: 'restore',        label: 'Restore Backup',     icon: '📥', action: () => triggerRestore() },
             { key: 'auto-backup',    label: 'Auto Backup (Drive)', icon: '☁️', action: () => openAutoBackupSettings() },
@@ -7701,7 +7816,10 @@
                 <button onclick="copyInstallmentLink('${plan.id}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:14px;">🔗 Copy Customer Link</button>
                 <button onclick="regenerateInstallmentLink()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🔄 Regenerate Link</button>
                 <p class="note" id="inst-link-status" style="margin-top:6px; text-align:center;"></p>
-                ${isActive ? `<button onclick="printInstallmentSchedule()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🖨️ Print Payment Schedule</button>` : ''}
+                ${isActive ? `
+                    <button onclick="printInstallmentSchedule()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🖨️ Print Payment Schedule</button>
+                    <button onclick="queueInstallmentPrintJob()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🖥️ Print via Main PC</button>
+                ` : ''}
                 ${plan.status !== 'completed' && !isCancelled ? `
                     <button onclick="openInstallmentRateModal()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">📈 Change Rate (Today's / Custom)</button>
                     <p class="note" id="inst-rate-status" style="margin-top:6px; text-align:center;"></p>
@@ -8412,15 +8530,18 @@
         // invoice records. Paid/Remaining Balance columns in the schedule
         // are left blank on purpose — they're meant to be filled in by
         // hand as payments come in, exactly like the paper template.
-        function printInstallmentSchedule(){
-            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
-            if (!plan) return;
-
+        // Pure HTML builder — no side effects, no dependency on which
+        // screen is open or which device is running. This is what lets the
+        // exact same document get built either for a normal local print,
+        // or later by a different device (the print-server PC) acting on
+        // a queued remote print request — both paths produce byte-for-byte
+        // the same slip from the same plan data.
+        function buildInstallmentScheduleHtml(plan){
             const downPaymentEntry = (plan.payments || []).find(p => p.note === 'Down payment');
             const downPaymentStr = downPaymentEntry ? `₹${downPaymentEntry.amount.toFixed(2)}` : '';
 
             const itemRows = plan.items.map(it => `<tr><td style="padding:6px 0; border-bottom:1px solid #eee;">${it.printName || it.itemName}</td><td style="padding:6px 0; border-bottom:1px solid #eee; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
-            const oldGoldRows = (plan.oldGoldItems || []).map(og => `<tr><td style="padding:6px 0; border-bottom:1px solid #eee;">${og.desc}</td><td style="padding:6px 0; border-bottom:1px solid #eee; text-align:right; color:#C62828;">-₹${og.value.toFixed(2)}</td></tr>`).join('');
+            const oldGoldTotal = (plan.oldGoldItems || []).reduce((s, og) => s + (og.value || 0), 0);
             const dateRows = (plan.dueDates || []).map((d, i) => `<tr>
                 <td style="padding:5px 4px; border-bottom:1px solid #eee;">${i + 1}</td>
                 <td style="padding:5px 4px; border-bottom:1px solid #eee;">${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
@@ -8442,7 +8563,7 @@
             const bgCss = withBg ? `background:white url('INVOICES_BEST.png') no-repeat top center/cover;` : 'background:white;';
             const topSpace = withBg ? '42mm' : '30mm';
 
-            const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
+            return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
                 * { box-sizing:border-box; }
                 body { margin:0; font-family:Arial,'Helvetica Neue',Helvetica,sans-serif; color:#1a1a1a; ${bgCss} }
                 .content { padding:${topSpace} 22px 22px; }
@@ -8452,10 +8573,9 @@
                 th { text-align:left; font-size:12px; color:#555; padding-bottom:5px; border-bottom:1.5px solid #333; }
                 .item-table td { font-size:13px; color:#1a1a1a; }
                 .item-table th:last-child, .item-table td:last-child { text-align:right; }
-                .og-label { font-size:12px; font-weight:700; color:#555; margin:14px 0 4px; }
                 .row-line td { padding:5px 0; font-size:13px; }
                 .row-line td:last-child { text-align:right; }
-                .total-row td { font-weight:800; font-size:14px; padding:8px 0; border-top:1.5px solid #333; }
+                .total-row td { font-weight:800; font-size:13px; padding:8px 0; border-top:1.5px solid #333; }
                 .total-row td:last-child { text-align:right; }
                 .sched-title { text-align:center; font-weight:700; font-size:13px; margin:18px 0 6px; }
                 .sched th { padding:5px 4px; }
@@ -8481,23 +8601,21 @@
                     <thead><tr><th>Item</th><th>Price</th></tr></thead>
                     <tbody>${itemRows}</tbody>
                 </table>
-                ${oldGoldRows ? `
-                <div class="og-label">Old Jewellery (Exchange)</div>
-                <table class="item-table">
-                    <tbody>${oldGoldRows}</tbody>
-                </table>
-                ` : ''}
                 ${(() => {
                     const downPaymentAmount = downPaymentEntry ? downPaymentEntry.amount : 0;
-                    if (downPaymentAmount <= 0) {
-                        return `<table style="margin-top:16px;"><tr class="total-row"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr></table>`;
+                    let rows = '';
+                    if (oldGoldTotal > 0) {
+                        rows += `<tr class="row-line"><td>Old Jewellery</td><td>-₹${oldGoldTotal.toFixed(2)}</td></tr>`;
                     }
-                    const balance = Math.round((plan.totalAmount - downPaymentAmount) * 100) / 100;
-                    return `<table style="margin-top:16px;">
-                        <tr class="row-line"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>
-                        <tr class="row-line"><td>Down Payment</td><td>-${downPaymentStr}</td></tr>
-                        <tr class="total-row"><td>Balance (Paid in Installments)</td><td>₹${balance.toFixed(2)}</td></tr>
-                    </table>`;
+                    if (downPaymentAmount > 0) {
+                        const balance = Math.round((plan.totalAmount - downPaymentAmount) * 100) / 100;
+                        rows += `<tr class="row-line"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>`;
+                        rows += `<tr class="row-line"><td>Down Payment</td><td>-${downPaymentStr}</td></tr>`;
+                        rows += `<tr class="total-row"><td>Balance (Paid in Installments)</td><td>₹${balance.toFixed(2)}</td></tr>`;
+                    } else {
+                        rows += `<tr class="total-row"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>`;
+                    }
+                    return `<table style="margin-top:16px;">${rows}</table>`;
                 })()}
                 <div class="sched-title">Payment Schedule</div>
                 <table class="sched">
@@ -8508,7 +8626,13 @@
                 <div class="tc-body">${installmentTandC ? invEscH(installmentTandC).replace(/\n/g, '<br>') : ''}</div>
                 </div>
             </body></html>`;
+        }
 
+        // Writes finished HTML into the shared hidden print iframe and
+        // triggers the browser's print flow — the one place that actually
+        // touches the iframe, so both a normal local print and a remote
+        // print-server job go through identical mechanics.
+        function _executeLocalPrint(html){
             const pf = document.getElementById('inv-print-frame');
             pf.style.display = 'block';
             const doc = pf.contentDocument || pf.contentWindow.document;
@@ -8518,6 +8642,39 @@
                 pf.contentWindow.print();
                 setTimeout(() => { pf.style.display = 'none'; }, 500);
             }, 300);
+        }
+
+        function printInstallmentSchedule(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            _executeLocalPrint(buildInstallmentScheduleHtml(plan));
+        }
+
+        // "Print via Main PC" — writes a job to the shared print queue
+        // instead of printing on THIS device. Whichever device has the
+        // Print Server toggle turned on (see initPrintServerListener)
+        // picks it up — usually within a second or two if that PC is
+        // online — and prints it there automatically, no click needed on
+        // that end once kiosk-printing is set up in Chrome.
+        function queueInstallmentPrintJob(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            if (!window.firebaseDB || !window.dbSet || !window.dbRef) {
+                showCustomAlert('Not connected — try again once online.');
+                return;
+            }
+            const jobId = crypto.randomUUID();
+            const job = {
+                id: jobId,
+                type: 'installment',
+                targetId: plan.id,
+                requestedAt: new Date().toISOString(),
+                requestedByDevice: getDeviceId(),
+                status: 'pending',
+            };
+            window.dbSet(window.dbRef(window.firebaseDB, 'printQueue/' + jobId), job)
+                .then(() => showCustomAlert('Sent to the main PC — it\'ll print automatically once picked up.'))
+                .catch(() => showCustomAlert('Could not send the print job — check your connection and try again.'));
         }
 
         function openCart() {
@@ -9108,6 +9265,7 @@
             // --- Start Firebase Sync ---
             syncData();
             startInstallmentsSync();
+            initPrintServerIfEnabled();
             // Load ledger from cache immediately (Firebase will overwrite shortly)
             loadLedger();
             // Load reminders from cache immediately (Firebase will overwrite shortly)
@@ -14672,6 +14830,22 @@ const badge = '';
             <input type="text" id="ledger-inst-pay-note" placeholder="Note (optional)" style="margin:0 0 12px; width:100%;">
             <button onclick="saveLedgerInstallmentPayment()" style="width:100%; background:var(--gold); color:#fff; font-weight:800; padding:12px; border-radius:var(--radius); border:none; font-size:14px;">Add Payment</button>
             <p class="note" id="ledger-inst-pay-status" style="text-align:center; margin-top:8px;"></p>
+        </div>
+    </div>
+
+    <div id="print-server-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:560; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);">🖨️ Print Server</span>
+                <button onclick="document.getElementById('print-server-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <p class="note" style="margin-bottom:14px; line-height:1.5;">Turn this ON only on the computer that has the printer connected. Other devices can then use "Print via Main PC" from a plan instead of printing locally — this device will pick up and print those jobs automatically.</p>
+            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:14px; font-size:14px; font-weight:700; color:var(--text);">
+                <input type="checkbox" id="print-server-toggle" onchange="onPrintServerToggle(this.checked)" style="width:20px; height:20px; accent-color:var(--gold); margin:0; flex-shrink:0;">
+                This device is the Print Server
+            </label>
+            <div id="print-server-status" style="font-size:12.5px; color:var(--text2); background:var(--bg); border-radius:10px; padding:10px 12px;"></div>
+            <p class="note" style="margin-top:14px; font-size:11.5px; line-height:1.5; color:#999;">For truly hands-free printing (no click needed on this PC), Chrome needs to be launched with a special flag — a one-time setup step outside this app. Without it, this will still auto-detect jobs and open the print dialog automatically, just needs one click to confirm.</p>
         </div>
     </div>
 
