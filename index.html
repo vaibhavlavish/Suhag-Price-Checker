@@ -1692,6 +1692,9 @@
                 <span class="menu-icon" style="background:#f3e5f5;">🔔</span> Reminders
                 <span id="reminder-menu-badge">0</span>
             </button>
+            <button onclick="reprintLastInvoice()" data-menu-key="reprint-last">
+                <span class="menu-icon" style="background:#E3F2FD;">🖨️</span> Reprint Last Invoice
+            </button>
             <button onclick="showSection('installments-screen')" data-menu-key="installments">
                 <span class="menu-icon" style="background:#FCE4EC;">📆</span> Installment Plans
             </button>
@@ -4561,6 +4564,7 @@
             { key: 'bulk-check',     label: 'Bulk Price Check',   icon: '📋', action: () => showSection('bulk-check') },
             { key: 'returns',        label: 'Item Returns',        icon: '↩️', action: () => showSection('returns') },
             { key: 'reminders',      label: 'Reminders',          icon: '🔔', action: () => showSection('reminders') },
+            { key: 'reprint-last',   label: 'Reprint Last Invoice', icon: '🖨️', action: () => reprintLastInvoice() },
             { key: 'print-server',   label: 'Print Server',       icon: '🖨️', action: () => openPrintServerModal() },
             { key: 'backup',         label: 'Download Backup',    icon: '💾', action: () => downloadBackup() },
             { key: 'restore',        label: 'Restore Backup',     icon: '📥', action: () => triggerRestore() },
@@ -14163,6 +14167,24 @@
 
         function chooseInvoiceHistoryPrintDestination(id) {
             _choosePrintDestination(() => invPrintFromHistory(id), () => invPrintFromHistoryViaMainPC(id));
+        }
+
+        // Finds the most recent invoice overall — from checkout or the
+        // standalone New tab, whichever happened last — and routes it
+        // through the exact same reload+print flow the History screen's
+        // own Print button already uses, so this never needs its own
+        // separate print-building logic.
+        function reprintLastInvoice(){
+            closeOptions();
+            if (!invoiceHistory || !invoiceHistory.length) {
+                showCustomAlert('No invoices found yet.');
+                return;
+            }
+            const last = invoiceHistory.reduce((latest, inv) =>
+                (!latest || new Date(inv.timestamp || 0) > new Date(latest.timestamp || 0)) ? inv : latest
+            , null);
+            if (!last) { showCustomAlert('No invoices found yet.'); return; }
+            chooseInvoiceHistoryPrintDestination(last.id);
         }
 
         function invPrint() {
