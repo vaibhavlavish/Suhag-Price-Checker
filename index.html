@@ -18,7 +18,7 @@
         // Import the functions you need from the Firebase SDKs
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getDatabase, ref, set, update, remove, onValue, get, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
-        import { getStorage, ref as storageRef, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+        import { getStorage, ref as storageRef, deleteObject, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
         // Your web app's Firebase configuration
@@ -42,6 +42,8 @@
         window.firebaseStorage = storage;
         window.storageRef = storageRef;
         window.deleteObject = deleteObject;
+        window.uploadBytes = uploadBytes;
+        window.getDownloadURL = getDownloadURL;
         window.dbRef = ref;
         window.dbSet = set;
         window.dbUpdate = update;
@@ -7749,6 +7751,96 @@
             if (arrow) arrow.textContent = isHidden ? '▾' : '▸';
         }
 
+        // Resizes/compresses a captured photo client-side before upload —
+        // an uncompressed phone-camera photo is unnecessarily large for a
+        // printed ID page and would slow both the upload and the eventual
+        // print (especially over the remote print-queue path, where a
+        // different device has to fetch it fresh over the network).
+        function _compressImageFile(file, maxWidth, quality){
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onerror = reject;
+                reader.onload = e => {
+                    const img = new Image();
+                    img.onerror = reject;
+                    img.onload = () => {
+                        const scale = Math.min(1, maxWidth / img.width);
+                        const canvas = document.createElement('canvas');
+                        canvas.width = Math.round(img.width * scale);
+                        canvas.height = Math.round(img.height * scale);
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('toBlob failed')), 'image/jpeg', quality);
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // Two ID-proof photo slots per plan (idProofPhoto1 / idProofPhoto2)
+        // — deliberately two separate fields rather than an array, since a
+        // Firebase array with a gap (photo 2 set but not photo 1) silently
+        // turns into an object on read-back, which would make .map/.slice
+        // calls elsewhere unreliable. Each slot is either absent or
+        // { storagePath, url }.
+        async function uploadInstallmentIdPhoto(slot, file){
+            if (!file) return;
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            const statusEl = document.getElementById('inst-id-photo-status');
+            if (statusEl) statusEl.textContent = 'Uploading…';
+            try {
+                const compressed = await _compressImageFile(file, 1100, 0.82);
+                const field = 'idProofPhoto' + slot;
+                const oldEntry = plan[field];
+                const path = `installmentIdProofs/${plan.id}/photo${slot}_${Date.now()}.jpg`;
+                const sref = window.storageRef(window.firebaseStorage, path);
+                await window.uploadBytes(sref, compressed);
+                const url = await window.getDownloadURL(sref);
+                const entry = { storagePath: path, url };
+
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), { [field]: entry });
+                plan[field] = entry;
+
+                // Clean up the file it's replacing, if any — best-effort,
+                // same as every other photo-delete path in this app.
+                if (oldEntry && oldEntry.storagePath) {
+                    try { await window.deleteObject(window.storageRef(window.firebaseStorage, oldEntry.storagePath)); }
+                    catch (e) { console.warn('[ID Photo] old file cleanup failed', e); }
+                }
+
+                if (statusEl) statusEl.textContent = '';
+                renderInstallmentDetailBody(plan);
+            } catch (e) {
+                console.error(e);
+                if (statusEl) statusEl.textContent = 'Upload failed — try again.';
+            }
+        }
+
+        async function removeInstallmentIdPhoto(slot){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            const field = 'idProofPhoto' + slot;
+            const entry = plan[field];
+            if (!entry) return;
+            if (!checkPin()) return;
+            if (!confirm('Remove this ID photo?')) return;
+
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), { [field]: null });
+                plan[field] = null;
+                if (entry.storagePath) {
+                    try { await window.deleteObject(window.storageRef(window.firebaseStorage, entry.storagePath)); }
+                    catch (e) { console.warn('[ID Photo] cleanup failed', e); }
+                }
+                renderInstallmentDetailBody(plan);
+            } catch (e) {
+                console.error(e);
+                showCustomAlert('Could not remove — try again.');
+            }
+        }
+
         // Copy Customer Link and Regenerate Link merged into one "Link"
         // button — opens this small chooser instead of two separate
         // buttons taking up their own row each.
@@ -7822,6 +7914,23 @@
                     </div>
                     <div id="inst-detail-dates-list" style="display:none; margin-bottom:14px;">${plan.dueDates.map((d, i) => `<div style="display:flex; justify-content:space-between; font-size:12.5px; padding:2px 0;"><span>${new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span><span>₹${getInstallmentAmountForIndex(plan, i).toFixed(2)}</span></div>`).join('')}</div>
                 ` : ''}
+
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">ID Proof Photos</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px;">
+                    ${[0, 1].map(slot => {
+                        const entry = plan['idProofPhoto' + slot];
+                        return `
+                        <div style="position:relative;">
+                            ${entry ? `<img src="${entry.url}" style="width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:10px; border:1.5px solid var(--border); display:block;">` : `<div onclick="document.getElementById('inst-id-photo-input-${slot}').click()" style="width:100%; aspect-ratio:4/3; border-radius:10px; border:1.5px dashed var(--border); display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:11px; cursor:pointer; text-align:center; padding:6px;">📷<br>Photo ${slot + 1}</div>`}
+                            ${entry ? `
+                                <button onclick="document.getElementById('inst-id-photo-input-${slot}').click()" title="Retake" style="position:absolute; bottom:6px; right:34px; background:var(--gold); color:#fff; border:none; border-radius:8px; padding:5px 8px; font-size:11px; box-shadow:0 2px 6px rgba(0,0,0,.25); cursor:pointer; margin:0; width:auto;">📷</button>
+                                <button onclick="removeInstallmentIdPhoto(${slot})" title="Remove" style="position:absolute; bottom:6px; right:6px; background:#C62828; color:#fff; border:none; border-radius:8px; padding:5px 8px; font-size:11px; box-shadow:0 2px 6px rgba(0,0,0,.25); cursor:pointer; margin:0; width:auto;">✕</button>
+                            ` : ''}
+                            <input type="file" accept="image/*" capture="environment" id="inst-id-photo-input-${slot}" style="display:none;" onchange="uploadInstallmentIdPhoto(${slot}, this.files[0]); this.value='';">
+                        </div>`;
+                    }).join('')}
+                </div>
+                <p class="note" id="inst-id-photo-status" style="text-align:center; margin-bottom:14px;"></p>
 
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Payment History</div>
                 <div style="margin-bottom:14px;">${paymentsHtml}</div>
@@ -8568,6 +8677,7 @@
             const downPaymentStr = downPaymentEntry ? `₹${downPaymentEntry.amount.toFixed(2)}` : '';
 
             const itemRows = plan.items.map(it => `<tr><td style="padding:6px 0; border-bottom:1px solid #eee;">${it.printName || it.itemName}</td><td style="padding:6px 0; border-bottom:1px solid #eee; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
+            const itemSum = plan.items.reduce((s, it) => s + (it.finalPrice || 0), 0);
             const oldGoldTotal = (plan.oldGoldItems || []).reduce((s, og) => s + (og.value || 0), 0);
             const dateRows = (plan.dueDates || []).map((d, i) => `<tr>
                 <td style="padding:5px 4px; border-bottom:1px solid #eee;">${i + 1}</td>
@@ -8577,38 +8687,86 @@
                 <td style="padding:5px 4px; border-bottom:1px solid #eee;">&nbsp;</td>
             </tr>`).join('');
 
+            const totalsRows = (() => {
+                const downPaymentAmount = downPaymentEntry ? downPaymentEntry.amount : 0;
+                let rows = '';
+                if (oldGoldTotal > 0) {
+                    rows += `<tr class="row-line"><td>Old Jewellery</td><td>-₹${oldGoldTotal.toFixed(2)}</td></tr>`;
+                }
+                // Reconciles the printed figures — plan.totalAmount can differ
+                // slightly from (items − old jewellery) once custom installment
+                // amounts have been rounded to neat numbers, which otherwise
+                // makes the page look like it doesn't add up. Shown only when
+                // there's an actual difference worth accounting for.
+                const rawTotal = Math.round((itemSum - oldGoldTotal) * 100) / 100;
+                const roundOff = Math.round((plan.totalAmount - rawTotal) * 100) / 100;
+                if (Math.abs(roundOff) > 0.005) {
+                    rows += `<tr class="row-line"><td>Round Off</td><td>${roundOff > 0 ? '+' : '-'}₹${Math.abs(roundOff).toFixed(2)}</td></tr>`;
+                }
+                if (downPaymentAmount > 0) {
+                    const balance = Math.round((plan.totalAmount - downPaymentAmount) * 100) / 100;
+                    rows += `<tr class="row-line"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>`;
+                    rows += `<tr class="row-line"><td>Down Payment</td><td>-${downPaymentStr}</td></tr>`;
+                    rows += `<tr class="total-row"><td>Balance (Paid in Installments)</td><td>₹${balance.toFixed(2)}</td></tr>`;
+                } else {
+                    rows += `<tr class="total-row"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>`;
+                }
+                return rows;
+            })();
+
+            const idPhotoCell = (entry, label) => entry
+                ? `<img src="${entry.url}" style="width:100%; height:100%; object-fit:cover; display:block;">`
+                : `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#999; font-size:10px;">${label}</div>`;
+
             // Reuses the exact same "Embed letterhead background" setting
-            // the Invoice screen already has (Print Options), rather than
-            // introducing a second, separate toggle just for this slip —
-            // one consistent setting for whether the shop prints on plain
-            // paper or pre-printed letterhead stock. When it's off (the
-            // normal case for pre-printed letterhead), this just reserves
-            // blank space at the top instead of an embedded image — the
-            // physical paper already has the shop name printed on it, so
-            // nothing here duplicates it in text either way.
+            // the Invoice screen already has (Print Options) for whether to
+            // embed the actual letterhead image — but unlike invoice, the
+            // top space itself always stays reserved and blank either way,
+            // since this document never draws a fallback inline header the
+            // way invoice does when its own toggle is off. The shop prints
+            // on pre-printed letterhead stock, so that blank space is
+            // exactly what belongs there regardless of the toggle.
+            //
+            // Page size mirrors the Invoice screen's own A5 print exactly
+            // (see invGenerate) — this shop prints everything on A5.
+            // Unlike that invoice slip, this document does NOT clip to a
+            // fixed page height: an installment schedule can run to many
+            // more rows than a 12-line item table ever would, so content
+            // is left free to flow onto extra sheets if a particular plan
+            // genuinely doesn't fit — silently cutting off installment
+            // dates would be a real problem, unlike invoice's fixed,
+            // padded-out table.
             const withBg = invGetWithBgPref();
             const bgCss = withBg ? `background:white url('INVOICES_BEST.png') no-repeat top center/cover;` : 'background:white;';
-            const topSpace = withBg ? '42mm' : '30mm';
+            const topSpace = '42mm';
+
+            const sigBlock = `<div class="sig-line"><div>Customer Signature</div></div>`;
 
             return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>
                 * { box-sizing:border-box; }
-                body { margin:0; font-family:Arial,'Helvetica Neue',Helvetica,sans-serif; color:#1a1a1a; ${bgCss} }
-                .content { padding:${topSpace} 22px 22px; }
-                .field { font-size:13px; margin-bottom:5px; }
-                .field b { display:inline-block; min-width:70px; }
+                body { margin:0; font-family:Arial,'Helvetica Neue',Helvetica,sans-serif; color:#1a1a1a; font-size:10px; ${bgCss} }
+                .page { width:148mm; min-height:200mm; display:flex; flex-direction:column; justify-content:space-between; }
+                .content { padding:${topSpace} 6mm 0; }
+                .field { font-size:11px; margin-bottom:4px; }
+                .field b { display:inline-block; min-width:60px; }
                 table { width:100%; border-collapse:collapse; }
-                th { text-align:left; font-size:12px; color:#1a1a1a; padding-bottom:5px; border-bottom:1.5px solid #333; }
-                .item-table td { font-size:13px; color:#1a1a1a; }
+                th { text-align:left; font-size:10px; color:#1a1a1a; padding-bottom:3px; border-bottom:1.5px solid #333; }
+                .item-table td { font-size:11px; color:#1a1a1a; }
                 .item-table th:last-child, .item-table td:last-child { text-align:right; }
-                .row-line td { padding:5px 0; font-size:13px; color:#1a1a1a; }
+                .row-line td { padding:3px 0; font-size:11px; color:#1a1a1a; }
                 .row-line td:last-child { text-align:right; }
-                .total-row td { font-weight:800; font-size:13px; padding:8px 0; border-top:1.5px solid #333; color:#1a1a1a; }
+                .total-row td { font-weight:800; font-size:11px; padding:5px 0; border-top:1.5px solid #333; color:#1a1a1a; }
                 .total-row td:last-child { text-align:right; }
-                .sched-title { text-align:center; font-weight:700; font-size:13px; margin:18px 0 6px; color:#1a1a1a; }
-                .sched th { padding:5px 4px; }
-                .sched td { padding:5px 4px; font-size:12.5px; color:#1a1a1a; }
-                .tc-title { font-weight:700; font-size:14px; margin-top:16px; margin-bottom:6px; color:#1a1a1a; }
-                .tc-body { font-size:11px; color:#1a1a1a; line-height:1.6; white-space:pre-wrap; min-height:30px; }
+                .sched-title { text-align:center; font-weight:700; font-size:11px; margin:10px 0 4px; color:#1a1a1a; }
+                .sched th { padding:3px 2px; }
+                .sched td { padding:3px 2px; font-size:10px; color:#1a1a1a; }
+                .tc-title { font-weight:700; font-size:11px; margin-top:10px; margin-bottom:4px; color:#1a1a1a; }
+                .tc-body { font-size:9px; color:#1a1a1a; line-height:1.5; white-space:pre-wrap; min-height:20px; }
+                .id-photo-box { border:1.5px solid #333; border-radius:5px; overflow:hidden; aspect-ratio:4/3; }
+                .page-footer { margin-top:10mm; padding:0 6mm 6mm; display:flex; justify-content:space-between; align-items:flex-end; page-break-inside:avoid; break-inside:avoid; }
+                .sig-line { font-size:10px; color:#1a1a1a; }
+                .sig-line div { border-top:1px solid #1a1a1a; width:120px; padding-top:3px; }
+                .page-num { font-size:9px; color:#1a1a1a; }
                 /* Print page-break control — a plan with many installments
                    can genuinely need more than one sheet, but it should
                    never split mid-row or lose its column headers on the
@@ -8617,40 +8775,45 @@
                 .sched thead, .item-table thead { display: table-header-group; }
                 .tc-title { page-break-after: avoid; break-after: avoid; }
                 .tc-body { page-break-before: avoid; break-before: avoid; }
-                @media print { @page { margin:12mm; } }
+                @media print { @page { size:A5; margin:0; } html, body { margin:0; } }
             </style></head><body>
-                <div class="content">
-                <h1 style="font-size:18px; margin:0 0 14px; letter-spacing:.02em;">Installment Plan</h1>
-                <div class="field"><b>Name:</b> ${plan.customerName || ''}</div>
-                <div class="field"><b>Mobile:</b> ${plan.customerMobile || ''}</div>
-                <div class="field"><b>Address:</b> ${plan.customerAddress || ''}</div>
-                <table class="item-table" style="margin-top:14px;">
-                    <thead><tr><th>Item</th><th>Price</th></tr></thead>
-                    <tbody>${itemRows}</tbody>
-                </table>
-                ${(() => {
-                    const downPaymentAmount = downPaymentEntry ? downPaymentEntry.amount : 0;
-                    let rows = '';
-                    if (oldGoldTotal > 0) {
-                        rows += `<tr class="row-line"><td>Old Jewellery</td><td>-₹${oldGoldTotal.toFixed(2)}</td></tr>`;
-                    }
-                    if (downPaymentAmount > 0) {
-                        const balance = Math.round((plan.totalAmount - downPaymentAmount) * 100) / 100;
-                        rows += `<tr class="row-line"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>`;
-                        rows += `<tr class="row-line"><td>Down Payment</td><td>-${downPaymentStr}</td></tr>`;
-                        rows += `<tr class="total-row"><td>Balance (Paid in Installments)</td><td>₹${balance.toFixed(2)}</td></tr>`;
-                    } else {
-                        rows += `<tr class="total-row"><td>Total Payable</td><td>₹${plan.totalAmount.toFixed(2)}</td></tr>`;
-                    }
-                    return `<table style="margin-top:16px;">${rows}</table>`;
-                })()}
-                <div class="sched-title">Payment Schedule</div>
-                <table class="sched">
-                    <thead><tr><th>#</th><th>Date</th><th>Amount</th><th>Paid</th><th>Remaining Balance</th></tr></thead>
-                    <tbody>${dateRows}</tbody>
-                </table>
-                <div class="tc-title">T&amp;C</div>
-                <div class="tc-body">${installmentTandC ? invEscH(installmentTandC).replace(/\n/g, '<br>') : ''}</div>
+                <div class="page">
+                    <div class="content">
+                        <h1 style="font-size:14px; margin:0 0 8px; letter-spacing:.02em;">Installment Plan</h1>
+                        <div class="field"><b>Name:</b> ${plan.customerName || ''}</div>
+                        <div class="field"><b>Mobile:</b> ${plan.customerMobile || ''}</div>
+                        <div class="field"><b>Address:</b> ${plan.customerAddress || ''}</div>
+                        <table class="item-table" style="margin-top:10px;">
+                            <thead><tr><th>Item</th><th>Price</th></tr></thead>
+                            <tbody>${itemRows}</tbody>
+                        </table>
+                        <table style="margin-top:10px;">${totalsRows}</table>
+                        <div class="sched-title">Payment Schedule</div>
+                        <table class="sched">
+                            <thead><tr><th>#</th><th>Date</th><th>Amount</th><th>Paid</th><th>Remaining Balance</th></tr></thead>
+                            <tbody>${dateRows}</tbody>
+                        </table>
+                    </div>
+                    <div class="page-footer">
+                        ${sigBlock}
+                        <div class="page-num">Page 1 of 2</div>
+                    </div>
+                </div>
+
+                <div class="page" style="page-break-before:always;">
+                    <div class="content">
+                        <div style="font-size:9px; font-weight:700; letter-spacing:.06em; color:#555; text-transform:uppercase; margin-bottom:6px;">ID Proof</div>
+                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                            <div class="id-photo-box">${idPhotoCell(plan.idProofPhoto1, 'ID Photo 1')}</div>
+                            <div class="id-photo-box">${idPhotoCell(plan.idProofPhoto2, 'ID Photo 2')}</div>
+                        </div>
+                        <div class="tc-title">T&amp;C</div>
+                        <div class="tc-body">${installmentTandC ? invEscH(installmentTandC).replace(/\n/g, '<br>') : ''}</div>
+                    </div>
+                    <div class="page-footer">
+                        ${sigBlock}
+                        <div class="page-num">Page 2 of 2</div>
+                    </div>
                 </div>
             </body></html>`;
         }
@@ -8665,10 +8828,27 @@
             const doc = pf.contentDocument || pf.contentWindow.document;
             doc.open(); doc.write(html); doc.close();
             pf.contentWindow.focus();
-            setTimeout(() => {
+
+            function doPrint(){
                 pf.contentWindow.print();
                 setTimeout(() => { pf.style.display = 'none'; }, 500);
-            }, 300);
+            }
+
+            const imgs = Array.from(doc.images || []);
+            const pending = imgs.filter(img => !img.complete);
+            if (pending.length === 0) { setTimeout(doPrint, 300); return; }
+
+            let remaining = pending.length;
+            let settled = false;
+            function onImgSettled(){
+                remaining--;
+                if (remaining <= 0 && !settled) { settled = true; doPrint(); }
+            }
+            pending.forEach(img => {
+                img.addEventListener('load', onImgSettled, { once: true });
+                img.addEventListener('error', onImgSettled, { once: true }); // a broken image should never block printing forever
+            });
+            setTimeout(() => { if (!settled) { settled = true; doPrint(); } }, 4000); // absolute safety net
         }
 
         function printInstallmentSchedule(){
