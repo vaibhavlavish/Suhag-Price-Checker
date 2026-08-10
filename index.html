@@ -12934,6 +12934,25 @@
             catch(e) { console.error('[Invoice] delete failed', e); }
         }
 
+        // Saves a new record and removes another one in the SAME write —
+        // used by "Move to Track A" so the new Track A copy and the old
+        // Track B original's removal land in Firebase atomically. Doing
+        // these as two separate dbSafeUpdate calls (the old approach) left
+        // a real gap: the live invoiceHistory listener could receive the
+        // save's snapshot before the delete had landed, momentarily
+        // overwriting local state with a version where the Track B
+        // original still existed — which is exactly what made "Move" look
+        // like it silently behaved as "Copy".
+        function _saveAndDeleteInvoiceRecord(newEntry, deleteId) {
+            if (!newEntry || !newEntry.id) return;
+            if (typeof window.dbSafeUpdate !== 'function') { console.warn('[Invoice] Firebase not ready yet, saved locally only'); return; }
+            const update = {};
+            update[`jewelryData/invoiceHistory/${newEntry.id}`] = newEntry;
+            update[`jewelryData/invoiceHistory/${deleteId}`] = null;
+            try { window.dbSafeUpdate(update).catch(e => console.error('[Invoice] move save+delete failed', e)); }
+            catch(e) { console.error('[Invoice] move save+delete failed', e); }
+        }
+
         // ─── TABS ───
         function invSwitchTab(name) {
             ['new','history','export'].forEach(t => {
@@ -14039,18 +14058,23 @@
                         invoiceHistory.unshift(rec);
                     }
                     _saveInvoiceLocal();
-                    _saveInvoiceRecord(rec);
                     // "Move to Track A" (invMoveToTrackA) sets this right after copying
                     // the Track B invoice into this form — the original is only ever
                     // removed here, once the copy has actually been saved, never at
                     // the moment the button was clicked. Silent, no PIN prompt: the
                     // move itself is the person's explicit confirmation already.
+                    // Saved and deleted as ONE atomic write (see
+                    // _saveAndDeleteInvoiceRecord) — two separate writes left a real
+                    // gap where the live listener could see the save before the
+                    // delete had landed, making "Move" behave like "Copy".
                     if (!isEdit && window._invMoveSourceId) {
                         const _moveSrcId = window._invMoveSourceId;
                         window._invMoveSourceId = null;
                         invoiceHistory = invoiceHistory.filter(i => i.id !== _moveSrcId);
                         _saveInvoiceLocal();
-                        _deleteInvoiceRecord(_moveSrcId);
+                        _saveAndDeleteInvoiceRecord(rec, _moveSrcId);
+                    } else {
+                        _saveInvoiceRecord(rec);
                     }
                     // Only log a ledger entry for brand-new invoices — an edit would
                     // otherwise double-count the sale in the cash ledger.
@@ -14109,14 +14133,15 @@
                 invoiceHistory.unshift(rec);
             }
             _saveInvoiceLocal();
-            _saveInvoiceRecord(rec);
 
             if (!isEdit && window._invMoveSourceId) {
                 const _moveSrcId = window._invMoveSourceId;
                 window._invMoveSourceId = null;
                 invoiceHistory = invoiceHistory.filter(i => i.id !== _moveSrcId);
                 _saveInvoiceLocal();
-                _deleteInvoiceRecord(_moveSrcId);
+                _saveAndDeleteInvoiceRecord(rec, _moveSrcId);
+            } else {
+                _saveInvoiceRecord(rec);
             }
             if (!isEdit) _invLedgerFromRecord(rec);
             invRenderHistory();
@@ -14429,6 +14454,16 @@ const badge = '';
             }).join('');
         }
 
+        // Plain function, not buried in a nested template literal — returns
+        // exactly what should show beside "Receipt" in the History detail
+        // view, for both Track A and Track B.
+        function _invPaymentLabel(inv) {
+            const m = inv && inv.paymentMethod;
+            if (!m || m === 'none') return '';
+            if (m === 'partial') return ' (Partial)';
+            return ' (' + String(m).toUpperCase() + ')';
+        }
+
         function invOpenBillDetail(id) {
             const inv = invoiceHistory.find(i => i.id === id);
             if (!inv) return;
@@ -14458,7 +14493,8 @@ const badge = '';
                 ${t.disc>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#ff8a65;margin-bottom:6px;"><span>Discount</span><span>-₹${t.disc.toFixed(2)}</span></div>`:''}
                 ${ogTotal>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#8d6e63;margin-bottom:6px;"><span>Old Jewellery</span><span>-₹${ogTotal.toFixed(2)}</span></div>`:''}
                 ${t.rounded?`<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;margin-bottom:6px;"><span>Net Amount</span><span>₹${t.rounded}</span></div>`:''}
-                ${inv.receipt?`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);"><span>Receipt</span><span>₹${inv.receipt}</span></div>`:''}
+                ${inv.receipt?`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);"><span>Receipt${_invPaymentLabel(inv)}</span><span>₹${inv.receipt}</span></div>`:''}
+                ${inv.paymentMethod === 'partial' && inv.paymentDetails ? `<div style="font-size:11.5px; color:#888; margin:2px 0 6px;">${['cash','upi','card'].filter(k => inv.paymentDetails[k] > 0).map(k => `${k.toUpperCase()}: ₹${inv.paymentDetails[k].toFixed(0)}`).join(' · ')}</div>` : ''}
                 ${outstanding>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#c00;font-weight:700;"><span>Outstanding</span><span>₹${outstanding}</span></div>`:''}
                 <div style="display:flex;gap:8px;margin-top:14px;">
                   <button onclick="chooseInvoiceHistoryPrintDestination('${id}')" style="flex:1;background:#1D6BB5;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🖨 Print</button>
