@@ -7985,7 +7985,7 @@
             const isCancelled = plan.status === 'cancelled';
             const itemsHtml = plan.items.map((i, idx) => `
                 <div class="inst-detail-item-row" data-item-idx="${idx}" style="display:flex; justify-content:space-between; align-items:center; font-size:13px; padding:3px 0; cursor:pointer; user-select:none; -webkit-user-select:none;">
-                    <span style="flex:1;">${i.itemName}</span>
+                    <span style="flex:1;">${i.itemName}${plan.rateCancelled ? ' <span style="color:#E65100; font-weight:700; font-size:11px;">(Rate Cancelled)</span>' : ''}</span>
                     <span>₹${i.finalPrice.toFixed(2)}</span>
                     ${isActive ? `<button class="inst-detail-item-remove-btn" data-item-idx="${idx}" title="Remove item" style="background:none; border:none; color:#C62828; font-size:15px; font-weight:800; padding:0 0 0 10px; cursor:pointer; box-shadow:none; margin:0; width:auto; line-height:1;">✕</button>` : ''}
                 </div>
@@ -8073,6 +8073,7 @@
                     ${plan.status !== 'completed' && !isCancelled ? `<button onclick="openInstallmentRateModal()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">📈 Change Rate (Today's / Custom)</button>` : ''}
                     ${plan.status === 'completed' ? `<button onclick="saveInstallmentToInvoice()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🧾 Save to Invoice</button>` : ''}
                     ${isActive ? `<button onclick="cancelInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">✕ Cancel Plan</button>` : ''}
+                    ${isActive ? `<button onclick="toggleInstallmentRateCancelled()" style="background:${plan.rateCancelled ? '#FFF3E0' : 'none'}; border:1.5px solid ${plan.rateCancelled ? '#E65100' : 'var(--border)'}; color:${plan.rateCancelled ? '#E65100' : 'var(--text)'}; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">${plan.rateCancelled ? '⚠️ Rate Cancelled — Tap to Undo' : '⚠️ Mark Rate Cancelled'}</button>` : ''}
                     ${(isCancelled || plan.status === 'completed') ? `<button onclick="deleteInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🗑️ Delete This Plan</button>` : ''}
                 </div>
                 <p class="note" id="inst-link-status" style="margin-top:8px; text-align:center;"></p>
@@ -8404,6 +8405,33 @@
             } catch (e) {
                 console.error(e);
                 showCustomAlert('Could not remove item — try again.');
+            }
+        }
+
+        // Marks a plan's originally fixed gold/silver rate as no longer
+        // guaranteed — separate from Change Rate (which actually
+        // recalculates prices) and Cancel Plan (which ends the plan
+        // entirely). This just flags it: the customer's link shows a clear
+        // warning, and the item name carries "(Rate Cancelled)" wherever
+        // it's shown — plan detail, print, and the customer page — so
+        // there's no ambiguity about whether the original price still
+        // applies. Toggleable back off if it was flagged by mistake.
+        async function toggleInstallmentRateCancelled(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            const newVal = !plan.rateCancelled;
+            if (!checkPin()) return;
+            const msg = newVal
+                ? "Mark this plan's fixed rate as cancelled? The customer's link will show a warning that the original rate no longer applies."
+                : 'Remove the rate-cancelled warning from this plan?';
+            if (!confirm(msg)) return;
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), { rateCancelled: newVal });
+                plan.rateCancelled = newVal;
+                renderInstallmentDetailBody(plan);
+            } catch (e) {
+                console.error(e);
+                showCustomAlert('Could not update — try again.');
             }
         }
 
@@ -8786,7 +8814,8 @@
             const downPaymentEntry = (plan.payments || []).find(p => p.note === 'Down payment');
             const downPaymentStr = downPaymentEntry ? `₹${downPaymentEntry.amount.toFixed(2)}` : '';
 
-            const itemRows = plan.items.map(it => `<tr><td style="padding:6px 0; border-bottom:1px solid #eee;">${it.printName || it.itemName}</td><td style="padding:6px 0; border-bottom:1px solid #eee; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
+            const rateCancelledTag = plan.rateCancelled ? ' <span style="font-weight:800;">(Rate Cancelled)</span>' : '';
+            const itemRows = plan.items.map(it => `<tr><td style="padding:6px 0; border-bottom:1px solid #eee;">${it.printName || it.itemName}${rateCancelledTag}</td><td style="padding:6px 0; border-bottom:1px solid #eee; text-align:right;">₹${it.finalPrice.toFixed(2)}</td></tr>`).join('');
             const itemSum = plan.items.reduce((s, it) => s + (it.finalPrice || 0), 0);
             const oldGoldTotal = (plan.oldGoldItems || []).reduce((s, og) => s + (og.value || 0), 0);
             const dateRows = (plan.dueDates || []).map((d, i) => `<tr>
