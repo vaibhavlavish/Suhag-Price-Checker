@@ -2468,11 +2468,15 @@
         // ═══ PRINT SERVER ═══
         // Lets one specific device (normally the shop PC with the printer
         // wired to it) auto-print jobs sent from ANY device — phone,
-        // tablet, another PC — instead of everyone needing to be physically
-        // at the printer's computer to print an installment slip.
+        // tablet, another PC — for ANY print flow in the app: installment
+        // slips, invoices, checkout receipts. Every print button opens a
+        // "This Device / Main PC" chooser (_choosePrintDestination); the
+        // remote path builds the exact same HTML the local print would
+        // have used, then hands it to queuePrintJob instead of printing it
+        // here — this device's queue listener processes it.
         //
-        // How it works: "Print via Main PC" (see queueInstallmentPrintJob)
-        // writes a small job record to Firebase instead of printing
+        // How it works: queuePrintJob writes a small job record (the
+        // already-finished print HTML) to Firebase instead of printing
         // locally. Whichever device has this toggle turned ON watches that
         // queue and prints each job the moment it appears — this is purely
         // device-local (localStorage), never synced, so turning it on here
@@ -2524,32 +2528,22 @@
             });
         }
 
-        // Retries briefly if the target plan isn't in memory yet — e.g.
-        // this PC only just started up and installmentPlans hasn't
-        // finished its own initial sync when a job arrives a moment later.
-        async function _processPrintJob(job, attempt){
-            attempt = attempt || 0;
+        // Jobs carry the FINISHED print HTML (built on the sending device,
+        // using the exact same builder that device's own local print would
+        // use) rather than a reference this device has to reconstruct —
+        // this is what lets one queue serve installment slips, invoices,
+        // and checkout receipts identically without needing a separate
+        // rebuild-from-record function per document type.
+        async function _processPrintJob(job){
             if (_processingPrintJobIds.has(job.id)) return; // already being handled this session
-            let plan = null;
-            if (job.type === 'installment') {
-                plan = installmentPlans.find(p => p.id === job.targetId);
-            }
-            if (!plan && attempt < 10) {
-                setTimeout(() => _processPrintJob(job, attempt + 1), 500);
-                return;
-            }
+            if (!job.html) return;
             _processingPrintJobIds.add(job.id);
 
             try {
                 await window.dbUpdate(window.dbRef(window.firebaseDB, 'printQueue/' + job.id), { status: 'printing' });
             } catch (e) { /* proceed anyway — better to risk a double-print than silently drop the job */ }
 
-            const html = plan && job.type === 'installment' ? buildInstallmentScheduleHtml(plan) : null;
-            if (html) {
-                _executeLocalPrint(html);
-            } else {
-                console.warn('[PrintServer] could not build a document for job', job);
-            }
+            _executeLocalPrint(job.html);
 
             try {
                 await window.dbUpdate(window.dbRef(window.firebaseDB, 'printQueue/' + job.id), { status: 'done', printedAt: new Date().toISOString() });
@@ -7817,8 +7811,7 @@
                 <button onclick="regenerateInstallmentLink()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🔄 Regenerate Link</button>
                 <p class="note" id="inst-link-status" style="margin-top:6px; text-align:center;"></p>
                 ${isActive ? `
-                    <button onclick="printInstallmentSchedule()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🖨️ Print Payment Schedule</button>
-                    <button onclick="queueInstallmentPrintJob()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🖥️ Print via Main PC</button>
+                    <button onclick="chooseInstallmentPrintDestination()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">🖨️ Print Payment Schedule</button>
                 ` : ''}
                 ${plan.status !== 'completed' && !isCancelled ? `
                     <button onclick="openInstallmentRateModal()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-top:8px;">📈 Change Rate (Today's / Custom)</button>
@@ -8650,15 +8643,28 @@
             _executeLocalPrint(buildInstallmentScheduleHtml(plan));
         }
 
-        // "Print via Main PC" — writes a job to the shared print queue
-        // instead of printing on THIS device. Whichever device has the
-        // Print Server toggle turned on (see initPrintServerListener)
-        // picks it up — usually within a second or two if that PC is
-        // online — and prints it there automatically, no click needed on
-        // that end once kiosk-printing is set up in Chrome.
-        function queueInstallmentPrintJob(){
+        function queueInstallmentPrintJobRemote(){
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan) return;
+            queuePrintJob(buildInstallmentScheduleHtml(plan), 'Installment Plan — ' + plan.customerName);
+        }
+
+        function chooseInstallmentPrintDestination(){
+            const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
+            if (!plan) return;
+            _choosePrintDestination(printInstallmentSchedule, queueInstallmentPrintJobRemote);
+        }
+
+        // "Print via Main PC" for a piece of already-built HTML — used by
+        // every print flow in the app (installment, invoice, checkout),
+        // not just installments. Writes a job to the shared queue instead
+        // of printing on THIS device; whichever device has the Print
+        // Server toggle on (see initPrintServerIfEnabled) picks it up —
+        // usually within a second or two if it's online — and prints it
+        // there automatically, no click needed on that end once
+        // kiosk-printing is set up in Chrome.
+        function queuePrintJob(html, label){
+            if (!html) return;
             if (!window.firebaseDB || !window.dbSet || !window.dbRef) {
                 showCustomAlert('Not connected — try again once online.');
                 return;
@@ -8666,8 +8672,8 @@
             const jobId = crypto.randomUUID();
             const job = {
                 id: jobId,
-                type: 'installment',
-                targetId: plan.id,
+                html,
+                label: label || 'Print job',
                 requestedAt: new Date().toISOString(),
                 requestedByDevice: getDeviceId(),
                 status: 'pending',
@@ -8675,6 +8681,24 @@
             window.dbSet(window.dbRef(window.firebaseDB, 'printQueue/' + jobId), job)
                 .then(() => showCustomAlert('Sent to the main PC — it\'ll print automatically once picked up.'))
                 .catch(() => showCustomAlert('Could not send the print job — check your connection and try again.'));
+        }
+
+        // Shared "This Device / Main PC" chooser — every print button in
+        // the app opens this instead of printing directly, passing the two
+        // functions that should run for each choice.
+        let _pendingPrintChoice = null;
+
+        function _choosePrintDestination(localFn, remoteFn){
+            _pendingPrintChoice = { local: localFn, remote: remoteFn };
+            document.getElementById('print-destination-modal').style.display = 'flex';
+        }
+
+        function _confirmPrintDestination(dest){
+            document.getElementById('print-destination-modal').style.display = 'none';
+            if (!_pendingPrintChoice) return;
+            const fn = dest === 'local' ? _pendingPrintChoice.local : _pendingPrintChoice.remote;
+            _pendingPrintChoice = null;
+            if (typeof fn === 'function') fn();
         }
 
         function openCart() {
@@ -10933,6 +10957,41 @@
             // Fallback #2: absolute safety net so the overlay can never permanently block the UI.
             setTimeout(onAfterPrint, 8000);
             _invPrintWhenReady(pf, built2.html);
+        }
+
+        // Remote counterpart to confirmPaymentWithPrint — same validation,
+        // same document (_invBuildPrintHtmlFromCart), but there's no local
+        // print/afterprint event to defer the save to, so this finalizes
+        // the sale immediately (same call shape confirmPayment's no-print
+        // path already uses) and then queues the finished HTML instead of
+        // printing it here.
+        function confirmPaymentPrintViaMainPC() {
+            if (_confirmPaymentInProgress) { console.warn('[Guard] confirmPayment double-submit blocked'); return; }
+            _confirmPaymentInProgress = true;
+            const mode = window._selectedPayMode;
+            if (!mode) { _confirmPaymentInProgress = false; showCustomAlert('Please select a payment method.'); return; }
+
+            const built = _buildPaymentFromModal(mode);
+            if (!built) { _confirmPaymentInProgress = false; return; }
+
+            let total = 0; cart.forEach(i => total += i.finalPrice);
+            let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
+            const netPayable = total - oldGoldTotal - cartAdjustment;
+
+            const built2 = _invBuildPrintHtmlFromCart(cart, netPayable, mode, mode === 'partial' ? built.payment : null);
+            if (!built2) {
+                _finalizeCheckoutSave(mode, built.payment, built.cashPortion, built.saleNote, null);
+                _confirmPaymentInProgress = false;
+                return;
+            }
+
+            _finalizeCheckoutSave(mode, built.payment, built.cashPortion, built.saleNote, built2.record);
+            queuePrintJob(built2.html, 'Invoice ' + built2.record.billNo);
+            _confirmPaymentInProgress = false;
+        }
+
+        function chooseCheckoutPrintDestination() {
+            _choosePrintDestination(confirmPaymentWithPrint, confirmPaymentPrintViaMainPC);
         }
 
         function _payLabel(payment) {
@@ -13674,6 +13733,60 @@
             _invPrintWhenReady(pf, invPrintHtml);
         }
 
+        // Remote counterpart to invPrint — builds the exact same invPrintHtml
+        // via invGenerate, but since there's no local print/afterprint event
+        // to defer the save to, this replicates _invDoActualPrint's save
+        // logic immediately, then queues the finished HTML instead of
+        // printing it here. Deliberately does not chain into bulk-print's
+        // queue (window._invBulkQueue) — bulk print stays a local-only
+        // flow for now.
+        function invPrintViaMainPC() {
+            if (!_invHasSavableContent(invRows)) { invToast('Add at least one item with a description and amount first'); return; }
+            invGenerate(true);
+            if (!window._invPendingRecord) return;
+
+            const rec = window._invPendingRecord;
+            const isEdit = !!window._invPendingIsEdit;
+            window._invPendingRecord = null;
+            window._invPendingIsEdit = false;
+
+            if (isEdit) {
+                invoiceHistory = invoiceHistory.map(i => i.id === rec.id ? rec : i);
+            } else {
+                invoiceHistory.unshift(rec);
+            }
+            _saveInvoiceLocal();
+            _saveInvoiceRecord(rec);
+
+            if (!isEdit && window._invMoveSourceId) {
+                const _moveSrcId = window._invMoveSourceId;
+                window._invMoveSourceId = null;
+                invoiceHistory = invoiceHistory.filter(i => i.id !== _moveSrcId);
+                _saveInvoiceLocal();
+                _deleteInvoiceRecord(_moveSrcId);
+            }
+            if (!isEdit) _invLedgerFromRecord(rec);
+            invRenderHistory();
+
+            queuePrintJob(invPrintHtml, 'Invoice ' + rec.billNo);
+            invToast(isEdit ? '✅ Invoice updated — ' + rec.billNo : '✅ Invoice saved — ' + rec.billNo);
+            invReset();
+        }
+
+        function chooseInvoicePrintDestination() {
+            _choosePrintDestination(invPrint, invPrintViaMainPC);
+        }
+
+        function invPrintFromHistoryViaMainPC(id) {
+            invReloadBill(id, false);
+            document.getElementById('inv-bill-modal').style.display = 'none';
+            invPrintViaMainPC();
+        }
+
+        function chooseInvoiceHistoryPrintDestination(id) {
+            _choosePrintDestination(() => invPrintFromHistory(id), () => invPrintFromHistoryViaMainPC(id));
+        }
+
         function invPrint() {
             // Always rebuild from the current rows/old-jewellery/state/final-amount before
             // printing — never reuse a previously cached invPrintHtml. A stale cache here
@@ -13995,7 +14108,7 @@ const badge = '';
                 ${inv.receipt?`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);"><span>Receipt</span><span>₹${inv.receipt}</span></div>`:''}
                 ${outstanding>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#c00;font-weight:700;"><span>Outstanding</span><span>₹${outstanding}</span></div>`:''}
                 <div style="display:flex;gap:8px;margin-top:14px;">
-                  <button onclick="invPrintFromHistory('${id}')" style="flex:1;background:#1D6BB5;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🖨 Print</button>
+                  <button onclick="chooseInvoiceHistoryPrintDestination('${id}')" style="flex:1;background:#1D6BB5;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🖨 Print</button>
                   <button onclick="invReloadBill('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="flex:1;background:var(--gold);color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">✏️ Edit / Reprint</button>
                   <button onclick="invDeleteBill('${id}')" style="flex:1;background:#ffebee;color:#c62828;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🗑 Delete</button>
                 </div>
@@ -14833,13 +14946,22 @@ const badge = '';
         </div>
     </div>
 
+    <div id="print-destination-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:580; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:340px; width:100%; padding:18px;">
+            <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:14px; text-align:center;">Print</div>
+            <button onclick="_confirmPrintDestination('local')" style="width:100%; background:var(--gold); color:#fff; font-weight:800; padding:13px; border-radius:12px; border:none; font-size:14px; margin-bottom:10px;">🖥️ This Device</button>
+            <button onclick="_confirmPrintDestination('remote')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:13px; border-radius:12px; font-size:14px;">🖨️ Main PC</button>
+            <button onclick="document.getElementById('print-destination-modal').style.display='none'; _pendingPrintChoice=null;" style="width:100%; background:none; border:none; color:var(--text2); font-size:12.5px; margin-top:10px; padding:6px; cursor:pointer; box-shadow:none;">Cancel</button>
+        </div>
+    </div>
+
     <div id="print-server-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:560; align-items:center; justify-content:center;">
         <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
                 <span style="font-size:16px; font-weight:800; color:var(--text);">🖨️ Print Server</span>
                 <button onclick="document.getElementById('print-server-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
-            <p class="note" style="margin-bottom:14px; line-height:1.5;">Turn this ON only on the computer that has the printer connected. Other devices can then use "Print via Main PC" from a plan instead of printing locally — this device will pick up and print those jobs automatically.</p>
+            <p class="note" style="margin-bottom:14px; line-height:1.5;">Turn this ON only on the computer that has the printer connected. Other devices can then choose "Main PC" from any Print button — installment slips, invoices, checkout receipts — instead of printing locally, and this device will pick up and print those jobs automatically.</p>
             <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:14px; font-size:14px; font-weight:700; color:var(--text);">
                 <input type="checkbox" id="print-server-toggle" onchange="onPrintServerToggle(this.checked)" style="width:20px; height:20px; accent-color:var(--gold); margin:0; flex-shrink:0;">
                 This device is the Print Server
@@ -15291,7 +15413,7 @@ const badge = '';
 
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;">
                 <button onclick="invGenerate()" style="background:var(--gold); color:white; border:none; border-radius:var(--radius-sm); padding:14px 8px; font-size:14px; font-weight:800; cursor:pointer; box-shadow:none; margin:0; width:100%;">👁 Preview</button>
-                <button onclick="invPrint()" style="background:#1D6BB5; color:white; border:none; border-radius:var(--radius-sm); padding:14px 8px; font-size:14px; font-weight:800; cursor:pointer; box-shadow:none; margin:0; width:100%;">🖨 Print</button>
+                <button onclick="chooseInvoicePrintDestination()" style="background:#1D6BB5; color:white; border:none; border-radius:var(--radius-sm); padding:14px 8px; font-size:14px; font-weight:800; cursor:pointer; box-shadow:none; margin:0; width:100%;">🖨 Print</button>
                 <button onclick="invSaveDraft()" style="background:var(--surface); color:var(--text); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px 8px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none; margin:0; width:100%;">💾 Save Bill</button>
                 <button onclick="invReset()" style="background:#eee; color:#555; border:none; border-radius:var(--radius-sm); padding:14px 8px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none; margin:0; width:100%;">✕ Cancel</button>
             </div>
@@ -15728,7 +15850,7 @@ const badge = '';
                 style="width:100%; padding:14px; background:#0D6B3A; color:white; border:none; border-radius:14px; font-size:16px; font-weight:800; cursor:pointer; letter-spacing:0.02em; font-family:'Inter',sans-serif; box-shadow:0 4px 14px rgba(13,107,58,0.4); margin-bottom:10px;">
                 ✓ Confirm &amp; Save Bill
             </button>
-            <button onclick="confirmPaymentWithPrint()" id="pay-confirm-print-btn"
+            <button onclick="chooseCheckoutPrintDestination()" id="pay-confirm-print-btn"
                 style="width:100%; padding:14px; background:#1D6BB5; color:white; border:none; border-radius:14px; font-size:16px; font-weight:800; cursor:pointer; letter-spacing:0.02em; font-family:'Inter',sans-serif; box-shadow:0 4px 14px rgba(29,107,181,0.4); margin-bottom:10px;">
                 🖨 Confirm &amp; Print
             </button>
