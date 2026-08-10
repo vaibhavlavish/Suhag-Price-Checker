@@ -7414,23 +7414,37 @@
                 }
 
                 // Upload any ID photos staged in the form now that the plan
-                // actually has an id to attach them to — best-effort, since
-                // a photo upload failing shouldn't undo an otherwise
-                // successful plan creation. Any photo that fails here can
-                // still be added afterward from the plan detail view.
+                // actually has an id to attach them to — best-effort in the
+                // sense that a photo failing shouldn't undo an otherwise
+                // successful plan creation, but the failure itself is never
+                // silent — the person is told exactly which photo needs to
+                // be retried from the plan detail view.
+                const idPhotoFailures = [];
                 for (let slot = 0; slot < 2; slot++) {
                     const file = _newPlanIdPhotoFiles[slot];
                     if (!file) continue;
-                    try {
-                        const entry = await _uploadIdPhotoCore(planId, slot, file, null);
+                    let entry = null;
+                    for (let attempt = 0; attempt < 2 && !entry; attempt++) {
+                        try {
+                            entry = await _uploadIdPhotoCore(planId, slot, file, null);
+                        } catch (e) {
+                            console.error(`[ID Photo] upload attempt ${attempt + 1} failed`, e);
+                            if (attempt === 0) await new Promise(r => setTimeout(r, 1200));
+                        }
+                    }
+                    if (entry) {
                         plan[_idPhotoField(slot)] = entry;
-                    } catch (e) {
-                        console.error('[ID Photo] upload during plan creation failed', e);
+                    } else {
+                        idPhotoFailures.push(slot + 1);
                     }
                 }
 
                 const link = INSTALLMENT_CUSTOMER_SITE_URL + '?id=' + planId;
-                statusEl.innerHTML = `✅ Plan created! Share this link with the customer:<br><b style="word-break:break-all;">${link}</b>`;
+                let successMsg = `✅ Plan created! Share this link with the customer:<br><b style="word-break:break-all;">${link}</b>`;
+                if (idPhotoFailures.length) {
+                    successMsg += `<br><span style="color:#C62828; font-weight:700;">⚠️ Photo ${idPhotoFailures.join(' & ')} failed to upload — open this plan and add ${idPhotoFailures.length > 1 ? 'them' : 'it'} again from there.</span>`;
+                }
+                statusEl.innerHTML = successMsg;
                 // Clear the cart the same way a normal sale would — this
                 // plan now owns these items going forward, not the cart.
                 cart = [];
@@ -7830,11 +7844,23 @@
         // can never drift out of sync with each other again the way they
         // did before (upload was writing idProofPhoto0/idProofPhoto1,
         // print was reading idProofPhoto1/idProofPhoto2 — a real bug,
-        // fixed here). _getIdPhotoEntry also checks the old broken field
-        // name as a fallback, so a photo uploaded during that bug isn't
-        // silently lost.
+        // fixed here).
+        //
+        // _getIdPhotoEntry only falls back to a legacy field name for
+        // slot 0 (idProofPhoto0) — slot 1's old broken name was
+        // idProofPhoto1, which is slot 0's CURRENT correct name. Falling
+        // back for slot 1 too would make it silently return slot 0's own
+        // photo as if it were slot 1's "existing entry to replace" — which
+        // is exactly what happened: uploading photo 2 treated photo 1's
+        // real entry as the old file to clean up, and deleted photo 1's
+        // actual file from Storage while its now-broken database entry
+        // stayed behind. Never add that fallback back for slot 1.
         function _idPhotoField(slot){ return 'idProofPhoto' + (slot + 1); }
-        function _getIdPhotoEntry(plan, slot){ return plan[_idPhotoField(slot)] || plan['idProofPhoto' + slot] || null; }
+        function _getIdPhotoEntry(plan, slot){
+            if (plan[_idPhotoField(slot)]) return plan[_idPhotoField(slot)];
+            if (slot === 0 && plan.idProofPhoto0) return plan.idProofPhoto0;
+            return null;
+        }
 
         // Shared core: compress, upload to Storage, and clean up whatever
         // it's replacing. Used both by the existing plan-detail upload
@@ -7885,16 +7911,23 @@
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan) return;
             const field = _idPhotoField(slot);
-            const oldField = 'idProofPhoto' + slot;
             const entry = _getIdPhotoEntry(plan, slot);
             if (!entry) return;
             if (!checkPin()) return;
             if (!confirm('Remove this ID photo?')) return;
 
+            // Only slot 0 has a genuinely separate legacy field
+            // (idProofPhoto0) worth also clearing — slot 1's "old" name
+            // would be idProofPhoto1, which is slot 0's real field, so it
+            // must never be touched here (see the note above
+            // _getIdPhotoEntry for why that collision is dangerous).
+            const updates = { [field]: null };
+            if (slot === 0) updates['idProofPhoto0'] = null;
+
             try {
-                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), { [field]: null, [oldField]: null });
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), updates);
                 plan[field] = null;
-                plan[oldField] = null;
+                if (slot === 0) plan.idProofPhoto0 = null;
                 if (entry.storagePath) {
                     try { await window.deleteObject(window.storageRef(window.firebaseStorage, entry.storagePath)); }
                     catch (e) { console.warn('[ID Photo] cleanup failed', e); }
