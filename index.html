@@ -13826,7 +13826,14 @@
             const ogTotal = invOgItems.reduce((s,i) => s + (i.value||0), 0);
             const netAfterOG = rounded - ogTotal;
             const outstanding = netAfterOG >= 0 ? Math.max(0, netAfterOG - receipt) : 0;
-            const fmt = invGetActiveFormat();
+            // window._invForceFormat is a one-shot override — set right
+            // before triggering a specific print (see reprintLastInvoice),
+            // consumed here, then cleared immediately so it can never leak
+            // into some later, unrelated invoice. Otherwise this is just
+            // whatever the standalone New tab's own format setting is,
+            // same as always.
+            const fmt = window._invForceFormat || invGetActiveFormat();
+            window._invForceFormat = null;
             const fp = _invFormatPieces(fmt, sub, t);
             // Invoice 2 folds rate/making into the single GST-inclusive Value column,
             // so those columns are always hidden in that format regardless of the
@@ -14173,7 +14180,12 @@
         // standalone New tab, whichever happened last — and routes it
         // through the exact same reload+print flow the History screen's
         // own Print button already uses, so this never needs its own
-        // separate print-building logic.
+        // separate print-building logic. Always prints using the
+        // CHECKOUT format setting specifically (not whatever the
+        // standalone New tab's own format happens to be currently set
+        // to) — this button exists for "the checkout receipt needs
+        // reprinting," so it should behave like checkout printing does,
+        // regardless of which screen actually created the invoice.
         function reprintLastInvoice(){
             closeOptions();
             if (!invoiceHistory || !invoiceHistory.length) {
@@ -14184,6 +14196,7 @@
                 (!latest || new Date(inv.timestamp || 0) > new Date(latest.timestamp || 0)) ? inv : latest
             , null);
             if (!last) { showCustomAlert('No invoices found yet.'); return; }
+            window._invForceFormat = invGetCheckoutFormat();
             chooseInvoiceHistoryPrintDestination(last.id);
         }
 
