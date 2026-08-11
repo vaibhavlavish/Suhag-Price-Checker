@@ -15025,6 +15025,28 @@
             if (!inv) return;
             if (inv.track !== 'B') return; // only meaningful when copying out of Track B
 
+            // Warn if any item's tag/barcode already appears in an existing
+            // Track A invoice — that piece may have already been sold and
+            // invoiced there, and copying/moving this Track B invoice on
+            // top of it would create a duplicate record for the same
+            // physical item. Normalized (trimmed + uppercased) before
+            // comparing — a strict match would miss the same tag stored
+            // with different casing or stray whitespace between invoices.
+            const _normTag = (s) => String(s || '').trim().toUpperCase();
+            const trackAInvoices = invoiceHistory.filter(i => i.track === 'A');
+            const duplicateTags = [];
+            (inv.items || []).forEach(item => {
+                if (!item.barcode) return;
+                const itemTag = _normTag(item.barcode);
+                if (!itemTag) return;
+                const match = trackAInvoices.find(a => (a.items || []).some(ai => _normTag(ai.barcode) === itemTag));
+                if (match) duplicateTags.push(`${item.barcode} (already in ${match.billNo})`);
+            });
+            if (duplicateTags.length) {
+                const msg = `⚠️ The following tag(s) are already present in Track A:\n\n${duplicateTags.join('\n')}\n\nContinue anyway?`;
+                if (!confirm(msg)) return;
+            }
+
             // Switch back to Track A first — invExitTrackB() handles the lock UI
             // (dot colour, pill) and calls invReset(), which also auto-fills a
             // fresh Track A bill number via invAutoBillNo(). Everything it sets
