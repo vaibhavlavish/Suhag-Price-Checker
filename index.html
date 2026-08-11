@@ -1947,33 +1947,40 @@
             <h3>Manage Presets</h3>
             <p style="font-size:12px; text-align:center; color:#666; margin-top:-10px;">(Admin PIN Required to Add/Edit/Delete)</p>
 
-            <div style="background: #f9f9f9; padding: 10px; border-radius: 8px; border: 1px solid #eee;">
-                <h4 id="preset-form-title" style="margin: 0 0 8px 0; font-size: 14px;">Add New Preset:</h4>
-                <input type="text" id="new-preset-name" placeholder="Preset Name (e.g. Bangles)" style="margin-top:0;">
-                <label for="preset-modal-metal" style="font-size:12px; margin: 8px 0 2px 0;">Metal:</label>
-                <select id="preset-modal-metal" onchange="updatePresetModalStamps()" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%;">
-                    <option value="Gold">Gold</option>
-                    <option value="Silver">Silver</option>
-                    <option value="PC">PC</option>
-                </select>
-                <label for="preset-modal-stamp" style="font-size:12px; margin: 0 0 2px 0;">Stamp:</label>
-                <select id="preset-modal-stamp" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%;"></select>
-                <label for="preset-modal-making-type" style="font-size:12px; margin: 0 0 2px 0;">Making Type:</label>
-                <select id="preset-modal-making-type" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%;">
-                    <option value="%">% (Percent)</option>
-                    <option value="wastage">% (W) Wastage</option>
-                    <option value="per_g">₹ Per Gram</option>
-                    <option value="per_pc">₹ Fixed (Pc)</option>
-                </select>
-                <label for="preset-modal-making-value" style="font-size:12px; margin: 0 0 2px 0;">Making Value:</label>
-                <input type="number" id="preset-modal-making-value" placeholder="e.g. 35" step="0.25" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%; box-sizing:border-box;">
-                <button id="preset-save-btn" onclick="addNewPreset()" style="background-color: #4CAF50; width: 100%; margin-top: 5px;">Save Preset</button>
-            </div>
+            <button onclick="openPresetAddModal()" style="background-color:#4CAF50; width:100%; margin-top:0; margin-bottom:10px;">➕ Add New Preset</button>
 
             <h4 style="margin: 15px 0 5px 0; font-size: 14px;">Load Preset:</h4>
             <div id="preset-list"></div>
 
             <button onclick="closeModal('preset-modal')" style="background-color: #555; margin-top: 15px;">Close</button>
+        </div>
+    </div>
+
+    <div id="preset-add-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1400; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:380px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <h4 id="preset-form-title" style="margin:0; font-size:16px;">Add New Preset:</h4>
+                <button onclick="document.getElementById('preset-add-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <input type="text" id="new-preset-name" placeholder="Preset Name (e.g. Bangles)" style="margin-top:12px;">
+            <label for="preset-modal-metal" style="font-size:12px; margin: 8px 0 2px 0;">Metal:</label>
+            <select id="preset-modal-metal" onchange="updatePresetModalStamps()" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%;">
+                <option value="Gold">Gold</option>
+                <option value="Silver">Silver</option>
+                <option value="PC">PC</option>
+            </select>
+            <label for="preset-modal-stamp" style="font-size:12px; margin: 0 0 2px 0;">Stamp:</label>
+            <select id="preset-modal-stamp" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%;"></select>
+            <label for="preset-modal-making-type" style="font-size:12px; margin: 0 0 2px 0;">Making Type:</label>
+            <select id="preset-modal-making-type" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%;">
+                <option value="%">% (Percent)</option>
+                <option value="wastage">% (W) Wastage</option>
+                <option value="per_g">₹ Per Gram</option>
+                <option value="per_pc">₹ Fixed (Pc)</option>
+            </select>
+            <label for="preset-modal-making-value" style="font-size:12px; margin: 0 0 2px 0;">Making Value:</label>
+            <input type="number" id="preset-modal-making-value" placeholder="e.g. 35" step="0.25" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%; box-sizing:border-box;">
+            <button id="preset-save-btn" onclick="addNewPreset()" style="background-color: #4CAF50; width: 100%; margin-top: 5px;">Save Preset</button>
         </div>
     </div>
 
@@ -2042,38 +2049,96 @@
                 </div>
             </div>
 
-            <!-- Adjust Panel -->
-            <div id="adjust-panel" style="display:none; background:#f3e5f5; border-radius:12px; padding:14px; margin-bottom:10px; border:1.5px solid #ce93d8;">
-                <div style="font-size:13px; font-weight:700; color:#6a1b9a; margin-bottom:10px;">⚙ Adjust Final Amount</div>
-                <!-- ±50 nudge buttons ABOVE inputs -->
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
-                    <button onclick="nudgeAdjustFinal(1)" title="+₹50 to final amount" style="background:white; color:#4CAF50; border:none; border-radius:8px; padding:9px 0; font-size:20px; font-weight:900; cursor:pointer; line-height:1; width:100%; box-shadow:none;">＋</button>
-                    <button onclick="nudgeAdjustFinal(-1)" title="-₹50 from final amount" style="background:white; color:#e53935; border:none; border-radius:8px; padding:9px 0; font-size:20px; font-weight:900; cursor:pointer; line-height:1; width:100%; box-shadow:none;">－</button>
-                </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
-                    <div>
-                        <label style="font-size:11px; color:#555; display:block; margin-bottom:3px;">Discount (₹)</label>
-                        <input type="number" id="adjust-discount" placeholder="e.g. 500" step="1"
-                               oninput="syncAdjustFromDiscount(); autoApplyAdjust();"
-                               style="width:100%; padding:8px; border:1px solid #ce93d8; border-radius:8px; font-size:14px; box-sizing:border-box; background:white;">
-                    </div>
-                    <div>
-                        <label style="font-size:11px; color:#555; display:block; margin-bottom:3px;">Final Amount (₹)</label>
-                        <input type="number" id="adjust-final" placeholder="e.g. -1250" step="1"
-                               oninput="syncAdjustFromFinal(); autoApplyAdjust();"
-                               style="width:100%; padding:8px; border:1px solid #ce93d8; border-radius:8px; font-size:14px; box-sizing:border-box; background:white;">
-                    </div>
-                </div>
-                <button onclick="clearAdjust()" style="width:100%; background:#e53935; color:white; border:none; border-radius:8px; padding:9px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none;">Clear Adjustment</button>
-            </div>
-
             </div><!-- end cart-scroll-body -->
             <div id="cart-modal-buttons" style="flex-shrink:0; padding-top:8px; border-top:1px solid #eee;">
                  <button id="close-cart-modal" onclick="closeModal('cart-modal')">Close</button>
                  <button id="clear-cart-btn" onclick="clearCart()">Clear Cart</button>
-                 <button id="adjust-btn" onclick="toggleAdjustPanel()" style="background:#9c27b0; color:white; font-weight:700;">⚙ Adjust</button>
+                 <button id="adjust-btn" onclick="openAdjustModal()" style="background:#9c27b0; color:white; font-weight:700;">⚙ Adjust</button>
                  <button id="checkout-btn" onclick="checkoutCart()" style="background:#4CAF50; color:white; font-weight:700;">Checkout ✓</button>
             </div>
+        </div>
+    </div>
+
+    <div id="manage-stamps-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; max-height:85vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h4 style="margin:0; font-size:15px;">Manage Stamps for Selected Metal</h4>
+                <button onclick="document.getElementById('manage-stamps-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <label for="new-stamp" style="font-size:12.5px; font-weight:600; color:#555; display:block; margin-bottom:3px;">Add New Stamp</label>
+            <input type="text" id="new-stamp" placeholder="e.g., 20K" style="width:100%; margin-bottom:6px;">
+            <button onclick="addStamp()" style="width:100%; margin:0 0 14px;">Add</button>
+            <hr>
+            <label for="manage-stamp" style="font-size:12.5px; font-weight:600; color:#555; display:block; margin:12px 0 3px;">Select Stamp to Remove/Rename</label>
+            <select id="manage-stamp" style="width:100%; margin-bottom:6px;"></select>
+            <button id="remove-stamp-btn" onclick="removeStamp()" style="width:100%; margin:0 0 14px; background-color: #f44336; color: white;">Remove</button>
+            <label for="rename-to" style="font-size:12.5px; font-weight:600; color:#555; display:block; margin-bottom:3px;">Rename to</label>
+            <input type="text" id="rename-to" placeholder="New name" style="width:100%; margin-bottom:6px;">
+            <button onclick="renameStamp()" style="width:100%; margin:0;">Rename</button>
+        </div>
+    </div>
+
+    <div id="update-rate-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h4 style="margin:0; font-size:15px;">Update Custom Rate</h4>
+                <button onclick="document.getElementById('update-rate-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <label for="metal-select">Metal Type:</label>
+            <select id="metal-select">
+                <option value="Gold">Gold</option>
+                <option value="Silver">Silver</option>
+                <option value="PC">PC</option>
+            </select>
+
+            <label for="stamp-select">Stamp/Purity:</label>
+            <select id="stamp-select"></select>
+
+            <label for="price-per-gram">Price per Gram (₹):</label>
+            <input type="number" id="price-per-gram" placeholder="e.g., 11185" step="0.25">
+
+            <button onclick="updateRate()" style="width:100%; margin-top:8px;">Update Rate</button>
+        </div>
+    </div>
+
+    <div id="global-tax-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h4 style="margin:0; font-size:15px;">Global Tax</h4>
+                <button onclick="document.getElementById('global-tax-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <label for="tax-percent">Global Tax (%):</label>
+            <input type="number" id="tax-percent" placeholder="e.g., 3" step="0.01">
+            <button onclick="updateTax()" style="width:100%; margin-top:8px;">Update Tax</button>
+        </div>
+    </div>
+
+    <div id="adjust-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:3500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; padding:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <div style="font-size:15px; font-weight:700; color:#6a1b9a;">⚙ Adjust Final Amount</div>
+                <button onclick="document.getElementById('adjust-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <!-- ±50 nudge buttons ABOVE inputs -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+                <button onclick="nudgeAdjustFinal(1)" title="+₹50 to final amount" style="background:#f3e5f5; color:#4CAF50; border:none; border-radius:8px; padding:9px 0; font-size:20px; font-weight:900; cursor:pointer; line-height:1; width:100%; box-shadow:none;">＋</button>
+                <button onclick="nudgeAdjustFinal(-1)" title="-₹50 from final amount" style="background:#f3e5f5; color:#e53935; border:none; border-radius:8px; padding:9px 0; font-size:20px; font-weight:900; cursor:pointer; line-height:1; width:100%; box-shadow:none;">－</button>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+                <div>
+                    <label style="font-size:11px; color:#555; display:block; margin-bottom:3px;">Discount (₹)</label>
+                    <input type="number" id="adjust-discount" placeholder="e.g. 500" step="1"
+                           oninput="syncAdjustFromDiscount(); autoApplyAdjust();"
+                           style="width:100%; padding:8px; border:1px solid #ce93d8; border-radius:8px; font-size:14px; box-sizing:border-box; background:white;">
+                </div>
+                <div>
+                    <label style="font-size:11px; color:#555; display:block; margin-bottom:3px;">Final Amount (₹)</label>
+                    <input type="number" id="adjust-final" placeholder="e.g. -1250" step="1"
+                           oninput="syncAdjustFromFinal(); autoApplyAdjust();"
+                           style="width:100%; padding:8px; border:1px solid #ce93d8; border-radius:8px; font-size:14px; box-sizing:border-box; background:white;">
+                </div>
+            </div>
+            <button onclick="clearAdjust()" style="width:100%; background:#e53935; color:white; border:none; border-radius:8px; padding:9px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none;">Clear Adjustment</button>
         </div>
     </div>
 
@@ -2203,70 +2268,41 @@
         <h2>Update Stamp-Wise Rates</h2>
         <p style="font-size:14px; text-align:center; color:#666;"><em>Enter market rate per gram for purity</em></p>
 
-        <label for="metal-select">Metal Type:</label>
-        <select id="metal-select">
-            <option value="Gold">Gold</option>
-            <option value="Silver">Silver</option>
-            <option value="PC">PC</option>
-        </select>
-
-        <label for="stamp-select">Stamp/Purity:</label>
-
-        <select id="stamp-select"></select>
-
-        <label for="price-per-gram">Price per Gram (₹):</label>
-        <input type="number" id="price-per-gram" placeholder="e.g., 11185" step="0.25">
-
-        <button onclick="updateRate()">Update Rate</button>
-
-        <div id="rates-table"></div>
-        <div id="manage-stamps">
-            <h4>Manage Stamps for Selected Metal</h4>
-
-            <div class="manage-row">
-                <label for="new-stamp">Add New Stamp:</label>
-                <input type="text" id="new-stamp" placeholder="e.g., 20K">
-                <button onclick="addStamp()">Add</button>
-            </div>
-            <hr>
-            <div class="manage-row">
-
-                <label for="manage-stamp">Select Stamp to Remove/Rename:</label>
-                <select id="manage-stamp"></select>
-                <button id="remove-stamp-btn" onclick="removeStamp()" style="background-color: #f44336; color: white;">Remove</button>
-            </div>
-            <div class="manage-row">
-                <label for="rename-to">Rename to:</label>
-                <input type="text" id="rename-to" placeholder="New name">
-                <button onclick="renameStamp()">Rename</button>
-            </div>
-
+        <div style="display:flex; gap:0; margin-bottom:14px; border-radius:10px; overflow:hidden; border:1.5px solid #ddd;">
+            <button id="rtab-current-btn" onclick="switchRateTab('current')" style="flex:1; background:#333; color:white; border:none; border-radius:0; padding:11px; font-size:13px; font-weight:700; margin:0; box-shadow:none; cursor:pointer;">Current Rates</button>
+            <button id="rtab-update-btn" onclick="switchRateTab('update')" style="flex:1; background:#eee; color:#777; border:none; border-radius:0; padding:11px; font-size:13px; font-weight:700; margin:0; box-shadow:none; cursor:pointer;">Update Rate/Stamp</button>
         </div>
 
-        <hr>
+        <div id="rtab-current-content">
+            <div id="rates-table"></div>
+        </div>
 
-        <label for="tax-percent">Global Tax (%):</label>
-        <input type="number" id="tax-percent" placeholder="e.g., 3" step="0.01">
-        <button onclick="updateTax()">Update Tax</button>
+        <div id="rtab-update-content" style="display:none;">
+            <h3 style="text-align: center; color: #333; font-size: 16px; margin-top:0;">Auto-Calculate from Base Rate</h3>
+            <p style="font-size:12px; text-align:center; color:#666; margin-top: -10px;"><em>Set Pure Rate (e.g. 24K) and % for stamps</em></p>
 
-        <hr>
+            <label for="base-calc-metal">Metal:</label>
+            <select id="base-calc-metal" onchange="renderBaseRateCalc()">
+                <option value="Gold">Gold</option>
+                <option value="Silver">Silver</option>
+            </select>
 
-        <h3 style="text-align: center; color: #333; font-size: 16px;">Auto-Calculate from Base Rate</h3>
-        <p style="font-size:12px; text-align:center; color:#666; margin-top: -10px;"><em>Set Pure Rate (e.g. 24K) and % for stamps</em></p>
+            <label for="base-pure-rate">Pure Metal Rate (e.g., 24K price):</label>
 
-        <label for="base-calc-metal">Metal:</label>
-        <select id="base-calc-metal" onchange="renderBaseRateCalc()">
-            <option value="Gold">Gold</option>
-            <option value="Silver">Silver</option>
-        </select>
+            <input type="number" id="base-pure-rate" placeholder="e.g., 14300" step="0.01">
 
-        <label for="base-pure-rate">Pure Metal Rate (e.g., 24K price):</label>
+            <div id="base-calc-container" style="margin-top: 15px;"></div>
 
-        <input type="number" id="base-pure-rate" placeholder="e.g., 14300" step="0.01">
+            <button onclick="applyBaseRates()" style="background-color: #2196F3; margin-top: 15px;">Apply &amp; Update All Rates</button>
 
-        <div id="base-calc-container" style="margin-top: 15px;"></div>
+            <hr>
 
-        <button onclick="applyBaseRates()" style="background-color: #2196F3; margin-top: 15px;">Apply & Update All Rates</button>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+                <button onclick="openUpdateRateModal()" style="background:#4CAF50; color:white; font-weight:700; width:100%; margin:0;">💰 Update Custom Rate</button>
+                <button onclick="openGlobalTaxModal()" style="background:#FF9800; color:white; font-weight:700; width:100%; margin:0;">📊 Global Tax</button>
+                <button onclick="openManageStampsModal()" style="background:#607D8B; color:white; font-weight:700; width:100%; margin:0;">⚙ Manage Stamp</button>
+            </div>
+        </div>
 
         <hr>
 
@@ -6052,9 +6088,17 @@
         // --- PRESET FUNCTIONS (UPDATED FOR CLOUD & PIN) ---
         function openPresetModal() {
             renderPresetList();
-            _resetPresetForm();
             updatePresetModalStamps();
             document.getElementById('preset-modal').style.display = 'flex';
+        }
+
+        // Opens the Add/Edit popup fresh (blank form) — used by the "+ Add
+        // New Preset" button. editPreset() below reuses this same popup,
+        // just pre-filled, rather than duplicating the modal.
+        function openPresetAddModal() {
+            _resetPresetForm();
+            updatePresetModalStamps();
+            document.getElementById('preset-add-modal').style.display = 'flex';
         }
 
         function updatePresetModalStamps() {
@@ -6086,8 +6130,7 @@
             const btn = document.getElementById('preset-save-btn');
             btn.textContent = '💾 Update Preset';
             btn.style.backgroundColor = '#FF9800';
-            // Scroll form into view
-            document.getElementById('preset-form-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            document.getElementById('preset-add-modal').style.display = 'flex';
         }
 
         function _resetPresetForm() {
@@ -6146,6 +6189,7 @@
             _resetPresetForm();
             updatePresetModalStamps();
             renderPresetList();
+            document.getElementById('preset-add-modal').style.display = 'none';
             showCustomAlert(_editingPresetId ? "Preset updated!" : "Preset saved to cloud!");
             _editingPresetId = null;
         }
@@ -9524,6 +9568,36 @@
             return -1;
         }
 
+        function switchRateTab(tab){
+            const currentBtn = document.getElementById('rtab-current-btn');
+            const updateBtn = document.getElementById('rtab-update-btn');
+            const currentContent = document.getElementById('rtab-current-content');
+            const updateContent = document.getElementById('rtab-update-content');
+            if (!currentBtn || !updateBtn || !currentContent || !updateContent) return;
+            const isCurrent = tab === 'current';
+            currentBtn.style.background = isCurrent ? '#333' : '#eee';
+            currentBtn.style.color = isCurrent ? 'white' : '#777';
+            updateBtn.style.background = isCurrent ? '#eee' : '#333';
+            updateBtn.style.color = isCurrent ? '#777' : 'white';
+            currentContent.style.display = isCurrent ? 'block' : 'none';
+            updateContent.style.display = isCurrent ? 'none' : 'block';
+        }
+
+        function openUpdateRateModal(){
+            document.getElementById('update-rate-modal').style.display = 'flex';
+        }
+
+        function openGlobalTaxModal(){
+            document.getElementById('global-tax-modal').style.display = 'flex';
+        }
+
+        // manage-stamp's own value/options are already kept in sync with
+        // metal-select via the change listener set up at startup — this
+        // just needs to show the popup, no extra refresh required.
+        function openManageStampsModal(){
+            document.getElementById('manage-stamps-modal').style.display = 'flex';
+        }
+
         function updateRate() {
             if (!checkPin()) return;
             const metal = document.getElementById('metal-select').value.toLowerCase();
@@ -9894,28 +9968,19 @@
         // === CART ADJUST FUNCTIONS ===================
         // =============================================
 
-        function toggleAdjustPanel() {
-            const panel = document.getElementById('adjust-panel');
-            const isOpen = panel.style.display !== 'none';
-            if (!isOpen) {
-                // Pre-fill with current adjustment if any
-                document.getElementById('adjust-discount').value = cartAdjustment !== 0 ? cartAdjustment.toFixed(2) : '';
-                const base = _getCartBase();
-                document.getElementById('adjust-final').value = cartAdjustment !== 0 ? (base - cartAdjustment).toFixed(0) : '';
-            }
-            panel.style.display = isOpen ? 'none' : 'block';
+        function openAdjustModal() {
+            // Pre-fill with current adjustment if any
+            document.getElementById('adjust-discount').value = cartAdjustment !== 0 ? cartAdjustment.toFixed(2) : '';
+            const base = _getCartBase();
+            document.getElementById('adjust-final').value = cartAdjustment !== 0 ? (base - cartAdjustment).toFixed(0) : '';
+            document.getElementById('adjust-modal').style.display = 'flex';
         }
 
-        // Open cart modal with adjust panel already expanded
+        // Open cart modal with the adjust popup already showing
         function openCartWithAdjust() {
             openCart();
-            // Small delay so cart modal renders first, then force-open the panel
-            setTimeout(() => {
-                const panel = document.getElementById('adjust-panel');
-                if (panel && panel.style.display === 'none') {
-                    toggleAdjustPanel();
-                }
-            }, 50);
+            // Small delay so cart modal renders first, then open the adjust popup
+            setTimeout(() => { openAdjustModal(); }, 50);
         }
 
         // Quick Checkout: adds current item to cart first, then opens cart+adjust
@@ -10011,9 +10076,6 @@
                 cartAdjustmentAuto = false; // shopkeeper is now driving the discount manually
                 // Re-render just the summary (not full cart) to update Net Payable live
                 openCart();
-                // Re-open panel since openCart() re-renders and hides it
-                const panel = document.getElementById('adjust-panel');
-                if (panel) panel.style.display = 'block';
             }, 300); // 300ms debounce — wait for user to finish typing
         }
 
@@ -10032,7 +10094,7 @@
             cartAdjustment = disc;
             cartAdjustmentAuto = false; // shopkeeper is now driving the discount manually
             _exactDiscFromFinal = null;
-            document.getElementById('adjust-panel').style.display = 'none';
+            document.getElementById('adjust-modal').style.display = 'none';
             openCart(); // re-render summary
         }
 
@@ -10042,7 +10104,7 @@
             _exactDiscFromFinal = null;
             document.getElementById('adjust-discount').value = '';
             document.getElementById('adjust-final').value = '';
-            document.getElementById('adjust-panel').style.display = 'none';
+            document.getElementById('adjust-modal').style.display = 'none';
             openCart();
         }
 
@@ -10052,7 +10114,7 @@
             _exactDiscFromFinal = null;
             document.getElementById('adjust-discount').value = '';
             document.getElementById('adjust-final').value = '';
-            const panel = document.getElementById('adjust-panel');
+            const panel = document.getElementById('adjust-modal');
             if (panel) panel.style.display = 'none';
         }
 
@@ -12696,7 +12758,7 @@
         window.syncPartialPayment = syncPartialPayment;
         window.confirmPayment = confirmPayment;
         window.confirmPaymentWithPrint = confirmPaymentWithPrint;
-        window.toggleAdjustPanel   = toggleAdjustPanel;
+        window.openAdjustModal     = openAdjustModal;
         window.openCartWithAdjust  = openCartWithAdjust;
         window.autoApplyAdjust    = autoApplyAdjust;
         window.quickCheckoutFlow   = quickCheckoutFlow;
@@ -14512,11 +14574,11 @@
                 return;
             }
 
-            c.innerHTML = items.slice(0, 200).map(inv => {
+            const rowHtml = (inv) => {
                 const dt = new Date(inv.timestamp);
                 const ds = dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
                 const amt = inv.totals?.rounded || 0;
-const badge = '';
+                const badge = '';
                 const draftTag = inv.draft ? ' <span style="font-size:9px;color:#FF9800;font-weight:700;">DRAFT</span>' : '';
                 return `<div class="hist-item" onclick="invOpenBillDetail('${inv.id}')">
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;">
@@ -14528,7 +14590,61 @@ const badge = '';
                     <div style="font-size:16px;font-weight:800;color:var(--green);">₹${Math.round(amt).toLocaleString('en-IN')}</div>
                   </div>
                 </div>`;
+            };
+
+            // Searching bypasses month grouping entirely — a flat list of
+            // whatever matches, exactly like before this feature existed.
+            if (q) {
+                c.innerHTML = items.slice(0, 200).map(rowHtml).join('');
+                return;
+            }
+
+            // No search — group by month/year. items is already sorted
+            // newest-first, so grouping in encounter order naturally keeps
+            // the newest month on top. The current month starts expanded
+            // (that's what's checked constantly); every older month starts
+            // collapsed, since those are just there to browse occasionally.
+            const now = new Date();
+            const currentMonthKey = `${now.getFullYear()}-${now.getMonth()}`;
+            const groups = [];
+            const groupIndexByKey = {};
+            items.slice(0, 500).forEach(inv => {
+                const dt = new Date(inv.timestamp);
+                const key = `${dt.getFullYear()}-${dt.getMonth()}`;
+                if (!(key in groupIndexByKey)) {
+                    groupIndexByKey[key] = groups.length;
+                    groups.push({ key, label: dt.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }), items: [] });
+                }
+                groups[groupIndexByKey[key]].items.push(inv);
+            });
+
+            c.innerHTML = groups.map((g, idx) => {
+                const isCurrentMonth = g.key === currentMonthKey;
+                const groupId = 'inv-hist-group-' + idx;
+                return `
+                    <div style="margin-bottom:10px;">
+                        <div onclick="invToggleHistGroup('${groupId}')" style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; background:var(--surface); border-radius:10px; cursor:pointer; user-select:none; -webkit-user-select:none; box-shadow:0 1px 4px rgba(0,0,0,.05);">
+                            <span style="font-weight:700; font-size:13px; color:var(--text);">${g.label}</span>
+                            <span style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:11px; color:var(--text2);">${g.items.length} invoice${g.items.length === 1 ? '' : 's'}</span>
+                                <span id="${groupId}-arrow" style="font-size:11px; color:var(--text2);">${isCurrentMonth ? '▾' : '▸'}</span>
+                            </span>
+                        </div>
+                        <div id="${groupId}" style="display:${isCurrentMonth ? 'block' : 'none'}; margin-top:6px;">
+                            ${g.items.map(rowHtml).join('')}
+                        </div>
+                    </div>
+                `;
             }).join('');
+        }
+
+        function invToggleHistGroup(groupId){
+            const el = document.getElementById(groupId);
+            const arrow = document.getElementById(groupId + '-arrow');
+            if (!el) return;
+            const isHidden = el.style.display === 'none';
+            el.style.display = isHidden ? 'block' : 'none';
+            if (arrow) arrow.textContent = isHidden ? '▾' : '▸';
         }
 
         // Plain function, not buried in a nested template literal — returns
