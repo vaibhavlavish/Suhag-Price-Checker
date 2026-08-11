@@ -1803,6 +1803,8 @@
     <button id="add-old-gold-btn" onclick="openOldGoldModal()">+</button>
 
     <div id="loose-calculator">
+        <label for="loose-print-name" style="font-size:12.5px; font-weight:600; color:#555; margin-bottom:2px;">Print Name (optional)</label>
+        <input type="text" id="loose-print-name" placeholder="Leave blank to use the default name" style="margin-bottom:10px;">
         <div style="width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 0 5px; margin-bottom: 10px;">
             <div id="loose-active-preset" style="display: none; color: #9c27b0; font-weight: bold; font-size: 16px;"></div>
             <button id="preset-btn" onclick="openPresetModal()" style="margin-bottom: 0; margin-left: auto;">★ Presets</button>
@@ -5967,16 +5969,22 @@
             // can later render a faithful weight/rate/making row instead of guessing — and so
             // it can back out the SAME tax rate that was actually applied here, which may not
             // match invoiceSettings.taxRate if the two have ever been configured differently.
+            const _looseManualName = document.getElementById('loose-print-name').value.trim();
             currentLooseItem = {
                 type: 'loose', // Important flag
                 id: crypto.randomUUID(),
-                itemName: `Loose ${metal.charAt(0).toUpperCase() + metal.slice(1)} ${stamp}`,
+                itemName: _looseManualName || `Loose ${metal.charAt(0).toUpperCase() + metal.slice(1)} ${stamp}`,
                 weight: weight,
                 finalPrice: finalPrice,
                 metal: metal, stamp: stamp,
                 rate: rate, makingType: makingType, makingValue: makingValue,
                 subtotal: subtotal, taxRateApplied: taxRate,
-                presetName: currentLoosePresetName || null, // printed on the invoice if present
+                // A manually typed print name takes priority over even an
+                // active preset's name (that's the whole point of typing
+                // one) — presetName is what the invoice actually prints in
+                // preference to itemName, so it must be cleared here or a
+                // preset would silently win over what was just typed.
+                presetName: _looseManualName ? null : (currentLoosePresetName || null),
                 // How many physical pieces this single weight/price entry represents —
                 // matters when e.g. 2 Nosepins are weighed together as one line.
                 // Only used for stock-count deduction, never affects price math above.
@@ -5998,6 +6006,7 @@
             document.getElementById('loose-weight').value = '';
             document.getElementById('loose-price-display').textContent = '0.00';
             document.getElementById('loose-piece-count').value = '1';
+            document.getElementById('loose-print-name').value = '';
             document.getElementById('loose-weight').focus();
             currentLooseItem = null; // Clear stored item
         }
@@ -6024,18 +6033,20 @@
                 showCustomAlert('Please enter a valid amount.');
                 return;
             }
+            const _looseManualName = document.getElementById('loose-print-name').value.trim();
             const item = {
                 type: 'repair',
                 id: crypto.randomUUID(),
-                itemName: 'Jewellery',
+                itemName: _looseManualName || 'Jewellery',
                 finalPrice: amount
             };
             cart.push(item);
             _autoRoundCartAdjustment();
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
             updateCartIcon();
-            showCustomAlert('Jewellery added to cart!');
+            showCustomAlert(`${item.itemName} added to cart!`);
             document.getElementById('repair-amount').value = '';
+            document.getElementById('loose-print-name').value = '';
         }
 
         // --- PRESET FUNCTIONS (UPDATED FOR CLOUD & PIN) ---
