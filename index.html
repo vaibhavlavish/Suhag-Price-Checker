@@ -8746,7 +8746,7 @@
             document.getElementById('inv-cust-name').value = plan.customerName || '';
             document.getElementById('inv-cust-mob').value = plan.customerMobile || '';
             document.getElementById('inv-cust-addr').value = plan.customerAddress || '';
-            invRows = _invRowsFromCartItems(plan.items);
+            invRows = _invRowsFromCartItems(plan.items, invGetActiveFormat());
             invRenderRows();
             invRecalc();
 
@@ -10626,9 +10626,10 @@
         // of ledger, bills, or invoices never touches the other two.
         function _invAutoSaveFromCheckout(cartItems, netPayable, paymentMode, paymentSplit) {
             try {
-                if (!_invHasSavableContent(_invRowsFromCartItems(cartItems))) return; // nothing real to invoice (e.g. old-gold-only refund)
+                const _fmt = invGetCheckoutFormat();
+                if (!_invHasSavableContent(_invRowsFromCartItems(cartItems, _fmt))) return; // nothing real to invoice (e.g. old-gold-only refund)
 
-                const rows = _invRowsFromCartItems(cartItems);
+                const rows = _invRowsFromCartItems(cartItems, _fmt);
                 const sub = rows.reduce((s, r) => s + invTaxableVal(r), 0);
                 // finalAmt = gross after discount only (OLD GOLD NOT deducted here).
                 // invComputeTotals back-calculates taxable from this gross figure.
@@ -10846,7 +10847,8 @@
         }
 
         function _invBuildPrintHtmlFromCart(cartItems, netPayable, paymentMode, paymentSplit) {
-            const rows = _invRowsFromCartItems(cartItems);
+            const fmt = invGetCheckoutFormat();
+            const rows = _invRowsFromCartItems(cartItems, fmt);
             if (!_invHasSavableContent(rows)) return null;
 
             const sub = rows.reduce((s, r) => s + invTaxableVal(r), 0);
@@ -10880,7 +10882,6 @@
             const paymentDetails = paymentMode === 'partial' ? (paymentSplit || {}) : {};
 
             const _printColPref = invGetPrintColPref();
-            const fmt = invGetCheckoutFormat();
             // Invoice 2 folds rate/making into the single GST-inclusive Value column,
             // so those columns are always hidden in that format regardless of the
             // user's Rate/Making print-column preference (which only applies to Invoice 1).
@@ -10912,7 +10913,7 @@
                 // per row must be GST-inclusive (taxable value × (1 + tax rate)).
                 // MRP-type rows hold a real pre-tax taxable value (see invTaxableVal),
                 // so they're taxed the same as every other row — no exemption here.
-                const tv = (fmt === 'invoice2') ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r);
+                const tv = (fmt === 'invoice2' && !r.taxInclusive) ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r);
                 itemsHtml += `<tr>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}">${invDescWithStamp(r)}</td>
                   ${showHsn ? `<td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invEscH(String(r.hsn))}</td>` : ''}
@@ -13618,7 +13619,13 @@
         // ─── LOAD FROM CART (live, in-app — same page, no URL hand-off needed) ───
         // Pure helper: turns cart items into invoice row objects (no DOM, no invRows mutation).
         // Shared by invLoadFromCart (manual, screen-based) and the checkout auto-save (Track B).
-        function _invRowsFromCartItems(cartItems) {
+        // fmt is which invoice format these rows are being built for
+        // (invoice1 = full tax breakdown, invoice2 = flat all-inclusive) —
+        // defaults to the standalone New tab's own format setting for
+        // callers that don't pass one explicitly (this function's own
+        // existence-check callers, where the exact figure never matters).
+        function _invRowsFromCartItems(cartItems, fmt) {
+            const _fmt = fmt || invGetActiveFormat();
             return (cartItems || []).map(item => {
                 // "Jewellery" (flat-amount, from the loose screen's Other field) and "Loose"
                 // (weighed metal priced on the loose-calculator screen) cart entries both carry
@@ -13628,14 +13635,38 @@
                 // to an MRP-type row: invTaxableVal uses the figure as-is, no further making/GST
                 // math applied on top (see invTaxableVal/invMakingAmt).
                 if (item.type === 'repair') {
+                    // The amount typed into the Jewellery Amount box IS the final,
+                    // tax-inclusive price — never a pre-tax taxable value. Treating
+                    // it as pre-tax (the old bug) meant GST got added ON TOP of an
+                    // already-final figure, then a fake "Discount" line clawed the
+                    // total back down to what was actually charged — confusing and
+                    // wrong on a document meant to show real numbers.
+                    //
+                    // Format 1 (full breakdown): back-calculate the taxable value so
+                    // Taxable Value + SGST/CGST reconcile EXACTLY to the entered
+                    // amount, with no Discount line needed at all.
+                    // Format 2 (flat, no breakdown): show the entered amount
+                    // directly, and mark the row taxInclusive so invExemptSub
+                    // excludes it from tax math entirely — no invisible GST gets
+                    // added on top of a figure that's already final.
+                    const amt = parseFloat((item.finalPrice || 0).toFixed(2));
+                    if (_fmt === 'invoice2') {
+                        return {
+                            desc: item.itemName || 'Jewellery',
+                            hsn: '7113', pc: 1,
+                            grWt: 0, nlWt: 0, rate: 0,
+                            makingType: 'mrp', makingPct: amt,
+                            taxInclusive: true,
+                            metal: ''
+                        };
+                    }
+                    const taxRate = invoiceSettings.taxRate || 0;
+                    const backCalcTaxable = Math.round((amt / (1 + taxRate / 100)) * 100) / 100;
                     return {
                         desc: item.itemName || 'Jewellery',
                         hsn: '7113', pc: 1,
                         grWt: 0, nlWt: 0, rate: 0,
-                        // Taxed like any other MRP row — GST is broken out on top of this
-                        // figure (SGST/CGST or IGST), not folded silently, untaxed, into
-                        // Round Off via invExemptSub.
-                        makingType: 'mrp', makingPct: parseFloat((item.finalPrice || 0).toFixed(2)),
+                        makingType: 'mrp', makingPct: backCalcTaxable,
                         metal: ''
                     };
                 }
@@ -13744,7 +13775,7 @@
             // Copy cart OG into invoice's own invOgItems
             invOgItems = (oldGoldItems || []).map(i => ({...i}));
             const oldGoldTotal = invOgItems.reduce((s,i) => s + (i.value||0), 0);
-            invRows = _invRowsFromCartItems(cart);
+            invRows = _invRowsFromCartItems(cart, invGetActiveFormat());
             // Pre-fill customer fields from cart-level customer details
             if (cartCustomer && (cartCustomer.name || cartCustomer.mobile || cartCustomer.address)) {
                 document.getElementById('inv-cust-name').value = cartCustomer.name || '';
@@ -13873,7 +13904,7 @@
                 // per row must be GST-inclusive (taxable value × (1 + tax rate)).
                 // MRP-type rows hold a real pre-tax taxable value (see invTaxableVal),
                 // so they're taxed the same as every other row — no exemption here.
-                const tv = (fmt === 'invoice2') ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r);
+                const tv = (fmt === 'invoice2' && !r.taxInclusive) ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r);
                 itemsHtml += `<tr>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}">${invDescWithStamp(r)}</td>
                   ${showHsn ? `<td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invEscH(String(r.hsn))}</td>` : ''}
@@ -14024,7 +14055,7 @@
             const _pendExisting = _pendIsEdit ? invoiceHistory.find(i => i.id === invEditingId) : null;
             window._invPendingRecord = {
                 id: _pendIsEdit ? invEditingId : crypto.randomUUID(),
-                track: currentInvTrack,
+                track: _pendIsEdit ? (_pendExisting ? _pendExisting.track : currentInvTrack) : currentInvTrack,
                 billNo, timestamp: _invTimestampFromDateField(_pendIsEdit ? (_pendExisting && _pendExisting.timestamp) : null),
                 custName, custMob, custAddr, custGstin, state: (stateSel?.value || invoiceSettings.homeStateCode),
                 items: invRows.map(r => ({...r})),
@@ -14259,7 +14290,7 @@
 
             const record = {
                 id: isEdit ? invEditingId : crypto.randomUUID(),
-                track: currentInvTrack,
+                track: isEdit ? (existing ? existing.track : currentInvTrack) : currentInvTrack,
                 billNo, timestamp: _invTimestampFromDateField(isEdit ? (existing && existing.timestamp) : null),
                 custName, custMob, custAddr, state,
                 items: invRows.map(r => ({...r})),
