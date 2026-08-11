@@ -14573,10 +14573,11 @@ const badge = '';
                 ${inv.receipt?`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);"><span>Receipt${_invPaymentLabel(inv)}</span><span>₹${inv.receipt}</span></div>`:''}
                 ${inv.paymentMethod === 'partial' && inv.paymentDetails ? `<div style="font-size:11.5px; color:#888; margin:2px 0 6px;">${['cash','upi','card'].filter(k => inv.paymentDetails[k] > 0).map(k => `${k.toUpperCase()}: ₹${inv.paymentDetails[k].toFixed(0)}`).join(' · ')}</div>` : ''}
                 ${outstanding>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#c00;font-weight:700;"><span>Outstanding</span><span>₹${outstanding}</span></div>`:''}
-                <div style="display:flex;gap:8px;margin-top:14px;">
-                  <button onclick="chooseInvoiceHistoryPrintDestination('${id}')" style="flex:1;background:#1D6BB5;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🖨 Print</button>
-                  <button onclick="invReloadBill('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="flex:1;background:var(--gold);color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">✏️ Edit / Reprint</button>
-                  <button onclick="invDeleteBill('${id}')" style="flex:1;background:#ffebee;color:#c62828;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🗑 Delete</button>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px;">
+                  <button onclick="invPreviewFromHistory('${id}')" style="background:#43A047;color:white;border:none;border-radius:8px;padding:10px 8px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">👁 Preview</button>
+                  <button onclick="chooseInvoiceHistoryPrintDestination('${id}')" style="background:#1D6BB5;color:white;border:none;border-radius:8px;padding:10px 8px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🖨 Print</button>
+                  <button onclick="invReloadBill('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="background:var(--gold);color:white;border:none;border-radius:8px;padding:10px 8px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">✏️ Edit</button>
+                  <button onclick="invDeleteBill('${id}')" style="background:#ffebee;color:#c62828;border:none;border-radius:8px;padding:10px 8px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🗑 Delete</button>
                 </div>
                 ${inv.track === 'B' ? `<div style="margin-top:8px;">
                   <button onclick="invCopyToTrackA('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="width:100%;background:#4CAF50;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">➡️ Copy to Track A</button>
@@ -14587,6 +14588,19 @@ const badge = '';
 
         // One-click "Print" from the history detail modal — loads the saved invoice
         // (same restore logic as Edit/Reprint, now correctly bringing back date,
+        // Same invisible-load-behind-History pattern as invPrintFromHistory
+        // below, but opens the shared Preview modal instead of printing —
+        // lets you check an invoice looks right (especially useful after
+        // the format/track fixes) without committing to an actual print.
+        // Preview never resaves the record — invGenerate() only saves once
+        // Print is actually pressed, whether from inside the preview or
+        // via the History Print button.
+        function invPreviewFromHistory(id) {
+            invReloadBill(id, false); // false = don't switch tabs, stay on History
+            document.getElementById('inv-bill-modal').style.display = 'none';
+            invGenerate();
+        }
+
         // discount, and payment method) straight into the (hidden) New-tab form and
         // sends it to print immediately. Unlike Edit/Reprint, this deliberately stays
         // on the History tab throughout — it used to jump to the New tab and leave you
