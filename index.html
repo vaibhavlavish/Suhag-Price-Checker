@@ -15874,7 +15874,7 @@
             const titleRow = ws.addRow([`SALE REGISTER From:${fromD.toLocaleDateString('en-GB')} To:${toD.toLocaleDateString('en-GB')}`]);
             titleRow.getCell(1).font = { bold: true, size: 13 };
             ws.addRow([]);
-            const headers = ['Date','Bill No.','Name','Gross Amt.','Old Jewellery','Disc','Tax','Bill Amount','UPI','Cash','Card','State','Customer GSTIN'];
+            const headers = ['Date','Bill No.','Name','Taxable Amount','Old Jewellery','Tax','Bill Amount','UPI','Cash','Card','State','Customer GSTIN'];
             const headerRow = ws.addRow(headers);
 
             const thin = { style: 'thin', color: { argb: 'FFBFBFBF' } };
@@ -15887,14 +15887,13 @@
             });
 
             // Column indices (1-based) of every money field, for number
-            // formatting — Gross, Old Jewellery, Disc, Tax, Bill, UPI, Cash, Card.
-            const moneyCols = [4, 5, 6, 7, 8, 9, 10, 11];
+            // formatting — Taxable, Old Jewellery, Tax, Bill, UPI, Cash, Card.
+            const moneyCols = [4, 5, 6, 7, 8, 9, 10];
 
-            let tot = { gross:0, oldJewellery:0, disc:0, tax:0, bill:0, upi:0, cash:0, card:0 };
+            let tot = { gross:0, oldJewellery:0, tax:0, bill:0, upi:0, cash:0, card:0 };
             sorted.forEach(inv => {
                 const t = inv.totals || {};
                 const billAmt = r2(t.rounded);
-                const disc = r2(t.disc);
                 const grossAmt = frac > 0 ? r2(billAmt / (1 + frac)) : billAmt;
                 const tax = r2(billAmt - grossAmt);
                 const oldJewellery = r2((inv.ogItems || []).reduce((s, i) => s + (i.value || 0), 0));
@@ -15918,20 +15917,20 @@
 
                 const row = ws.addRow([
                     new Date(inv.timestamp), inv.billNo, inv.custName || 'CASH',
-                    grossAmt, oldJewellery || null, disc || null, tax, billAmt,
+                    grossAmt, oldJewellery || null, tax, billAmt,
                     upi || null, cash || null, card || null, state, gstin || null
                 ]);
                 row.getCell(1).numFmt = 'dd/mm/yyyy';
                 moneyCols.forEach(c => { row.getCell(c).numFmt = '0.00'; });
                 row.eachCell({ includeEmpty: true }, cell => { cell.border = cellBorder; });
 
-                tot.gross += grossAmt; tot.oldJewellery += oldJewellery; tot.disc += disc; tot.tax += tax; tot.bill += billAmt;
+                tot.gross += grossAmt; tot.oldJewellery += oldJewellery; tot.tax += tax; tot.bill += billAmt;
                 tot.upi += upi; tot.cash += cash; tot.card += card;
             });
 
             const totalsRow = ws.addRow([
                 'Totals', null, null,
-                r2(tot.gross), r2(tot.oldJewellery), r2(tot.disc), r2(tot.tax), r2(tot.bill),
+                r2(tot.gross), r2(tot.oldJewellery), r2(tot.tax), r2(tot.bill),
                 r2(tot.upi), r2(tot.cash), r2(tot.card), null, null
             ]);
             const thickTop = { style: 'double', color: { argb: 'FF1A1A1A' } };
@@ -15942,8 +15941,8 @@
             moneyCols.forEach(c => { totalsRow.getCell(c).numFmt = '0.00'; });
 
             ws.columns = [
-                { width: 12 }, { width: 12 }, { width: 18 }, { width: 11 }, { width: 13 },
-                { width: 9 }, { width: 9 }, { width: 11 }, { width: 9 }, { width: 9 },
+                { width: 12 }, { width: 12 }, { width: 18 }, { width: 13 }, { width: 13 },
+                { width: 9 }, { width: 11 }, { width: 9 }, { width: 9 },
                 { width: 9 }, { width: 14 }, { width: 16 }
             ];
 
