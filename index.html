@@ -8961,7 +8961,10 @@
                 return parts.length ? `<div style="font-size:11px; color:var(--text2); margin-top:2px;">${parts.join(' · ')}</div>` : '';
             };
 
-            const planRow = (x, statusLine) => `
+            const planRow = (x, statusLine) => {
+                const entries = hedgeLog.filter(e => e.planId === x.plan.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                const expanded = _hedgeExpandedPlans.has(x.plan.id);
+                return `
                 <div style="background:var(--surface); border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                         <span style="font-weight:700;">${x.plan.customerName}</span>
@@ -8970,7 +8973,14 @@
                     <div style="font-size:12.5px; color:var(--text2);">${statusLine}</div>
                     ${bookedRateLine(x)}
                     ${x.unresolved > 0 ? `<div style="font-size:11px; color:#C62828; margin-top:4px;">⚠️ ${x.unresolved} item${x.unresolved === 1 ? '' : 's'} couldn't be matched to a current stock record — grams shown may be understated. Log the purchase manually if you know the actual weight.</div>` : ''}
+                    ${entries.length ? `
+                        <div onclick="_toggleHedgePlanEntries('${x.plan.id}')" style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border); font-size:11px; font-weight:700; color:var(--text2); cursor:pointer; user-select:none;">
+                            ${expanded ? '▾' : '▸'} ${entries.length} purchase${entries.length === 1 ? '' : 's'} logged
+                        </div>
+                        ${expanded ? `<div style="margin-top:6px;">${entries.map(e => _hedgeEntryRow(e, { showAssign: false })).join('')}</div>` : ''}
+                    ` : ''}
                 </div>`;
+            };
 
             // A plan with unresolved items still needs attention even if
             // its resolvable grams happen to net to zero — it stays in
@@ -9013,23 +9023,28 @@
             }
             plansEl.innerHTML = html;
 
-            const generalEl = document.getElementById('hedge-general-list');
-            const general = hedgeLog.filter(e => !e.planId);
-            if (!general.length) {
-                generalEl.innerHTML = '<p class="note" style="text-align:center;">No unassigned purchases logged.</p>';
-            } else {
-                generalEl.innerHTML = general.map(e => `
+            function _hedgeEntryRow(e, opts){
+                opts = opts || {};
+                return `
                     <div style="display:flex; justify-content:space-between; align-items:center; background:var(--surface); border-radius:var(--radius); padding:10px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                         <div style="font-size:12.5px;">
                             <b>${e.metal}</b> · ${(e.grams || 0).toFixed(2)}g ${e.rate ? `@ ₹${e.rate.toFixed(2)}/g` : ''}
                             <div style="font-size:10.5px; color:var(--text2);">${e.date || ''}</div>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
-                            <button onclick="openAssignHedgeModal('${e.id}')" title="Assign to a plan" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:5px 10px; border-radius:8px; font-size:11px; width:auto; margin:0;">Assign</button>
+                            ${opts.showAssign ? `<button onclick="openAssignHedgeModal('${e.id}')" title="Assign to a plan" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:5px 10px; border-radius:8px; font-size:11px; width:auto; margin:0;">Assign</button>` : ''}
+                            <button onclick="openHedgeLogModal(null, '${e.id}')" title="Edit" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:5px 10px; border-radius:8px; font-size:11px; width:auto; margin:0;">Edit</button>
                             <button onclick="deleteHedgeLogEntry('${e.id}')" title="Remove" style="background:none; border:none; color:#C62828; font-size:16px; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
                         </div>
-                    </div>
-                `).join('');
+                    </div>`;
+            }
+
+            const generalEl = document.getElementById('hedge-general-list');
+            const general = hedgeLog.filter(e => !e.planId);
+            if (!general.length) {
+                generalEl.innerHTML = '<p class="note" style="text-align:center;">No unassigned purchases logged.</p>';
+            } else {
+                generalEl.innerHTML = general.map(e => _hedgeEntryRow(e, { showAssign: true })).join('');
             }
         }
 
@@ -9039,29 +9054,55 @@
             renderHedgeDashboard();
         }
 
-        function openHedgeLogModal(planId){
-            document.getElementById('hedge-log-plan-id').value = planId || '';
+        let _hedgeExpandedPlans = new Set();
+        function _toggleHedgePlanEntries(planId){
+            if (_hedgeExpandedPlans.has(planId)) _hedgeExpandedPlans.delete(planId);
+            else _hedgeExpandedPlans.add(planId);
+            renderHedgeDashboard();
+        }
+
+        // entryId present = editing an existing entry (pre-fills its
+        // values, keeps its id and planId on save). Omitted = logging a
+        // brand-new purchase, same as before.
+        function openHedgeLogModal(planId, entryId){
+            const editing = !!entryId;
+            const existing = editing ? hedgeLog.find(e => e.id === entryId) : null;
+            document.getElementById('hedge-log-entry-id').value = entryId || '';
+            document.getElementById('hedge-log-plan-id').value = existing ? (existing.planId || '') : (planId || '');
             const noteEl = document.getElementById('hedge-log-plan-note');
             const metalSelect = document.getElementById('hedge-log-metal');
-            document.getElementById('hedge-log-grams').value = '';
-            document.getElementById('hedge-log-rate').value = '';
-            if (planId) {
-                const plan = installmentPlans.find(p => p.id === planId);
-                document.getElementById('hedge-log-title').textContent = 'Log Hedge Purchase';
+            const effectivePlanId = existing ? existing.planId : planId;
+
+            document.getElementById('hedge-log-grams').value = existing ? existing.grams : '';
+            document.getElementById('hedge-log-rate').value = existing ? existing.rate : '';
+
+            document.getElementById('hedge-log-title').textContent = editing ? 'Edit Hedge Purchase' : (effectivePlanId ? 'Log Hedge Purchase' : 'Log Purchase');
+
+            if (effectivePlanId) {
+                const plan = installmentPlans.find(p => p.id === effectivePlanId);
                 if (plan) {
                     noteEl.style.display = 'block';
                     noteEl.textContent = `For ${plan.customerName}'s plan`;
-                    const g = getPlanHedgeGrams(plan);
-                    const hedged = getHedgedGrams(planId);
-                    const goldNeed = (g.totals.Gold || 0) - (hedged.Gold || 0);
-                    const silverNeed = (g.totals.Silver || 0) - (hedged.Silver || 0);
-                    metalSelect.value = (silverNeed > 0 && goldNeed <= 0) ? 'Silver' : 'Gold';
+                    if (existing) {
+                        metalSelect.value = existing.metal;
+                    } else {
+                        const g = getPlanHedgeGrams(plan);
+                        const hedged = getHedgedGrams(effectivePlanId);
+                        const goldNeed = (g.totals.Gold || 0) - (hedged.Gold || 0);
+                        const silverNeed = (g.totals.Silver || 0) - (hedged.Silver || 0);
+                        metalSelect.value = (silverNeed > 0 && goldNeed <= 0) ? 'Silver' : 'Gold';
+                    }
+                } else {
+                    noteEl.style.display = 'none';
                 }
             } else {
-                document.getElementById('hedge-log-title').textContent = 'Log Purchase';
                 noteEl.style.display = 'none';
-                metalSelect.value = 'Gold';
+                metalSelect.value = existing ? existing.metal : 'Gold';
             }
+
+            const saveBtn = document.getElementById('hedge-log-save-btn');
+            saveBtn.textContent = editing ? '✓ Save Changes' : '✓ Save Purchase';
+
             document.getElementById('hedge-log-modal').classList.add('show');
         }
 
@@ -9070,11 +9111,31 @@
         }
 
         async function saveHedgeLogEntry(){
+            const entryId = document.getElementById('hedge-log-entry-id').value || null;
             const planId = document.getElementById('hedge-log-plan-id').value || null;
             const metal = document.getElementById('hedge-log-metal').value;
             const grams = parseFloat(document.getElementById('hedge-log-grams').value) || 0;
             const rate = parseFloat(document.getElementById('hedge-log-rate').value) || 0;
             if (grams <= 0) { showCustomAlert('Enter grams purchased.'); return; }
+
+            if (entryId) {
+                // Editing — keep id/planId/date/createdAt, only the
+                // purchase details themselves change.
+                const existing = hedgeLog.find(e => e.id === entryId);
+                if (!existing) { closeHedgeLogModal(); return; }
+                const updated = { ...existing, metal, grams, rate, amount: rate ? +(grams * rate).toFixed(2) : 0 };
+                try {
+                    await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeLog'), { [entryId]: updated });
+                    Object.assign(existing, updated);
+                    closeHedgeLogModal();
+                    renderHedgeDashboard();
+                } catch (e) {
+                    console.error('[HedgeLog] update failed', e);
+                    showCustomAlert(window._writeAllowed ? 'Could not save — try again.' : 'Writes are disabled — this copy is running in read-only mode. Open the app from the real site to save changes.');
+                }
+                return;
+            }
+
             const id = crypto.randomUUID();
             const entry = {
                 id, planId, metal, grams, rate,
@@ -16592,6 +16653,7 @@
             </div>
 
             <input type="hidden" id="hedge-log-plan-id" value="">
+            <input type="hidden" id="hedge-log-entry-id" value="">
             <p class="note" id="hedge-log-plan-note" style="display:none; margin-bottom:14px;"></p>
 
             <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">METAL</label>
