@@ -135,6 +135,32 @@
         const _originOk = (location.origin === ALLOWED_ORIGIN);
         window._writeAllowed = _originOk;
 
+        // Re-wrap every write-capable Firebase function here, at the one
+        // place they're defined, instead of trusting every call site
+        // across the app to remember to check window._writeAllowed
+        // itself. This is what closes the actual gap: functions like
+        // installment plan cancel/delete called dbUpdate/dbRemove
+        // directly and were never gated at all, so the origin lock's
+        // documented promise ("no write can ever race past this gate")
+        // wasn't true in practice. Read-only functions (dbOnValue, dbGet,
+        // dbRef, getDownloadURL, storageRef) are untouched — the app
+        // still needs to read normally in read-only mode.
+        function _guardWrite(fn, label) {
+            return function(...args) {
+                if (!window._writeAllowed) {
+                    console.warn('[WRITE BLOCKED]', label, '— read-only mode, not running from', ALLOWED_ORIGIN);
+                    return Promise.reject(new Error('Writes are disabled — this copy is not running from ' + ALLOWED_ORIGIN));
+                }
+                return fn.apply(this, args);
+            };
+        }
+        window.dbSet = _guardWrite(window.dbSet, 'dbSet');
+        window.dbUpdate = _guardWrite(window.dbUpdate, 'dbUpdate');
+        window.dbRemove = _guardWrite(window.dbRemove, 'dbRemove');
+        window.dbRunTransaction = _guardWrite(window.dbRunTransaction, 'dbRunTransaction');
+        window.uploadBytes = _guardWrite(window.uploadBytes, 'uploadBytes');
+        window.deleteObject = _guardWrite(window.deleteObject, 'deleteObject');
+
         if (!_originOk) {
             console.warn('[ORIGIN] Write blocked — not running from', ALLOWED_ORIGIN, '(got:', location.origin + ')');
             setTimeout(() => {
@@ -1465,6 +1491,19 @@
             align-items: flex-end; justify-content: center;
         }
         #reminder-modal.show { display: flex; }
+        #hedge-log-modal {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55); z-index: 1150;
+            align-items: flex-end; justify-content: center;
+        }
+        #hedge-log-modal.show { display: flex; }
+        #hedge-log-panel {
+            background: white; border-radius: 20px 20px 0 0;
+            width: 100%; max-width: 480px;
+            padding: 22px 20px 30px;
+            box-shadow: 0 -8px 32px rgba(0,0,0,0.15);
+            max-height: 88vh; overflow-y: auto;
+        }
         #reminder-panel {
             background: white; border-radius: 20px 20px 0 0;
             width: 100%; max-width: 480px;
@@ -1697,6 +1736,9 @@
             </button>
             <button onclick="showSection('installments-screen')" data-menu-key="installments">
                 <span class="menu-icon" style="background:#FCE4EC;">📆</span> Installment Plans
+            </button>
+            <button onclick="showSection('hedge-screen')" data-menu-key="hedge-dashboard">
+                <span class="menu-icon" style="background:#EDE7F6;">🛡️</span> Hedge Dashboard
             </button>
             <button onclick="openPrintServerModal()" data-menu-key="print-server">
                 <span class="menu-icon" style="background:#E0F2F1;">🖨️</span> Print Server
@@ -4534,6 +4576,7 @@
             document.getElementById('returns').style.display = 'none';
             document.getElementById('invoice-screen').style.display = 'none';
             document.getElementById('installments-screen').style.display = 'none';
+            document.getElementById('hedge-screen').style.display = 'none';
             document.getElementById('reminders').style.display = 'none';
             const brandHeaderEl = document.getElementById('brand-header');
             if (brandHeaderEl) brandHeaderEl.style.display = 'none';
@@ -4560,11 +4603,15 @@
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen') ? 'flex' : 'block';
+                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen' || section === 'hedge-screen') ? 'flex' : 'block';
             }
 
             if (section === 'installments-screen') {
                 openInstallmentsScreen();
+            }
+
+            if (section === 'hedge-screen') {
+                renderHedgeDashboard();
             }
 
             if (section === 'ledger') {
@@ -4634,6 +4681,7 @@
         const MENU_ITEMS_REGISTRY = [
             { key: 'invoice',        label: 'Invoice',            icon: '🧾', action: () => showSection('invoice-screen') },
             { key: 'installments',   label: 'Installment Plans',  icon: '📆', action: () => showSection('installments-screen') },
+            { key: 'hedge-dashboard', label: 'Hedge Dashboard',   icon: '🛡️', action: () => showSection('hedge-screen') },
             { key: 'update-rates',   label: 'Update Rates',       icon: '💰', action: () => showSection('update-rates') },
             { key: 'excel-upload',   label: 'Upload Excel',       icon: '📂', action: () => showSection('excel-upload') },
             { key: 'stock-view',     label: 'Stock View',         icon: '📦', action: () => showStockSection() },
@@ -7444,7 +7492,25 @@
             const items = cart.map(item => {
                 const setting = invItemSettings && invItemSettings[item.itemName];
                 const printName = (setting && setting.printName) ? setting.printName : null;
-                return { ...item, type: item.type || 'standard', printName };
+                const type = item.type || 'standard';
+                const out = { ...item, type, printName };
+                // Hedge dashboard needs metal+weight per item, but stamped
+                // cart items don't normally carry those fields (only
+                // barcode/finalPrice) — the live lookup happens via
+                // productData[barcode] elsewhere. Freezing it here too
+                // means the hedge math still works even if that stock
+                // record is later deleted or the barcode gets reused for
+                // a different item (loose/repair items already have
+                // metal/weight of their own, so this only fills the gap
+                // for stamped ones).
+                if (type !== 'repair' && type !== 'loose' && (out.metal == null || out.weight == null)) {
+                    const d = productData[item.barcode];
+                    if (d) {
+                        out.metal = d.metal || null;
+                        out.weight = d.netWeight || 0;
+                    }
+                }
+                return out;
             });
 
             // Same applied-pure-rate tracking a later rate change records —
@@ -7601,6 +7667,10 @@
                 }
                 if (document.getElementById('stock-calc').style.display !== 'none' && stockCalcMetal) {
                     renderStockCalc();
+                }
+                const hedgeScr = document.getElementById('hedge-screen');
+                if (hedgeScr && hedgeScr.style.display !== 'none') {
+                    renderHedgeDashboard();
                 }
             }, (error) => {
                 console.error('[Installments] Firebase read error:', error);
@@ -8573,6 +8643,7 @@
                 }
                 await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), { status: 'cancelled' });
                 plan.status = 'cancelled';
+                await _releaseHedgeEntriesForPlan(plan.id);
                 renderInstallmentDetailBody(plan);
                 renderInstallmentsList();
                 if (skippedSold > 0) {
@@ -8602,6 +8673,7 @@
                 await window.dbRemove(window.dbRef(window.firebaseDB, 'installments/' + plan.id));
                 await window.dbRemove(window.dbRef(window.firebaseDB, 'installmentIdPhotos/' + plan.id));
                 delete _installmentIdPhotosCache[plan.id];
+                await _deleteHedgeEntriesForPlan(plan.id);
                 installmentPlans = installmentPlans.filter(p => p.id !== plan.id);
                 document.getElementById('installment-detail-modal').style.display = 'none';
                 renderInstallmentsList();
@@ -8646,6 +8718,293 @@
                 if (d && d.metal) metals.add(d.metal);
             });
             return metals;
+        }
+
+        // ================= HEDGE DASHBOARD =================
+        // Down payment (35-40%) plus shop capital buys the raw gold/silver
+        // for a plan's items up front, locking in cost regardless of where
+        // the market rate drifts before the plan finishes. hedgeLog is a
+        // single flat Firebase collection — each entry optionally carries
+        // a planId. Entries WITH a planId count against that specific
+        // plan's obligation; entries withOUT one (planId null) are bought
+        // ahead of need and just sit in the general pool. Both count
+        // toward the aggregate "already hedged" total either way.
+        let hedgeLog = [];
+        let _hedgeLogSyncStarted = false;
+        let _hedgeLogSyncRetries = 0;
+        function startHedgeLogSync(){
+            if (_hedgeLogSyncStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB) {
+                if (_hedgeLogSyncRetries++ < 20) setTimeout(startHedgeLogSync, 500);
+                return;
+            }
+            _hedgeLogSyncStarted = true;
+            const ref = window.dbRef(window.firebaseDB, 'hedgeLog');
+            window.dbOnValue(ref, (snapshot) => {
+                const val = snapshot.val() || {};
+                hedgeLog = Object.values(val).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                const scr = document.getElementById('hedge-screen');
+                if (scr && scr.style.display !== 'none') renderHedgeDashboard();
+            }, (error) => {
+                console.error('[HedgeLog] Firebase read error:', error);
+            });
+        }
+
+        // Same metal/weight resolution openInstallmentItemPriceDetail and
+        // getInstallmentPlanMetals already use — stamped items look up
+        // productData by barcode (returns null if the stock record is
+        // gone), loose items carry their own metal/weight.
+        function getInstallmentItemMetalWeight(item){
+            if (item.type === 'repair') return null;
+            if (item.type === 'loose') return { metal: item.metal || '', weight: item.weight || 0 };
+            // Plans created after the hedge feature shipped carry their
+            // own frozen metal/weight (see plan-creation snapshot code) —
+            // immune to the stock record disappearing later. Older plans
+            // fall back to a live lookup, which only works if that stock
+            // record is still around.
+            if (item.metal && typeof item.weight === 'number') {
+                return { metal: item.metal, weight: item.weight };
+            }
+            const d = productData[item.barcode];
+            if (!d) return null;
+            return { metal: d.metal || '', weight: d.netWeight || 0 };
+        }
+
+        function getPlanHedgeGrams(plan){
+            const totals = {};
+            let unresolved = 0;
+            (plan.items || []).forEach(item => {
+                if (item.type === 'repair') return;
+                const mw = getInstallmentItemMetalWeight(item);
+                if (!mw || !mw.metal) { unresolved++; return; }
+                totals[mw.metal] = (totals[mw.metal] || 0) + mw.weight;
+            });
+            return { totals, unresolved };
+        }
+
+        // planId omitted → every entry (the true aggregate hedged total).
+        // planId === null → only unassigned/general entries.
+        // planId === '<id>' → only that plan's own entries.
+        function getHedgedGrams(planId){
+            const totals = {};
+            hedgeLog.forEach(e => {
+                if (planId !== undefined && (e.planId || null) !== planId) return;
+                totals[e.metal] = (totals[e.metal] || 0) + (e.grams || 0);
+            });
+            return totals;
+        }
+
+        function computeHedgeSummary(){
+            const owed = { Gold: 0, Silver: 0 };
+            let unresolvedPlans = 0;
+            installmentPlans.filter(p => p.status === 'active').forEach(plan => {
+                const g = getPlanHedgeGrams(plan);
+                owed.Gold += g.totals.Gold || 0;
+                owed.Silver += g.totals.Silver || 0;
+                if (g.unresolved > 0) unresolvedPlans++;
+            });
+            const hedged = getHedgedGrams();
+            return {
+                Gold: { owed: owed.Gold, hedged: hedged.Gold || 0, toBuy: Math.max(0, owed.Gold - (hedged.Gold || 0)) },
+                Silver: { owed: owed.Silver, hedged: hedged.Silver || 0, toBuy: Math.max(0, owed.Silver - (hedged.Silver || 0)) },
+                unresolvedPlans
+            };
+        }
+
+        // P&L only applies to plan-tied entries — a general/unassigned
+        // purchase has no booked rate to compare against. Booked rate
+        // comes from plan.appliedPureRates, the pure rate locked in when
+        // the plan's items were priced (or last rate-changed).
+        function computeHedgePnl(){
+            let totalPnl = 0;
+            const rows = [];
+            hedgeLog.forEach(e => {
+                if (!e.planId) return;
+                const plan = installmentPlans.find(p => p.id === e.planId);
+                if (!plan) return;
+                const bookedRate = (plan.appliedPureRates && plan.appliedPureRates[e.metal]) || 0;
+                if (!bookedRate || !e.rate) return;
+                const pnl = (bookedRate - e.rate) * (e.grams || 0);
+                totalPnl += pnl;
+                rows.push({ customerName: plan.customerName, metal: e.metal, grams: e.grams, rate: e.rate, bookedRate, pnl });
+            });
+            return { totalPnl, rows };
+        }
+
+        function renderHedgeDashboard(){
+            const summary = computeHedgeSummary();
+            const cardsEl = document.getElementById('hedge-summary-cards');
+            const metalCard = (label, icon, s) => `
+                <div style="background:var(--surface); border-radius:var(--radius); padding:14px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                    <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:8px;">${icon} ${label}</div>
+                    <div style="font-size:11px; color:var(--text2); margin-bottom:2px;">Owed: <b style="color:var(--text);">${s.owed.toFixed(2)}g</b></div>
+                    <div style="font-size:11px; color:var(--text2); margin-bottom:8px;">Hedged: <b style="color:var(--text);">${s.hedged.toFixed(2)}g</b></div>
+                    <div style="font-size:20px; font-weight:800; color:${s.toBuy > 0 ? '#C62828' : '#2E7D32'};">${s.toBuy.toFixed(2)}g</div>
+                    <div style="font-size:10px; color:var(--text2);">to buy</div>
+                </div>`;
+            cardsEl.innerHTML = metalCard('Gold', '🟡', summary.Gold) + metalCard('Silver', '⚪', summary.Silver);
+
+            const pnl = computeHedgePnl();
+            const pnlEl = document.getElementById('hedge-pnl-card');
+            if (!pnl.rows.length) {
+                pnlEl.innerHTML = `<div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Hedge P&L</div><p class="note">No plan-tied purchases with a rate logged yet.</p>`;
+            } else {
+                const pnlColor = pnl.totalPnl >= 0 ? '#2E7D32' : '#C62828';
+                pnlEl.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                        <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">Hedge P&L</div>
+                        <div style="font-size:18px; font-weight:800; color:${pnlColor};">${pnl.totalPnl >= 0 ? '+' : ''}₹${pnl.totalPnl.toFixed(2)}</div>
+                    </div>
+                    ${pnl.rows.map(r => `
+                        <div style="display:flex; justify-content:space-between; font-size:12px; padding:4px 0; border-top:1px solid var(--border);">
+                            <span style="color:var(--text2);">${r.customerName} · ${r.metal} · ${r.grams.toFixed(2)}g<br><span style="font-size:10.5px;">Paid ₹${r.rate.toFixed(2)}/g vs booked ₹${r.bookedRate.toFixed(2)}/g</span></span>
+                            <span style="font-weight:700; color:${r.pnl >= 0 ? '#2E7D32' : '#C62828'}; white-space:nowrap;">${r.pnl >= 0 ? '+' : ''}₹${r.pnl.toFixed(2)}</span>
+                        </div>
+                    `).join('')}`;
+            }
+
+            const plansEl = document.getElementById('hedge-plans-list');
+            const evaluated = installmentPlans
+                .filter(p => p.status === 'active')
+                .map(p => {
+                    const g = getPlanHedgeGrams(p);
+                    const hedged = getHedgedGrams(p.id);
+                    const need = {
+                        Gold: Math.max(0, (g.totals.Gold || 0) - (hedged.Gold || 0)),
+                        Silver: Math.max(0, (g.totals.Silver || 0) - (hedged.Silver || 0))
+                    };
+                    return { plan: p, need, unresolved: g.unresolved };
+                })
+                .filter(x => x.need.Gold > 0 || x.need.Silver > 0 || x.unresolved > 0)
+                .sort((a, b) => new Date(a.plan.createdAt) - new Date(b.plan.createdAt));
+
+            if (!evaluated.length) {
+                plansEl.innerHTML = '<p class="note" style="text-align:center;">All active plans are fully hedged.</p>';
+            } else {
+                plansEl.innerHTML = evaluated.map(x => `
+                    <div style="background:var(--surface); border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700;">${x.plan.customerName}</span>
+                            <button onclick="openHedgeLogModal('${x.plan.id}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:5px 10px; border-radius:8px; font-size:11.5px; width:auto; margin:0;">+ Log Hedge</button>
+                        </div>
+                        <div style="font-size:12.5px; color:var(--text2);">
+                            ${x.need.Gold > 0 ? `🟡 Gold: <b style="color:var(--text);">${x.need.Gold.toFixed(2)}g</b> needed` : ''}
+                            ${x.need.Gold > 0 && x.need.Silver > 0 ? ' · ' : ''}
+                            ${x.need.Silver > 0 ? `⚪ Silver: <b style="color:var(--text);">${x.need.Silver.toFixed(2)}g</b> needed` : ''}
+                            ${(x.need.Gold <= 0 && x.need.Silver <= 0 && x.unresolved > 0) ? '<span style="color:var(--text2);">Grams unknown</span>' : ''}
+                        </div>
+                        ${x.unresolved > 0 ? `<div style="font-size:11px; color:#C62828; margin-top:4px;">⚠️ ${x.unresolved} item${x.unresolved === 1 ? '' : 's'} couldn't be matched to a current stock record — grams shown may be understated. Log the purchase manually if you know the actual weight.</div>` : ''}
+                    </div>
+                `).join('');
+            }
+
+            const generalEl = document.getElementById('hedge-general-list');
+            const general = hedgeLog.filter(e => !e.planId);
+            if (!general.length) {
+                generalEl.innerHTML = '<p class="note" style="text-align:center;">No unassigned purchases logged.</p>';
+            } else {
+                generalEl.innerHTML = general.map(e => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:var(--surface); border-radius:var(--radius); padding:10px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                        <div style="font-size:12.5px;">
+                            <b>${e.metal}</b> · ${(e.grams || 0).toFixed(2)}g ${e.rate ? `@ ₹${e.rate.toFixed(2)}/g` : ''}
+                            <div style="font-size:10.5px; color:var(--text2);">${e.date || ''}</div>
+                        </div>
+                        <button onclick="deleteHedgeLogEntry('${e.id}')" title="Remove" style="background:none; border:none; color:#C62828; font-size:16px; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function openHedgeLogModal(planId){
+            document.getElementById('hedge-log-plan-id').value = planId || '';
+            const noteEl = document.getElementById('hedge-log-plan-note');
+            const metalSelect = document.getElementById('hedge-log-metal');
+            document.getElementById('hedge-log-grams').value = '';
+            document.getElementById('hedge-log-rate').value = '';
+            if (planId) {
+                const plan = installmentPlans.find(p => p.id === planId);
+                document.getElementById('hedge-log-title').textContent = 'Log Hedge Purchase';
+                if (plan) {
+                    noteEl.style.display = 'block';
+                    noteEl.textContent = `For ${plan.customerName}'s plan`;
+                    const g = getPlanHedgeGrams(plan);
+                    const hedged = getHedgedGrams(planId);
+                    const goldNeed = (g.totals.Gold || 0) - (hedged.Gold || 0);
+                    const silverNeed = (g.totals.Silver || 0) - (hedged.Silver || 0);
+                    metalSelect.value = (silverNeed > 0 && goldNeed <= 0) ? 'Silver' : 'Gold';
+                }
+            } else {
+                document.getElementById('hedge-log-title').textContent = 'Log Purchase';
+                noteEl.style.display = 'none';
+                metalSelect.value = 'Gold';
+            }
+            document.getElementById('hedge-log-modal').classList.add('show');
+        }
+
+        function closeHedgeLogModal(){
+            document.getElementById('hedge-log-modal').classList.remove('show');
+        }
+
+        async function saveHedgeLogEntry(){
+            const planId = document.getElementById('hedge-log-plan-id').value || null;
+            const metal = document.getElementById('hedge-log-metal').value;
+            const grams = parseFloat(document.getElementById('hedge-log-grams').value) || 0;
+            const rate = parseFloat(document.getElementById('hedge-log-rate').value) || 0;
+            if (grams <= 0) { showCustomAlert('Enter grams purchased.'); return; }
+            const id = crypto.randomUUID();
+            const entry = {
+                id, planId, metal, grams, rate,
+                amount: rate ? +(grams * rate).toFixed(2) : 0,
+                date: new Date().toISOString().slice(0, 10),
+                createdAt: new Date().toISOString()
+            };
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeLog'), { [id]: entry });
+                hedgeLog.unshift(entry);
+                closeHedgeLogModal();
+                renderHedgeDashboard();
+            } catch (e) {
+                console.error('[HedgeLog] save failed', e);
+                showCustomAlert(window._writeAllowed ? 'Could not save — try again.' : 'Writes are disabled — this copy is running in read-only mode. Open the app from the real site to save changes.');
+            }
+        }
+
+        async function deleteHedgeLogEntry(id){
+            showCustomConfirm('Delete this hedge purchase record?', 'Confirm', async () => {
+                try {
+                    await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeLog'), { [id]: null });
+                    hedgeLog = hedgeLog.filter(e => e.id !== id);
+                    renderHedgeDashboard();
+                } catch (e) {
+                    console.error('[HedgeLog] delete failed', e);
+                    showCustomAlert(window._writeAllowed ? 'Could not delete — try again.' : 'Writes are disabled — this copy is running in read-only mode.');
+                }
+            });
+        }
+
+        // Cancelled plan's items never get delivered, but the raw metal
+        // already bought for it is still sitting in hand — release those
+        // entries back into the general pool so they can cover a
+        // different active plan instead of being stranded.
+        async function _releaseHedgeEntriesForPlan(planId){
+            const affected = hedgeLog.filter(e => e.planId === planId);
+            if (!affected.length) return;
+            const updates = {};
+            affected.forEach(e => { updates[e.id + '/planId'] = null; });
+            await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeLog'), updates);
+            affected.forEach(e => { e.planId = null; });
+        }
+
+        // A completed plan's hedge entries are gone into a delivered item
+        // — deleting the plan deletes its hedge history with it, same as
+        // ID-proof photos already do.
+        async function _deleteHedgeEntriesForPlan(planId){
+            const toDelete = hedgeLog.filter(e => e.planId === planId).map(e => e.id);
+            if (!toDelete.length) return;
+            const updates = {};
+            toDelete.forEach(id => { updates[id] = null; });
+            await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeLog'), updates);
+            hedgeLog = hedgeLog.filter(e => e.planId !== planId);
         }
 
         function chooseInstallmentRateMode(mode){
@@ -9843,6 +10202,7 @@
             // --- Start Firebase Sync ---
             syncData();
             startInstallmentsSync();
+            startHedgeLogSync();
             initPrintServerIfEnabled();
             // Load ledger from cache immediately (Firebase will overwrite shortly)
             loadLedger();
@@ -15986,6 +16346,58 @@
             <div id="inst-reminders-body"></div>
         </div>
 
+    </div>
+
+    <div id="hedge-screen" style="display:none; flex:1; flex-direction:column; padding:14px; background:var(--bg); overflow-y:auto; -webkit-overflow-scrolling:touch; box-sizing:border-box; max-width:600px; margin:0 auto; width:100%; min-height:0;">
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <h2 style="margin:0; font-size:18px; font-weight:800; color:var(--text);">🛡️ Hedge Dashboard</h2>
+        </div>
+
+        <div id="hedge-summary-cards" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;"></div>
+
+        <div id="hedge-pnl-card" style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:16px; box-shadow:0 1px 6px rgba(0,0,0,.06);"></div>
+
+        <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:8px;">Plans Needing Hedge</div>
+        <div id="hedge-plans-list" style="margin-bottom:20px;"></div>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">General Purchases</div>
+            <button onclick="openHedgeLogModal(null)" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:6px 12px; border-radius:8px; font-size:12px; width:auto; margin:0;">+ Log Purchase</button>
+        </div>
+        <div id="hedge-general-list"></div>
+
+    </div>
+
+    <div id="hedge-log-modal">
+        <div id="hedge-log-panel">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 id="hedge-log-title" style="margin:0; font-size:18px; color:#1a1a1a;">Log Hedge Purchase</h3>
+                <button onclick="closeHedgeLogModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
+            </div>
+
+            <input type="hidden" id="hedge-log-plan-id" value="">
+            <p class="note" id="hedge-log-plan-note" style="display:none; margin-bottom:14px;"></p>
+
+            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">METAL</label>
+            <select id="hedge-log-metal" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:14px; box-sizing:border-box;">
+                <option value="Gold">Gold</option>
+                <option value="Silver">Silver</option>
+            </select>
+
+            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">GRAMS PURCHASED</label>
+            <input type="number" id="hedge-log-grams" placeholder="e.g. 12.5" step="0.01" min="0"
+                   style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:14px; box-sizing:border-box;">
+
+            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">RATE PAID (₹/gram)</label>
+            <input type="number" id="hedge-log-rate" placeholder="e.g. 6250" step="0.01" min="0"
+                   style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:16px; box-sizing:border-box;">
+
+            <button onclick="saveHedgeLogEntry()" id="hedge-log-save-btn"
+                style="width:100%; padding:14px; background:var(--gold); color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">
+                ✓ Save Purchase
+            </button>
+        </div>
     </div>
 
     <div id="installment-detail-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:500; align-items:center; justify-content:center;">
