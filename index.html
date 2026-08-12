@@ -197,6 +197,7 @@
 
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
@@ -15839,8 +15840,8 @@
             return found ? `${found[1]} (${found[0]})` : raw;
         }
 
-        function invRunExport() {
-            if (typeof XLSX === 'undefined') { invToast('Excel library not loaded'); return; }
+        async function invRunExport() {
+            if (typeof ExcelJS === 'undefined') { invToast('Excel library not loaded'); return; }
             const fromVal = document.getElementById('inv-exp-from').value;
             const toVal = document.getElementById('inv-exp-to').value;
             if (!fromVal || !toVal) { invToast('Pick a date range'); return; }
@@ -15861,19 +15862,42 @@
             const sorted = [...inRange].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
             const pct = invoiceSettings.taxRate || 0;
             const frac = pct / 100;
+            // Kills floating-point noise (e.g. 14591.199999999999) before
+            // it ever reaches a cell, on top of the '0.00' display format
+            // below — the underlying value is actually rounded, not just
+            // shown rounded.
+            const r2 = n => Math.round((n || 0) * 100) / 100;
 
-            const rows = [];
-            rows.push([`SALE REGISTER From:${fromD.toLocaleDateString('en-GB')} To:${toD.toLocaleDateString('en-GB')}`]);
-            rows.push([]);
-            rows.push(['Date','Bill No.','Name','Gross Amt.','Disc','Tax','Bill Amount','UPI','Cash','Card','State','Customer GSTIN']);
+            const workbook = new ExcelJS.Workbook();
+            const ws = workbook.addWorksheet('Sale Register');
 
-            let tot = { gross:0, disc:0, tax:0, bill:0, upi:0, cash:0, card:0 };
+            const titleRow = ws.addRow([`SALE REGISTER From:${fromD.toLocaleDateString('en-GB')} To:${toD.toLocaleDateString('en-GB')}`]);
+            titleRow.getCell(1).font = { bold: true, size: 13 };
+            ws.addRow([]);
+            const headers = ['Date','Bill No.','Name','Gross Amt.','Old Jewellery','Disc','Tax','Bill Amount','UPI','Cash','Card','State','Customer GSTIN'];
+            const headerRow = ws.addRow(headers);
+
+            const thin = { style: 'thin', color: { argb: 'FFBFBFBF' } };
+            const cellBorder = { top: thin, left: thin, bottom: thin, right: thin };
+            headerRow.eachCell(cell => {
+                cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A1A1A' } };
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell.border = cellBorder;
+            });
+
+            // Column indices (1-based) of every money field, for number
+            // formatting — Gross, Old Jewellery, Disc, Tax, Bill, UPI, Cash, Card.
+            const moneyCols = [4, 5, 6, 7, 8, 9, 10, 11];
+
+            let tot = { gross:0, oldJewellery:0, disc:0, tax:0, bill:0, upi:0, cash:0, card:0 };
             sorted.forEach(inv => {
                 const t = inv.totals || {};
-                const billAmt = t.rounded || 0;
-                const disc = t.disc || 0;
-                const grossAmt = frac > 0 ? +(billAmt / (1+frac)).toFixed(2) : billAmt;
-                const tax = +((billAmt - grossAmt).toFixed(2));
+                const billAmt = r2(t.rounded);
+                const disc = r2(t.disc);
+                const grossAmt = frac > 0 ? r2(billAmt / (1 + frac)) : billAmt;
+                const tax = r2(billAmt - grossAmt);
+                const oldJewellery = r2((inv.ogItems || []).reduce((s, i) => s + (i.value || 0), 0));
                 const state = invStateDisplay(inv.state);
                 const gstin = inv.custGstin || '';
 
@@ -15890,28 +15914,48 @@
                 } else if (pm === 'card') {
                     card = receipt;
                 }
+                upi = r2(upi); cash = r2(cash); card = r2(card);
 
-                rows.push([new Date(inv.timestamp), inv.billNo, inv.custName||'CASH',
-                    grossAmt, disc||null, tax, billAmt, upi||null, cash||null, card||null, state, gstin||null]);
+                const row = ws.addRow([
+                    new Date(inv.timestamp), inv.billNo, inv.custName || 'CASH',
+                    grossAmt, oldJewellery || null, disc || null, tax, billAmt,
+                    upi || null, cash || null, card || null, state, gstin || null
+                ]);
+                row.getCell(1).numFmt = 'dd/mm/yyyy';
+                moneyCols.forEach(c => { row.getCell(c).numFmt = '0.00'; });
+                row.eachCell({ includeEmpty: true }, cell => { cell.border = cellBorder; });
 
-                tot.gross += grossAmt; tot.disc += disc; tot.tax += tax; tot.bill += billAmt;
+                tot.gross += grossAmt; tot.oldJewellery += oldJewellery; tot.disc += disc; tot.tax += tax; tot.bill += billAmt;
                 tot.upi += upi; tot.cash += cash; tot.card += card;
             });
-            rows.push(['Totals',null,null,
-                +tot.gross.toFixed(2), +tot.disc.toFixed(2), +tot.tax.toFixed(2), +tot.bill.toFixed(2),
-                +tot.upi.toFixed(2), +tot.cash.toFixed(2), +tot.card.toFixed(2), null, null]);
 
-            const ws = XLSX.utils.aoa_to_sheet(rows);
-            ws['!cols'] = [{wch:10},{wch:12},{wch:18},{wch:10},{wch:9},{wch:9},{wch:11},{wch:9},{wch:9},{wch:9},{wch:12},{wch:16}];
-            for (let r = 4; r <= 3 + sorted.length; r++) {
-                const cell = ws['A'+r];
-                if (cell) cell.z = 'dd/mm/yyyy';
-            }
+            const totalsRow = ws.addRow([
+                'Totals', null, null,
+                r2(tot.gross), r2(tot.oldJewellery), r2(tot.disc), r2(tot.tax), r2(tot.bill),
+                r2(tot.upi), r2(tot.cash), r2(tot.card), null, null
+            ]);
+            const thickTop = { style: 'double', color: { argb: 'FF1A1A1A' } };
+            totalsRow.eachCell({ includeEmpty: true }, cell => {
+                cell.font = { bold: true };
+                cell.border = { top: thickTop, left: thin, bottom: thin, right: thin };
+            });
+            moneyCols.forEach(c => { totalsRow.getCell(c).numFmt = '0.00'; });
 
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Sale Register');
+            ws.columns = [
+                { width: 12 }, { width: 12 }, { width: 18 }, { width: 11 }, { width: 13 },
+                { width: 9 }, { width: 9 }, { width: 11 }, { width: 9 }, { width: 9 },
+                { width: 9 }, { width: 14 }, { width: 16 }
+            ];
+
             const fname = `Suhag_Invoices_${fromVal}_to_${toVal}.xlsx`;
-            XLSX.writeFile(wb, fname);
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = fname;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
             invToast(`✅ Exported ${sorted.length} invoice(s)`);
         }
 
