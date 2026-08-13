@@ -13756,12 +13756,13 @@
 
         // ─── TABS ───
         function invSwitchTab(name) {
-            ['new','history','export'].forEach(t => {
+            ['new','history','export','report'].forEach(t => {
                 document.getElementById('inv-pane-'+t).style.display = t === name ? '' : 'none';
                 document.getElementById('inv-tab-'+t).classList.toggle('active', t === name);
             });
             if (name === 'history') invRenderHistory();
             if (name === 'export') invInitExportDates();
+            if (name === 'report') invInitReportDates();
         }
 
         // Called only when the person manually taps the "New" tab button. If an edit
@@ -13831,6 +13832,8 @@
                 invRows[i].desc = itmSettings.printName;
                 invRows[i].hsn = itmSettings.hsn;
                 invRows[i].stamp = stamp;
+                invRows[i].metal = metal;
+                invRows[i].itemName = d.itemName || key; // actual stock name, frozen — printName above is display-only and can't distinguish different items sharing one print label
                 invRows[i].huid = _invGetHuid(d);
                 invRows[i].barcode = key; // store barcode separately from display name
                 invRows[i].grWt = parseFloat(gw.toFixed(3));
@@ -14542,7 +14545,8 @@
                     rate: parseFloat(rv.toFixed(2)),
                     pureRate: parseFloat((pureRate || 0).toFixed(2)),
                     makingType: mk.makingType, makingPct: parseFloat((mk.makingPct || 0).toFixed(2)),
-                    metal: mk.metal || '',
+                    metal: metal,
+                    itemName: d.itemName || item.barcode || '', // actual stock name, frozen — see invDescChange for why
                     stamp: stamp,
                     huid: _invGetHuid(d),
                     barcode: item.barcode || null // internal only — never printed, used for sold/stock tracking
@@ -14625,8 +14629,34 @@
         }
 
         // ─── GENERATE & PRINT ───
-        function invGenerate(skipPreviewModal) {
+        function invGenerate(skipPreviewModal, _confirmedMismatch) {
             if (!_invHasSavableContent(invRows)) { invToast('Add at least one item with a description and amount first'); return; }
+
+            // This shop never intends to leave an invoice outstanding —
+            // so any gap between the bill amount and what's actually
+            // received (whether typed directly or split across
+            // cash/UPI/card) is almost always a data-entry slip, not a
+            // real receivable. Catch it here with a hard stop instead of
+            // relying on the small "remaining/over" status text in the
+            // partial-payment section, which is easy to miss — especially
+            // in single-payment-mode, which has no live indicator at all.
+            if (!_confirmedMismatch) {
+                const _sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
+                const _finalAmt = _invFinalAmtGross();
+                const _t = invComputeTotals(_sub, _finalAmt, undefined, invExemptSub(invRows));
+                const _ogTotal = invOgItems.reduce((s, i) => s + (i.value || 0), 0);
+                const _netAfterOG = Math.max(0, (_t.rounded || 0) - _ogTotal);
+                const _receipt = parseFloat(document.getElementById('inv-receipt').value) || 0;
+                const _remaining = _netAfterOG - _receipt;
+                if (Math.abs(_remaining) >= 1) {
+                    const msg = _remaining > 0
+                        ? `Amount received is ₹${_remaining.toFixed(2)} short of the bill total. Save anyway?`
+                        : `Amount received is ₹${Math.abs(_remaining).toFixed(2)} more than the bill total. Save anyway?`;
+                    showCustomConfirm(msg, 'Payment Doesn\u2019t Match', () => invGenerate(skipPreviewModal, true));
+                    return false;
+                }
+            }
+
             const withBg = document.getElementById('inv-with-bg').checked;
             const showRatePref = document.getElementById('inv-show-rate').checked;
             const showMakingPref = document.getElementById('inv-show-making').checked;
@@ -14956,7 +14986,7 @@
         // flow for now.
         function invPrintViaMainPC() {
             if (!_invHasSavableContent(invRows)) { invToast('Add at least one item with a description and amount first'); return; }
-            invGenerate(true);
+            if (invGenerate(true) === false) return; // aborted — payment-mismatch confirmation pending
             if (!window._invPendingRecord) return;
 
             const rec = window._invPendingRecord;
@@ -15032,7 +15062,7 @@
             // was the cause of printed invoices missing old jewellery added (or state changed)
             // after an earlier Preview, since Preview and Print used to share one cached copy.
             if (!_invHasSavableContent(invRows)) { invToast('Add at least one item with a description and amount first'); return; }
-            invGenerate(true); // true = skip opening the preview modal, just rebuild + cache
+            if (invGenerate(true) === false) return; // aborted — payment-mismatch confirmation pending
             _invDoActualPrint();
         }
 
@@ -15889,11 +15919,274 @@
             if (te && !te.value) te.value = toStr;
         }
 
+        // Defaults to today (the quick daily-close case) rather than
+        // month-start like the export tab — the quick-range buttons and
+        // manual date pickers still cover flexible period review.
+        function invInitReportDates() {
+            const today = new Date();
+            const toStr = invFmtDate(today);
+            const fe = document.getElementById('inv-rep-from'), te = document.getElementById('inv-rep-to');
+            if (fe && !fe.value) fe.value = toStr;
+            if (te && !te.value) te.value = toStr;
+            renderSalesReport();
+        }
+
+        // Scoped to currentInvTrack — the report reflects whichever track
+        // (A/B) is actively selected, same track-filtering convention
+        // invRunExport already uses, so Sales Report and the Excel export
+        // always agree on which invoices are "in scope" for a given view.
+        let _salesReportItemsExpanded = false;
+        function _toggleSalesReportItems(){
+            _salesReportItemsExpanded = !_salesReportItemsExpanded;
+            renderSalesReport();
+        }
+
+        let _salesReportMetalCardExpanded = null; // null | 'Gold' | 'Silver'
+        function _toggleSalesReportMetalCard(metal){
+            _salesReportMetalCardExpanded = (_salesReportMetalCardExpanded === metal) ? null : metal;
+            renderSalesReport();
+        }
+
+        function renderSalesReport() {
+            const fromVal = document.getElementById('inv-rep-from').value;
+            const toVal = document.getElementById('inv-rep-to').value;
+            const resultsEl = document.getElementById('inv-rep-results');
+            if (!fromVal || !toVal) { resultsEl.innerHTML = ''; return; }
+
+            const fromD = new Date(fromVal + 'T00:00:00');
+            const toD = new Date(toVal + 'T23:59:59');
+
+            const inRange = invoiceHistory.filter(inv => {
+                const t = new Date(inv.timestamp);
+                if (t < fromD || t > toD) return false;
+                if (inv.track !== currentInvTrack) return false;
+                if (inv.track === 'B' && !invTrackBUnlocked) return false;
+                if (inv.draft) return false;
+                return true;
+            });
+
+            if (!inRange.length) {
+                resultsEl.innerHTML = '<p class="note" style="text-align:center; margin-top:14px;">No invoices in this range for the current track.</p>';
+                return;
+            }
+
+            let totalBilled = 0, ogTotal = 0;
+            let cashTotal = 0, upiTotal = 0, cardTotal = 0;
+            const grams = { Gold: 0, Silver: 0 };
+            const itemStats = {}; // desc -> { qty, weight, value, metal }
+
+            inRange.forEach(inv => {
+                const t = inv.totals || {};
+                totalBilled += (t.rounded || 0);
+                ogTotal += (inv.ogItems || []).reduce((s, i) => s + (i.value || 0), 0);
+
+                const pm = inv.paymentMethod || 'none';
+                const pd = inv.paymentDetails || {};
+                const receipt = inv.receipt || 0;
+                if (pm === 'partial') {
+                    cashTotal += (pd.cash || 0); upiTotal += (pd.upi || 0); cardTotal += (pd.card || 0);
+                } else if (pm === 'upi') { upiTotal += receipt; }
+                else if (pm === 'cash') { cashTotal += receipt; }
+                else if (pm === 'card') { cardTotal += receipt; }
+
+                (inv.items || []).forEach(item => {
+                    // Older invoices (pre-dating the metal-field fix in both
+                    // _invRowsFromCartItems and invDescChange) have this
+                    // frozen blank. Two fallbacks, in order:
+                    // 1. Live stock lookup by barcode — works if that stock
+                    //    record still exists.
+                    // 2. Text match on the item description ("Gold Chain",
+                    //    "Silver Kadla", etc.) — last resort for invoices
+                    //    whose barcode has since been removed from stock
+                    //    entirely (e.g. a later re-import that dropped it),
+                    //    where there's nothing else left to go on.
+                    let rawMetal = item.metal;
+                    if (!rawMetal && item.barcode && productData[item.barcode]) {
+                        rawMetal = productData[item.barcode].metal;
+                    }
+                    if (!rawMetal && item.desc) {
+                        const d = item.desc.toLowerCase();
+                        if (d.includes('gold')) rawMetal = 'gold';
+                        else if (d.includes('silver') || d.includes('925')) rawMetal = 'silver';
+                    }
+                    const metal = _normMetal(rawMetal);
+                    if (metal === 'Gold' || metal === 'Silver') {
+                        grams[metal] += (item.nlWt || 0);
+                    }
+
+                    // Item-wise breakdown uses the actual stock item name
+                    // (e.g. "S BRACELET A"), not the printName shown on
+                    // invoices ("Silver Bracelet") — different physical
+                    // stock items can share one printName, and grouping by
+                    // printName would wrongly merge them. Three tiers:
+                    // 1. item.itemName — frozen directly on the row for
+                    //    anything created after this fix, immune to stock
+                    //    data changing or disappearing later.
+                    // 2. Live productData lookup by barcode — works for
+                    //    older rows only if that stock record still exists.
+                    // 3. printName (item.desc) — last resort when neither
+                    //    of the above is available; this is what silently
+                    //    merges genuinely different items, unavoidable for
+                    //    invoices whose barcode's stock record is gone.
+                    const actualName = item.itemName
+                        || (item.barcode && productData[item.barcode] && productData[item.barcode].itemName)
+                        || (item.desc || 'Unnamed Item').trim();
+                    // Stamp (carat/purity) was already reliably frozen on
+                    // rows before this session's other fixes — same
+                    // live-lookup fallback pattern anyway, for older rows
+                    // that might be missing it for other reasons.
+                    const stamp = item.stamp
+                        || (item.barcode && productData[item.barcode] && productData[item.barcode].stamp)
+                        || '';
+                    const key = metal + '|' + stamp + '|' + actualName;
+                    if (!itemStats[key]) itemStats[key] = { name: actualName, metal, stamp, qty: 0, weight: 0, value: 0 };
+                    itemStats[key].qty += (item.pc || 1);
+                    itemStats[key].weight += (item.nlWt || 0);
+                    itemStats[key].value += invTaxableVal(item);
+                });
+            });
+
+            // Installment cash flow during the same window — a separate
+            // revenue stream from direct invoices, worth surfacing
+            // alongside them. Counts payments on every plan regardless of
+            // its current status, since the cash genuinely came in during
+            // this window either way.
+            let downPayments = 0, installmentPayments = 0;
+            installmentPlans.forEach(plan => {
+                (plan.payments || []).forEach(p => {
+                    const d = new Date(p.date + 'T12:00:00');
+                    if (d < fromD || d > toD) return;
+                    if (p.note === 'Down payment') downPayments += (p.amount || 0);
+                    else installmentPayments += (p.amount || 0);
+                });
+            });
+
+            const card = (label, value, sub) => `
+                <div style="background:var(--surface); border-radius:var(--radius); padding:14px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                    <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">${label}</div>
+                    <div style="font-size:18px; font-weight:800; color:var(--text);">${value}</div>
+                    ${sub ? `<div style="font-size:10.5px; color:var(--text2); margin-top:2px;">${sub}</div>` : ''}
+                </div>`;
+
+            // Stamp-wise gram breakdown for a metal, drawn from the same
+            // itemStats already grouped by metal+stamp+name — reused here
+            // for the clickable Gold/Silver Sold cards, independent of
+            // whether the full Item-wise Sales section is expanded.
+            const metalCard = (metal, icon) => {
+                const clickable = grams[metal] > 0;
+                const expanded = _salesReportMetalCardExpanded === metal;
+                const totals = {};
+                Object.values(itemStats).filter(s => s.metal === metal).forEach(s => {
+                    const st = s.stamp || 'Unstamped';
+                    totals[st] = (totals[st] || 0) + s.weight;
+                });
+                const entries = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+                return `
+                    <div onclick="${clickable ? `_toggleSalesReportMetalCard('${metal}')` : ''}" style="background:var(--surface); border-radius:var(--radius); padding:14px; box-shadow:0 1px 6px rgba(0,0,0,.06); ${clickable ? 'cursor:pointer;' : ''}">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">${icon} ${metal} Sold</div>
+                            ${clickable ? `<span style="font-size:11px; color:var(--text2);">${expanded ? '▾' : '▸'}</span>` : ''}
+                        </div>
+                        <div style="font-size:18px; font-weight:800; color:var(--text); margin-top:6px;">${grams[metal].toFixed(2)}g</div>
+                        ${expanded ? `
+                            <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
+                                ${entries.map(([st, g]) => `<div style="display:flex; justify-content:space-between; font-size:12px; padding:2px 0;"><span style="color:var(--text2);">${st}</span><span style="font-weight:700;">${g.toFixed(2)}g</span></div>`).join('')}
+                            </div>` : ''}
+                    </div>`;
+            };
+
+            // Grouped by metal — Gold, Silver, then anything unresolved
+            // (repair charges, items with no metal match) as a catch-all
+            // so nothing silently disappears. Within Gold/Silver, further
+            // split by stamp (carat/purity) with its own subtotal — a
+            // metals business needs to know 18K vs 22K vs 24K sold, not
+            // just total grams, since that's what actually drives which
+            // purity to restock. "Other" stays flat since stamp isn't
+            // meaningful for repair charges etc. Sorted by weight within
+            // every level, since grams moved is what drives restocking.
+            const groupOrder = [['Gold', '🟡 Gold'], ['Silver', '⚪ Silver'], ['', 'Other']];
+            const itemSectionsHtml = groupOrder.map(([metalKey, label]) => {
+                const rows = Object.values(itemStats).filter(s => s.metal === metalKey);
+                if (!rows.length) return '';
+
+                if (!metalKey) {
+                    // "Other" — flat, no stamp subgrouping
+                    return `
+                        <div style="font-size:11px; font-weight:800; color:var(--text); margin:12px 0 6px;">${label}</div>
+                        ${rows.sort((a, b) => b.weight - a.weight).map(s => `
+                            <div style="display:flex; justify-content:space-between; align-items:center; background:var(--surface); border-radius:var(--radius); padding:10px 14px; margin-bottom:6px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                                <div style="font-size:13px; font-weight:700;">${s.name}</div>
+                                <div style="text-align:right; font-size:12px; color:var(--text2);">
+                                    ${s.qty} pc${s.qty === 1 ? '' : 's'} · ${s.weight > 0 ? s.weight.toFixed(2) + 'g · ' : ''}₹${s.value.toFixed(2)}
+                                </div>
+                            </div>`).join('')}`;
+                }
+
+                const byStamp = {};
+                rows.forEach(s => {
+                    const st = s.stamp || 'Unstamped';
+                    if (!byStamp[st]) byStamp[st] = { items: [], weight: 0, qty: 0, value: 0 };
+                    byStamp[st].items.push(s);
+                    byStamp[st].weight += s.weight;
+                    byStamp[st].qty += s.qty;
+                    byStamp[st].value += s.value;
+                });
+                const stampBlocks = Object.entries(byStamp)
+                    .sort((a, b) => b[1].weight - a[1].weight)
+                    .map(([stampName, g]) => `
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin:8px 0 4px 4px;">
+                            <span style="font-size:11.5px; font-weight:700; color:var(--text2);">${stampName}</span>
+                            <span style="font-size:11px; color:var(--text2);">${g.qty} pc${g.qty === 1 ? '' : 's'} · ${g.weight.toFixed(2)}g · ₹${g.value.toFixed(2)}</span>
+                        </div>
+                        ${g.items.sort((a, b) => b.weight - a.weight).map(s => `
+                            <div style="display:flex; justify-content:space-between; align-items:center; background:var(--surface); border-radius:var(--radius); padding:10px 14px; margin-bottom:6px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                                <div style="font-size:13px; font-weight:700;">${s.name}</div>
+                                <div style="text-align:right; font-size:12px; color:var(--text2);">
+                                    ${s.qty} pc${s.qty === 1 ? '' : 's'} · ${s.weight > 0 ? s.weight.toFixed(2) + 'g · ' : ''}₹${s.value.toFixed(2)}
+                                </div>
+                            </div>`).join('')}`).join('');
+
+                return `
+                    <div style="font-size:11px; font-weight:800; color:var(--text); margin:12px 0 6px;">${label}</div>
+                    ${stampBlocks}`;
+            }).join('');
+
+            resultsEl.innerHTML = `
+                <div style="display:grid; grid-template-columns:1fr; gap:10px; margin-top:14px;">
+                    ${card('Total Billed', '₹' + totalBilled.toFixed(2), inRange.length + ' invoice' + (inRange.length === 1 ? '' : 's'))}
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:10px;">
+                    ${card('Cash', '₹' + cashTotal.toFixed(2))}
+                    ${card('UPI', '₹' + upiTotal.toFixed(2))}
+                    ${card('Card', '₹' + cardTotal.toFixed(2))}
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+                    ${metalCard('Gold', '🟡')}
+                    ${metalCard('Silver', '⚪')}
+                </div>
+                <div style="display:grid; grid-template-columns:1fr; gap:10px; margin-top:10px;">
+                    ${card('Old Jewellery Taken In', '₹' + ogTotal.toFixed(2), 'Value only, weight not tracked on old-jewellery entries')}
+                </div>
+                ${(downPayments > 0 || installmentPayments > 0) ? `
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin:16px 0 8px;">Installment Activity (separate from above)</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    ${card('Down Payments', '₹' + downPayments.toFixed(2))}
+                    ${card('Installment Collections', '₹' + installmentPayments.toFixed(2))}
+                </div>` : ''}
+                <div onclick="_toggleSalesReportItems()" style="display:flex; justify-content:space-between; align-items:center; margin:16px 0 8px; cursor:pointer; user-select:none;">
+                    <span style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">Item-wise Sales (by weight sold)</span>
+                    <span style="font-size:11px; color:var(--text2);">${_salesReportItemsExpanded ? '▾ Hide' : '▸ Show'}</span>
+                </div>
+                ${_salesReportItemsExpanded ? (itemSectionsHtml || '<p class="note" style="text-align:center;">No items to break down.</p>') : ''}
+            `;
+        }
+
         function invFmtDate(d) {
             return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
         }
 
-        function invQuickRange(k) {
+        function invQuickRange(k, target) {
+            target = target || 'exp';
             const today = new Date();
             let from = today;
             let to = today;
@@ -15907,8 +16200,9 @@
                 const sorted = [...invoiceHistory].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
                 from = sorted.length ? new Date(sorted[0].timestamp) : today;
             }
-            document.getElementById('inv-exp-from').value = invFmtDate(from);
-            document.getElementById('inv-exp-to').value = invFmtDate(to);
+            document.getElementById(`inv-${target}-from`).value = invFmtDate(from);
+            document.getElementById(`inv-${target}-to`).value = invFmtDate(to);
+            if (target === 'rep') renderSalesReport();
         }
 
         function invStateDisplay(raw) {
@@ -16893,7 +17187,8 @@
         <div style="display:flex; min-height:48px; background:var(--surface); border-radius:var(--radius); overflow:hidden; border:1.5px solid var(--border); margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,.06);">
             <div class="inv-tab active" id="inv-tab-new" onclick="invNewTabClicked()" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">✏️ New</div>
             <div class="inv-tab" id="inv-tab-history" onclick="invSwitchTab('history')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📋 History</div>
-            <div class="inv-tab" id="inv-tab-export" onclick="invSwitchTab('export')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📊 Excel</div>
+            <div class="inv-tab" id="inv-tab-export" onclick="invSwitchTab('export')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📊 Excel</div>
+            <div class="inv-tab" id="inv-tab-report" onclick="invSwitchTab('report')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📈 Report</div>
         </div>
 
         <!-- ══ PANE: NEW INVOICE ══ -->
@@ -17053,6 +17348,30 @@
 
                 <button onclick="invRunExport()" style="width:100%; background:var(--green); color:white; border:none; border-radius:var(--radius-sm); padding:12px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none;">📊 Export Excel</button>
             </div>
+        </div>
+
+        <div id="inv-pane-report" style="display:none;">
+            <div style="background:var(--surface); border-radius:var(--radius); padding:14px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Sales Report — Current Track</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+                    <div>
+                        <label style="font-size:11px; display:block; margin-bottom:3px;">From</label>
+                        <input type="date" id="inv-rep-from" onchange="renderSalesReport()" style="margin:0;">
+                    </div>
+                    <div>
+                        <label style="font-size:11px; display:block; margin-bottom:3px;">To</label>
+                        <input type="date" id="inv-rep-to" onchange="renderSalesReport()" style="margin:0;">
+                    </div>
+                </div>
+                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <button onclick="invQuickRange('today','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Today</button>
+                    <button onclick="invQuickRange('week','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">This Week</button>
+                    <button onclick="invQuickRange('month','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">This Month</button>
+                    <button onclick="invQuickRange('lastmonth','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Last Month</button>
+                    <button onclick="invQuickRange('all','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">All Time</button>
+                </div>
+            </div>
+            <div id="inv-rep-results"></div>
         </div>
 
         <button onclick="invOpenSettings()" style="margin-top:8px; width:100%; background:var(--surface); color:var(--text2); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:12px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none;">⚙️ Settings</button>
