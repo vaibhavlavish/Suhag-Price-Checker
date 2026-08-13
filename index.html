@@ -15918,6 +15918,20 @@
             return found ? `${found[1]} (${found[0]})` : raw;
         }
 
+        // GSTR-1's offline utility expects Place of Supply as "Code-Name"
+        // (e.g. "24-Gujarat") — different formatting from invStateDisplay's
+        // "Name (Code)" used elsewhere in the app, so this stays separate
+        // rather than reusing that one.
+        function _gstPlaceOfSupply(raw) {
+            if (!raw) return '24-Gujarat';
+            if (/\(.+\)/.test(raw)) {
+                const m = raw.match(/^(.*)\s*\((.+)\)$/);
+                return m ? `${m[2]}-${m[1].trim()}` : raw;
+            }
+            const found = INV_STATES.find(s => s[0] === raw);
+            return found ? `${found[0]}-${found[1]}` : raw;
+        }
+
         async function invRunExport() {
             if (typeof ExcelJS === 'undefined') { invToast('Excel library not loaded'); return; }
             const fromVal = document.getElementById('inv-exp-from').value;
@@ -16022,6 +16036,94 @@
                 { width: 12 }, { width: 12 }, { width: 18 }, { width: 13 }, { width: 13 },
                 { width: 9 }, { width: 11 }, { width: 9 }, { width: 9 },
                 { width: 9 }, { width: 14 }, { width: 16 }
+            ];
+
+            // ===== Sheet 2: GSTR-1 =====
+            // Two of GSTR-1's three retail-relevant tables — B2B (per
+            // invoice, GSTIN present) and B2C Small (aggregated by Place
+            // of Supply + Rate, GSTIN absent). HSN Summary (Table 12) is
+            // deliberately left out — most item types have no HSN code
+            // filled in yet, and a summary built from mostly-blank HSN
+            // data would be actively wrong rather than just incomplete.
+            // B2C Large (interstate, >₹2.5L single invoice) also isn't
+            // split out — check manually if any invoice in range meets
+            // that threshold. Since invoiceSettings.taxRate is one single
+            // shop-wide rate (confirmed — no per-item/per-HSN rate exists
+            // anywhere in this app), every invoice always lands at exactly
+            // one rate, so B2B never needs multi-row splitting per invoice.
+            const gstWs = workbook.addWorksheet('GSTR-1');
+            const gstTitle = gstWs.addRow([`GSTR-1 From:${fromD.toLocaleDateString('en-GB')} To:${toD.toLocaleDateString('en-GB')}`]);
+            gstTitle.getCell(1).font = { bold: true, size: 13 };
+            gstWs.addRow([]);
+            const gstNote = gstWs.addRow(['Note: HSN Summary (Table 12) not included — HSN codes are blank for most item types. B2C Large (interstate invoices over ₹2.5L) not split out separately — verify manually if applicable.']);
+            gstNote.getCell(1).font = { italic: true, size: 9, color: { argb: 'FF888888' } };
+            gstWs.addRow([]);
+
+            const gstHeaderStyle = (cell) => {
+                cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A1A1A' } };
+                cell.alignment = { horizontal: 'center', vertical: 'middle' };
+                cell.border = cellBorder;
+            };
+
+            // --- B2B: registered customers, one row per invoice ---
+            const b2bSectionTitle = gstWs.addRow(['B2B Invoices (registered customers)']);
+            b2bSectionTitle.getCell(1).font = { bold: true, size: 12 };
+            const b2bHeaderRow = gstWs.addRow(['GSTIN/UIN of Recipient','Receiver Name','Invoice Number','Invoice Date','Invoice Value','Place Of Supply','Reverse Charge','Applicable % of Tax Rate','Invoice Type','Rate','Taxable Value','Cess Amount']);
+            b2bHeaderRow.eachCell(gstHeaderStyle);
+
+            const b2bInvoices = sorted.filter(inv => inv.custGstin);
+            b2bInvoices.forEach(inv => {
+                const t = inv.totals || {};
+                const billAmt = r2(t.rounded);
+                const taxableVal = frac > 0 ? r2(billAmt / (1 + frac)) : billAmt;
+                const row = gstWs.addRow([
+                    inv.custGstin, inv.custName || '', inv.billNo, new Date(inv.timestamp),
+                    billAmt, _gstPlaceOfSupply(inv.state), 'N', '', 'Regular', pct, taxableVal, 0
+                ]);
+                row.getCell(4).numFmt = 'dd/mm/yyyy';
+                row.getCell(5).numFmt = '0.00';
+                row.getCell(11).numFmt = '0.00';
+                row.eachCell({ includeEmpty: true }, cell => { cell.border = cellBorder; });
+            });
+            if (!b2bInvoices.length) {
+                gstWs.addRow(['No B2B invoices in this range.']).getCell(1).font = { italic: true, color: { argb: 'FF888888' } };
+            }
+            gstWs.addRow([]);
+
+            // --- B2C Small: unregistered customers, aggregated by Place of Supply + Rate ---
+            const b2csSectionTitle = gstWs.addRow(['B2C (Small) — Aggregated by State & Rate']);
+            b2csSectionTitle.getCell(1).font = { bold: true, size: 12 };
+            const b2csHeaderRow = gstWs.addRow(['Type','Place Of Supply','Applicable % of Tax Rate','Rate','Taxable Value','Cess Amount']);
+            b2csHeaderRow.eachCell(gstHeaderStyle);
+
+            const b2cInvoices = sorted.filter(inv => !inv.custGstin);
+            const b2csBuckets = {};
+            b2cInvoices.forEach(inv => {
+                const t = inv.totals || {};
+                const billAmt = r2(t.rounded);
+                const taxableVal = frac > 0 ? r2(billAmt / (1 + frac)) : billAmt;
+                const place = _gstPlaceOfSupply(inv.state);
+                const key = place + '|' + pct;
+                if (!b2csBuckets[key]) b2csBuckets[key] = { place, rate: pct, taxable: 0 };
+                b2csBuckets[key].taxable += taxableVal;
+            });
+            const bucketKeys = Object.keys(b2csBuckets);
+            if (!bucketKeys.length) {
+                gstWs.addRow(['No B2C invoices in this range.']).getCell(1).font = { italic: true, color: { argb: 'FF888888' } };
+            } else {
+                bucketKeys.forEach(key => {
+                    const b = b2csBuckets[key];
+                    const row = gstWs.addRow(['OE', b.place, '', b.rate, r2(b.taxable), 0]);
+                    row.getCell(5).numFmt = '0.00';
+                    row.eachCell({ includeEmpty: true }, cell => { cell.border = cellBorder; });
+                });
+            }
+
+            gstWs.columns = [
+                { width: 20 }, { width: 20 }, { width: 14 }, { width: 12 }, { width: 13 },
+                { width: 16 }, { width: 10 }, { width: 12 }, { width: 12 }, { width: 8 },
+                { width: 13 }, { width: 10 }
             ];
 
             const fname = `Suhag_Invoices_${fromVal}_to_${toVal}.xlsx`;
