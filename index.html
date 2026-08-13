@@ -11839,10 +11839,9 @@
                 <div class="foot-right">
                   <table>
                     <tr><td ${TD}>${fp.grossRowLabel}</td><td ${TDR}>${(fmt==='invoice2'?rounded:(sub-disc)).toFixed(2)}</td></tr>
-                    <tr><td style="padding:${ROWPAD};${ROW_FONT}font-style:italic;color:#000;${HB}">Discount</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;${HB}">${disc>0?'-'+disc.toFixed(2):'—'}</td></tr>
+                    ${(() => { const lessAmt = disc - rndOff; return `<tr><td style="padding:${ROWPAD};${ROW_FONT}font-style:italic;color:#000;${HB}">Less</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;${HB}">${lessAmt>0?'-₹'+lessAmt.toFixed(2):(lessAmt<0?'+₹'+Math.abs(lessAmt).toFixed(2):'—')}</td></tr>`; })()}
                     ${fp.taxRowsHtml.replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                     ${ogRowsC.replace(/padding:3px 6px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
-                    <tr><td style="padding:${ROWPAD};${ROW_FONT}${HB}">Round Off</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;${HB}">${rndOff>=0?'+':''}₹${rndOff.toFixed(2)}</td></tr>
                     <tr style="background:#e8f5e9;"><td style="padding:${ROWPAD};font-size:11px;font-weight:800;${HB}">Net Amount</td><td style="padding:${ROWPAD};font-size:11px;font-weight:800;text-align:right;${HB}">₹${netAmtC}</td></tr>
                     ${invPaymentHtml(receipt, paymentMethod, paymentDetails, outstanding, netPayable).replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                   </table>
@@ -14820,10 +14819,9 @@
                 <div class="foot-right">
                   <table>
                     <tr><td style="padding:${ROWPAD};${ROW_FONT}">${fp.grossRowLabel}</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;font-weight:600;">${(fmt==='invoice2'?rounded:(sub-disc)).toFixed(2)}</td></tr>
-                    <tr><td style="padding:${ROWPAD};${ROW_FONT}font-style:italic;color:#000;${HB}">Discount</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;${HB}">${disc>0?'-'+disc.toFixed(2):'—'}</td></tr>
+                    ${(() => { const lessAmt = disc - rndOff; return `<tr><td style="padding:${ROWPAD};${ROW_FONT}font-style:italic;color:#000;${HB}">Less</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;${HB}">${lessAmt>0?'-₹'+lessAmt.toFixed(2):(lessAmt<0?'+₹'+Math.abs(lessAmt).toFixed(2):'—')}</td></tr>`; })()}
                     ${fp.taxRowsHtml.replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                     ${ogRowsM.replace(/padding:3px 6px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
-                    <tr><td style="padding:${ROWPAD};${ROW_FONT}${HB}">Round Off</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;${HB}">${rndOff>=0?'+':''}₹${rndOff.toFixed(2)}</td></tr>
                     <tr style="background:#e8f5e9;"><td style="padding:${ROWPAD};font-size:11px;font-weight:800;${HB}">Net Amount</td><td style="padding:${ROWPAD};font-size:11px;font-weight:800;text-align:right;${HB}">₹${netAmtM}</td></tr>
                     ${invPaymentHtml(receipt, paymentMethod, paymentDetails, outstanding, netAfterOG).replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                   </table>
