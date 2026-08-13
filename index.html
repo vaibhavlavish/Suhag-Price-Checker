@@ -13756,12 +13756,11 @@
 
         // ─── TABS ───
         function invSwitchTab(name) {
-            ['new','history','export','report'].forEach(t => {
+            ['new','history','report'].forEach(t => {
                 document.getElementById('inv-pane-'+t).style.display = t === name ? '' : 'none';
                 document.getElementById('inv-tab-'+t).classList.toggle('active', t === name);
             });
             if (name === 'history') invRenderHistory();
-            if (name === 'export') invInitExportDates();
             if (name === 'report') invInitReportDates();
         }
 
@@ -15909,19 +15908,11 @@
         }
 
         // ─── EXPORT EXCEL ───
-        function invInitExportDates() {
-            const today = new Date();
-            const toStr = invFmtDate(today);
-            const fromD = new Date(today.getFullYear(), today.getMonth(), 1);
-            const fromStr = invFmtDate(fromD);
-            const fe = document.getElementById('inv-exp-from'), te = document.getElementById('inv-exp-to');
-            if (fe && !fe.value) fe.value = fromStr;
-            if (te && !te.value) te.value = toStr;
-        }
-
-        // Defaults to today (the quick daily-close case) rather than
-        // month-start like the export tab — the quick-range buttons and
-        // manual date pickers still cover flexible period review.
+        // Defaults to today (the quick daily-close case) — the quick-range
+        // buttons and manual date pickers cover flexible period review.
+        // This same range now also drives Export Excel below, since the
+        // Excel tab was folded into Report (same underlying range, two
+        // different outputs — the on-screen summary and the spreadsheet).
         function invInitReportDates() {
             const today = new Date();
             const toStr = invFmtDate(today);
@@ -16186,7 +16177,7 @@
         }
 
         function invQuickRange(k, target) {
-            target = target || 'exp';
+            target = target || 'rep';
             const today = new Date();
             let from = today;
             let to = today;
@@ -16228,8 +16219,8 @@
 
         async function invRunExport() {
             if (typeof ExcelJS === 'undefined') { invToast('Excel library not loaded'); return; }
-            const fromVal = document.getElementById('inv-exp-from').value;
-            const toVal = document.getElementById('inv-exp-to').value;
+            const fromVal = document.getElementById('inv-rep-from').value;
+            const toVal = document.getElementById('inv-rep-to').value;
             if (!fromVal || !toVal) { invToast('Pick a date range'); return; }
 
             const fromD = new Date(fromVal + 'T00:00:00');
@@ -17187,7 +17178,6 @@
         <div style="display:flex; min-height:48px; background:var(--surface); border-radius:var(--radius); overflow:hidden; border:1.5px solid var(--border); margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,.06);">
             <div class="inv-tab active" id="inv-tab-new" onclick="invNewTabClicked()" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">✏️ New</div>
             <div class="inv-tab" id="inv-tab-history" onclick="invSwitchTab('history')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📋 History</div>
-            <div class="inv-tab" id="inv-tab-export" onclick="invSwitchTab('export')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📊 Excel</div>
             <div class="inv-tab" id="inv-tab-report" onclick="invSwitchTab('report')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📈 Report</div>
         </div>
 
@@ -17324,32 +17314,6 @@
             <div id="inv-hist-list"></div>
         </div>
 
-        <!-- ══ PANE: EXPORT ══ -->
-        <div id="inv-pane-export" style="display:none;">
-            <div style="background:var(--surface); border-radius:var(--radius); padding:14px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
-                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Export Sale Register → Excel</div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
-                    <div>
-                        <label style="font-size:11px; display:block; margin-bottom:3px;">From</label>
-                        <input type="date" id="inv-exp-from" style="margin:0;">
-                    </div>
-                    <div>
-                        <label style="font-size:11px; display:block; margin-bottom:3px;">To</label>
-                        <input type="date" id="inv-exp-to" style="margin:0;">
-                    </div>
-                </div>
-                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
-                    <button onclick="invQuickRange('today')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Today</button>
-                    <button onclick="invQuickRange('week')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">This Week</button>
-                    <button onclick="invQuickRange('month')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">This Month</button>
-                    <button onclick="invQuickRange('lastmonth')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Last Month</button>
-                    <button onclick="invQuickRange('all')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">All Time</button>
-                </div>
-
-                <button onclick="invRunExport()" style="width:100%; background:var(--green); color:white; border:none; border-radius:var(--radius-sm); padding:12px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none;">📊 Export Excel</button>
-            </div>
-        </div>
-
         <div id="inv-pane-report" style="display:none;">
             <div style="background:var(--surface); border-radius:var(--radius); padding:14px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Sales Report — Current Track</div>
@@ -17363,13 +17327,14 @@
                         <input type="date" id="inv-rep-to" onchange="renderSalesReport()" style="margin:0;">
                     </div>
                 </div>
-                <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px;">
                     <button onclick="invQuickRange('today','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Today</button>
                     <button onclick="invQuickRange('week','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">This Week</button>
                     <button onclick="invQuickRange('month','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">This Month</button>
                     <button onclick="invQuickRange('lastmonth','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Last Month</button>
                     <button onclick="invQuickRange('all','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">All Time</button>
                 </div>
+                <button onclick="invRunExport()" style="width:100%; background:var(--green); color:white; border:none; border-radius:var(--radius-sm); padding:12px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none;">📊 Export Excel</button>
             </div>
             <div id="inv-rep-results"></div>
         </div>
