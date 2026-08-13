@@ -8274,10 +8274,9 @@
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px;">
                     <button onclick="openInstallmentLinkModal()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🔗 Link</button>
                     ${isActive ? `<button onclick="chooseInstallmentPrintDestination()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">👁🖨️ Preview / Print</button>` : ''}
-                    ${plan.status !== 'completed' && !isCancelled ? `<button onclick="openInstallmentRateModal()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">📈 Change Rate (Today's / Custom)</button>` : ''}
+                    ${isActive ? `<button onclick="openInstallmentRateModal()" style="background:${plan.rateCancelled ? '#FFF3E0' : 'none'}; border:1.5px solid ${plan.rateCancelled ? '#E65100' : 'var(--border)'}; color:${plan.rateCancelled ? '#E65100' : 'var(--text)'}; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">${plan.rateCancelled ? '⚠️ Change/Cancel Rate (Cancelled)' : '📈 Change/Cancel Rate'}</button>` : ''}
                     ${plan.status === 'completed' ? `<button onclick="saveInstallmentToInvoice()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🧾 Save to Invoice</button>` : ''}
                     ${isActive ? `<button onclick="cancelInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">✕ Cancel Plan</button>` : ''}
-                    ${isActive ? `<button onclick="toggleInstallmentRateCancelled()" style="background:${plan.rateCancelled ? '#FFF3E0' : 'none'}; border:1.5px solid ${plan.rateCancelled ? '#E65100' : 'var(--border)'}; color:${plan.rateCancelled ? '#E65100' : 'var(--text)'}; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">${plan.rateCancelled ? '⚠️ Rate Cancelled — Tap to Undo' : '⚠️ Mark Rate Cancelled'}</button>` : ''}
                     ${(isCancelled || plan.status === 'completed') ? `<button onclick="deleteInstallmentPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🗑️ Delete This Plan</button>` : ''}
                 </div>
                 <p class="note" id="inst-link-status" style="margin-top:8px; text-align:center;"></p>
@@ -8705,7 +8704,7 @@
         function openInstallmentRateModal(){
             const plan = installmentPlans.find(p => p.id === currentInstallmentDetailId);
             if (!plan || plan.status === 'cancelled') return;
-            document.getElementById('installment-rate-title').textContent = 'Change Rate';
+            document.getElementById('installment-rate-title').textContent = 'Change / Cancel Rate';
 
             const currentRateHtml = (plan.appliedPureRates && Object.keys(plan.appliedPureRates).length) ? `
                 <div style="background:var(--bg); border-radius:10px; padding:10px 12px; margin-bottom:14px;">
@@ -8719,6 +8718,8 @@
                 <p class="note" style="margin-bottom:14px;">Choose how to recalculate this plan's items.</p>
                 <button onclick="chooseInstallmentRateMode('today')" style="width:100%; background:var(--gold); color:#fff; font-weight:800; padding:12px; border-radius:var(--radius); border:none; font-size:14px; margin-bottom:10px;">📅 Today's Rate</button>
                 <button onclick="chooseInstallmentRateMode('custom')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:12px; border-radius:var(--radius); font-size:14px;">✏️ Custom Rate</button>
+                <p class="note" style="margin:16px 0 10px; text-align:center;">— or, if the rate can no longer be honored —</p>
+                <button onclick="document.getElementById('installment-rate-modal').style.display='none'; toggleInstallmentRateCancelled();" style="width:100%; background:${plan.rateCancelled ? '#FFF3E0' : 'none'}; border:1.5px solid ${plan.rateCancelled ? '#E65100' : '#C62828'}; color:${plan.rateCancelled ? '#E65100' : '#C62828'}; font-weight:700; padding:12px; border-radius:var(--radius); font-size:14px;">${plan.rateCancelled ? '✅ Undo Rate Cancelled' : '⚠️ Mark Rate Cancelled'}</button>
             `;
             document.getElementById('installment-rate-modal').style.display = 'flex';
         }
