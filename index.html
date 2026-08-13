@@ -9909,7 +9909,7 @@
             }
             summaryHtml += `
                 <div style="display:flex; justify-content:space-between; font-size:1.2em; font-weight:bold; border-top:1px dashed #ccc; padding-top:5px; margin-top:5px;">
-                    <span>Net Payable:</span><span style="color:${cartAdjustment !== 0 ? '#6a1b9a' : (netPayable < 0 ? '#e53935' : '#222')};">₹${netPayable.toFixed(2)}</span>
+                    <span onclick="invHandleNetPayableTap()" style="cursor:pointer; user-select:none;">Net Payable:</span><span style="color:${cartAdjustment !== 0 ? '#6a1b9a' : (netPayable < 0 ? '#e53935' : '#222')};">₹${netPayable.toFixed(2)}</span>
                 </div>
             `;
 
@@ -11582,6 +11582,24 @@
             invSetCheckoutFormat(fmt);
             invRenderCheckoutFormatPickerList();
             invToast((INV_FORMAT_LABELS[fmt] || fmt) + ' set as checkout print format');
+        }
+
+        // Quick hidden toggle on the cart's Net Payable label — 5 taps
+        // within 1.5s flips the checkout print format (invoice1 ↔
+        // invoice2) without leaving the cart for Settings. Same
+        // tap-counting pattern as the existing Track A/B gesture.
+        let _netPayableTapCount = 0, _netPayableTapTimer = null;
+        function invHandleNetPayableTap() {
+            _netPayableTapCount++;
+            clearTimeout(_netPayableTapTimer);
+            _netPayableTapTimer = setTimeout(() => { _netPayableTapCount = 0; }, 1500);
+            if (_netPayableTapCount >= 5) {
+                _netPayableTapCount = 0;
+                clearTimeout(_netPayableTapTimer);
+                const next = invGetCheckoutFormat() === 'invoice1' ? 'invoice2' : 'invoice1';
+                invSetCheckoutFormat(next);
+                invToast('🔀 Checkout format → ' + (INV_FORMAT_LABELS[next] || next));
+            }
         }
 
         // Builds the "TAX INVOICE" badge + GSTIN/jurisdiction block + the footer GST
