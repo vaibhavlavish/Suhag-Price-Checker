@@ -4815,16 +4815,12 @@
         function getSoldBarcodesForStock() {
             const sold = new Set();
             (billHistory || []).forEach(bill => {
-                const ts = bill.timestamp ? new Date(bill.timestamp).getTime() : 0;
-                if (ts < productDataImportedAt) return;
                 (bill.items || []).forEach(item => {
                     if (item && item.barcode) sold.add(String(item.barcode).trim().toUpperCase());
                 });
             });
             (invoiceHistory || []).forEach(inv => {
                 if (inv.draft) return;
-                const ts = inv.timestamp ? new Date(inv.timestamp).getTime() : 0;
-                if (ts < productDataImportedAt) return;
                 (inv.items || []).forEach(item => {
                     if (item && item.barcode) sold.add(String(item.barcode).trim().toUpperCase());
                 });
