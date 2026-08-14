@@ -1505,19 +1505,6 @@
             box-shadow: 0 -8px 32px rgba(0,0,0,0.15);
             max-height: 88vh; overflow-y: auto;
         }
-        #hedge-assign-modal {
-            display: none; position: fixed; inset: 0;
-            background: rgba(0,0,0,0.55); z-index: 1160;
-            align-items: flex-end; justify-content: center;
-        }
-        #hedge-assign-modal.show { display: flex; }
-        #hedge-assign-panel {
-            background: white; border-radius: 20px 20px 0 0;
-            width: 100%; max-width: 480px;
-            padding: 22px 20px 30px;
-            box-shadow: 0 -8px 32px rgba(0,0,0,0.15);
-            max-height: 88vh; overflow-y: auto;
-        }
         #reminder-panel {
             background: white; border-radius: 20px 20px 0 0;
             width: 100%; max-width: 480px;
@@ -1750,9 +1737,6 @@
             </button>
             <button onclick="showSection('installments-screen')" data-menu-key="installments">
                 <span class="menu-icon" style="background:#FCE4EC;">📆</span> Installment Plans
-            </button>
-            <button onclick="showSection('hedge-screen')" data-menu-key="hedge-dashboard">
-                <span class="menu-icon" style="background:#EDE7F6;">🛡️</span> Hedge Dashboard
             </button>
             <button onclick="openPrintServerModal()" data-menu-key="print-server">
                 <span class="menu-icon" style="background:#E0F2F1;">🖨️</span> Print Server
@@ -4590,7 +4574,6 @@
             document.getElementById('returns').style.display = 'none';
             document.getElementById('invoice-screen').style.display = 'none';
             document.getElementById('installments-screen').style.display = 'none';
-            document.getElementById('hedge-screen').style.display = 'none';
             document.getElementById('reminders').style.display = 'none';
             const brandHeaderEl = document.getElementById('brand-header');
             if (brandHeaderEl) brandHeaderEl.style.display = 'none';
@@ -4617,15 +4600,11 @@
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen' || section === 'hedge-screen') ? 'flex' : 'block';
+                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen') ? 'flex' : 'block';
             }
 
             if (section === 'installments-screen') {
                 openInstallmentsScreen();
-            }
-
-            if (section === 'hedge-screen') {
-                renderHedgeDashboard();
             }
 
             if (section === 'ledger') {
@@ -4695,7 +4674,6 @@
         const MENU_ITEMS_REGISTRY = [
             { key: 'invoice',        label: 'Invoice',            icon: '🧾', action: () => showSection('invoice-screen') },
             { key: 'installments',   label: 'Installment Plans',  icon: '📆', action: () => showSection('installments-screen') },
-            { key: 'hedge-dashboard', label: 'Hedge Dashboard',   icon: '🛡️', action: () => showSection('hedge-screen') },
             { key: 'update-rates',   label: 'Update Rates',       icon: '💰', action: () => showSection('update-rates') },
             { key: 'excel-upload',   label: 'Upload Excel',       icon: '📂', action: () => showSection('excel-upload') },
             { key: 'stock-view',     label: 'Stock View',         icon: '📦', action: () => showStockSection() },
@@ -7687,7 +7665,7 @@
                 if (document.getElementById('stock-calc').style.display !== 'none' && stockCalcMetal) {
                     renderStockCalc();
                 }
-                const hedgeScr = document.getElementById('hedge-screen');
+                const hedgeScr = document.getElementById('inv-pane-purchase');
                 if (hedgeScr && hedgeScr.style.display !== 'none') {
                     renderHedgeDashboard();
                 }
@@ -8763,7 +8741,7 @@
             window.dbOnValue(ref, (snapshot) => {
                 const val = snapshot.val() || {};
                 hedgeLog = Object.values(val).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                const scr = document.getElementById('hedge-screen');
+                const scr = document.getElementById('inv-pane-purchase');
                 if (scr && scr.style.display !== 'none') renderHedgeDashboard();
             }, (error) => {
                 console.error('[HedgeLog] Firebase read error:', error);
@@ -8839,6 +8817,120 @@
             return { totals, unresolved };
         }
 
+        // ===== Regular-sales hedging (Purchase Manager, non-installment) =====
+        // Selling a piece removes that gram weight from stock immediately —
+        // if it isn't replenished before the rate rises, restocking costs
+        // more than what future sales were priced at, same underlying risk
+        // as installment hedging, just triggered by "already sold" instead
+        // of "promised for later". Sentinel plan-id-shaped strings (never
+        // collide with a real crypto.randomUUID()) let this reuse the exact
+        // same hedgeLog/getHedgedGrams/openHedgeLogModal machinery as
+        // installment plans, instead of a parallel data model.
+        const SALES_HEDGE_BUCKET = { A: '__sales_a__', B: '__sales_b__' };
+        // Original historical anchor — the user's last cash-rate purchase
+        // was 21 Jul 2026, everything since was covered by melting old
+        // trade-in gold instead (logged manually, rate left blank). Now
+        // just the fallback default for a track that's never been reset;
+        // see salesHedgeStartDates below for the live, per-track value.
+        const SALES_HEDGE_START_DATE = new Date('2026-07-21T00:00:00');
+
+        // Per-track reset date — Owed and Hedged both only count sales and
+        // hedge purchases from this date forward, so resetting a track
+        // (once fully caught up) brings both back down to near-zero
+        // together instead of growing forever. Stored in Firebase so it
+        // persists and each track resets independently. null = never
+        // reset, falls back to SALES_HEDGE_START_DATE above.
+        let salesHedgeStartDates = { A: null, B: null };
+        let _salesHedgeDatesSyncStarted = false;
+        function startSalesHedgeDatesSync(){
+            if (_salesHedgeDatesSyncStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB) {
+                setTimeout(startSalesHedgeDatesSync, 500);
+                return;
+            }
+            _salesHedgeDatesSyncStarted = true;
+            const ref = window.dbRef(window.firebaseDB, 'hedgeSalesStartDates');
+            window.dbOnValue(ref, (snapshot) => {
+                const val = snapshot.val() || {};
+                salesHedgeStartDates = { A: val.A || null, B: val.B || null };
+                const scr = document.getElementById('inv-pane-purchase');
+                if (scr && scr.style.display !== 'none') renderHedgeDashboard();
+            }, (error) => {
+                console.error('[SalesHedgeDates] Firebase read error:', error);
+            });
+        }
+        function getSalesHedgeStartDate(track){
+            const stored = salesHedgeStartDates[track];
+            return stored ? new Date(stored + 'T00:00:00') : SALES_HEDGE_START_DATE;
+        }
+
+        async function resetSalesHedgeTrack(track){
+            const dateStr = new Date().toISOString().slice(0, 10);
+            showCustomConfirm(
+                `Reset Sales tracking for Track ${track} to today? Sales and hedge purchases before today will stop counting toward Owed/Hedged — they'll still show in Hedge P&L history, just not in the live totals.`,
+                'Reset Sales Tracking',
+                async () => {
+                    try {
+                        await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeSalesStartDates'), { [track]: dateStr });
+                        salesHedgeStartDates[track] = dateStr;
+                        renderHedgeDashboard();
+                    } catch (e) {
+                        console.error('[SalesHedgeDates] reset failed', e);
+                        showCustomAlert(window._writeAllowed ? 'Could not reset — try again.' : 'Writes are disabled — this copy is running in read-only mode.');
+                    }
+                }
+            );
+        }
+
+        // Mirrors getInstallmentItemMetalWeight, but for a regular
+        // invoice's line items (nlWt/metal/stamp — see _invRowsFromCartItems
+        // and invDescChange) rather than an installment plan's frozen
+        // item snapshot. Same three-tier metal fallback and same
+        // purity-to-pure-gram conversion, since both ultimately need the
+        // same answer: how many pure (24K/999) grams did this line
+        // actually represent.
+        // Three-tier metal resolution — same fallback chain used
+        // throughout the app for older invoices whose barcode has since
+        // been removed from stock: 1) frozen item.metal, 2) live
+        // productData lookup by barcode, 3) description text match
+        // ("Gold Chain", "925", etc.) as a last resort. Single source of
+        // truth for "how many pure grams did this invoice line
+        // represent" — both Sales Report and Purchase Manager call this,
+        // so they can never silently disagree on the definition again.
+        function getInvoiceItemPureGrams(item){
+            let rawMetal = item.metal;
+            if (!rawMetal && item.barcode && productData[item.barcode]) rawMetal = productData[item.barcode].metal;
+            if (!rawMetal && item.desc) {
+                const d = item.desc.toLowerCase();
+                if (d.includes('gold')) rawMetal = 'gold';
+                else if (d.includes('silver') || d.includes('925')) rawMetal = 'silver';
+            }
+            const metal = _normMetal(rawMetal);
+            if (metal !== 'Gold' && metal !== 'Silver') return null;
+            const stamp = item.stamp || (item.barcode && productData[item.barcode] && productData[item.barcode].stamp) || '';
+            const rawWeight = item.nlWt || 0;
+            return { metal, weight: rawWeight * _purityRatio(metal, stamp) };
+        }
+
+        // Total pure grams sold via regular (non-installment) invoices on
+        // one track, since that track's own start date (see
+        // getSalesHedgeStartDate — resettable). Drafts excluded, same as
+        // Sales Report / Excel export.
+        function getSalesTrackGrams(track){
+            const totals = { Gold: 0, Silver: 0 };
+            const startDate = getSalesHedgeStartDate(track);
+            invoiceHistory.forEach(inv => {
+                if (inv.draft) return;
+                if (inv.track !== track) return;
+                if (new Date(inv.timestamp) < startDate) return;
+                (inv.items || []).forEach(item => {
+                    const mw = getInvoiceItemPureGrams(item);
+                    if (mw) totals[mw.metal] += mw.weight;
+                });
+            });
+            return totals;
+        }
+
         // planId omitted → every entry (the true aggregate hedged total).
         // planId === null → only unassigned/general entries.
         // planId === '<id>' → only that plan's own entries.
@@ -8860,12 +8952,77 @@
                 owed.Silver += g.totals.Silver || 0;
                 if (g.unresolved > 0) unresolvedPlans++;
             });
-            const hedged = getHedgedGrams();
+            // Only entries belonging to installments (a real plan, or the
+            // shared installments general pool) count here — sales-tied
+            // entries get their own separate summary below, and mixing
+            // them in here would overstate "hedged" against this
+            // installments-only "owed" figure.
+            const hedged = { Gold: 0, Silver: 0 };
+            hedgeLog.forEach(e => {
+                if (e.planId === SALES_HEDGE_BUCKET.A || e.planId === SALES_HEDGE_BUCKET.B) return;
+                hedged[e.metal] = (hedged[e.metal] || 0) + (e.grams || 0);
+            });
             return {
                 Gold: { owed: owed.Gold, hedged: hedged.Gold || 0, toBuy: Math.max(0, owed.Gold - (hedged.Gold || 0)) },
                 Silver: { owed: owed.Silver, hedged: hedged.Silver || 0, toBuy: Math.max(0, owed.Silver - (hedged.Silver || 0)) },
                 unresolvedPlans
             };
+        }
+
+        // Same {Gold, Silver} owed/hedged/toBuy shape as computeHedgeSummary,
+        // but scoped to one track's regular (non-installment) sales.
+        // Same as getHedgedGrams(bucketId), but only counts entries logged
+        // on or after that track's reset date — so a reset brings Owed
+        // and Hedged down together, not just Owed. Only sales tracks work
+        // this way; installment plans have no reset concept and keep
+        // using the unfiltered getHedgedGrams everywhere else.
+        function getHedgedGramsSinceForTrack(track){
+            const startDate = getSalesHedgeStartDate(track);
+            const bucketId = SALES_HEDGE_BUCKET[track];
+            const totals = {};
+            hedgeLog.forEach(e => {
+                if ((e.planId || null) !== bucketId) return;
+                if (new Date(e.createdAt) < startDate) return;
+                totals[e.metal] = (totals[e.metal] || 0) + (e.grams || 0);
+            });
+            return totals;
+        }
+
+        function computeSalesTrackSummary(track){
+            const owed = getSalesTrackGrams(track);
+            const hedged = getHedgedGramsSinceForTrack(track);
+            return {
+                Gold: { owed: owed.Gold || 0, hedged: hedged.Gold || 0, toBuy: Math.max(0, (owed.Gold || 0) - (hedged.Gold || 0)) },
+                Silver: { owed: owed.Silver || 0, hedged: hedged.Silver || 0, toBuy: Math.max(0, (owed.Silver || 0) - (hedged.Silver || 0)) }
+            };
+        }
+
+        // Grams-weighted average rate across BOTH sources of exposure for
+        // one metal — every active plan's own booked rate for its owed
+        // grams, plus the current track's sales-weighted rate for its
+        // owed grams. Combining them gives the same reference point the
+        // top summary cards show, since a buying decision needs the full
+        // picture, not just one source at a time.
+        function computeCombinedAvgRate(metal){
+            let totalGrams = 0, weightedSum = 0;
+            installmentPlans.filter(p => p.status === 'active').forEach(plan => {
+                const g = getPlanHedgeGrams(plan);
+                const owed = g.totals[metal] || 0;
+                if (owed <= 0) return;
+                const rate = _getAppliedPureRate(plan, metal);
+                if (!rate) return;
+                totalGrams += owed;
+                weightedSum += owed * rate;
+            });
+            const salesOwed = getSalesTrackGrams(currentInvTrack)[metal] || 0;
+            if (salesOwed > 0) {
+                const salesRate = getSalesTrackWeightedRate(currentInvTrack, metal);
+                if (salesRate) {
+                    totalGrams += salesOwed;
+                    weightedSum += salesOwed * salesRate;
+                }
+            }
+            return totalGrams > 0 ? weightedSum / totalGrams : 0;
         }
 
         // appliedPureRates keys come from getInstallmentPlanMetals(),
@@ -8882,44 +9039,100 @@
                 || 0;
         }
 
-        // P&L only applies to plan-tied entries — a general/unassigned
-        // purchase has no booked rate to compare against. Booked rate
-        // comes from plan.appliedPureRates, the pure rate locked in when
-        // the plan's items were priced (or last rate-changed).
+        // A regular sale has no single "booked rate" the way a plan does —
+        // each invoice it's made of was priced on its own day at its own
+        // pureRate (see _invRowsFromCartItems/invDescChange). The fair
+        // comparison point for a hedge purchase against this track is the
+        // grams-weighted average of what those sales were actually priced
+        // at, not any one invoice's rate.
+        function getSalesTrackWeightedRate(track, metal){
+            let totalWeight = 0, weightedSum = 0;
+            const startDate = getSalesHedgeStartDate(track);
+            invoiceHistory.forEach(inv => {
+                if (inv.draft || inv.track !== track) return;
+                if (new Date(inv.timestamp) < startDate) return;
+                (inv.items || []).forEach(item => {
+                    const mw = getInvoiceItemPureGrams(item);
+                    if (!mw || mw.metal !== metal || !mw.weight || !item.pureRate) return;
+                    totalWeight += mw.weight;
+                    weightedSum += mw.weight * item.pureRate;
+                });
+            });
+            return totalWeight > 0 ? weightedSum / totalWeight : 0;
+        }
+
+        // Combined across installments AND regular sales — both are the
+        // same underlying question (did this purchase beat what it's
+        // actually covering), just with a different source for the
+        // "booked" comparison rate: a plan's fixed appliedPureRates, or a
+        // sales track's grams-weighted average sale rate.
         function computeHedgePnl(){
             let totalPnl = 0;
             const rows = [];
+            const salesRateCache = {}; // avoid recomputing the weighted rate per entry when several share a track+metal
             hedgeLog.forEach(e => {
                 if (!e.planId) return;
-                const plan = installmentPlans.find(p => p.id === e.planId);
-                if (!plan) return;
-                const bookedRate = _getAppliedPureRate(plan, e.metal);
+                let bookedRate = 0, label = '';
+                if (e.planId === SALES_HEDGE_BUCKET.A || e.planId === SALES_HEDGE_BUCKET.B) {
+                    const track = e.planId === SALES_HEDGE_BUCKET.A ? 'A' : 'B';
+                    const cacheKey = track + '|' + e.metal;
+                    if (!(cacheKey in salesRateCache)) salesRateCache[cacheKey] = getSalesTrackWeightedRate(track, e.metal);
+                    bookedRate = salesRateCache[cacheKey];
+                    label = `Track ${track} Sales`;
+                } else {
+                    const plan = installmentPlans.find(p => p.id === e.planId);
+                    if (!plan) return;
+                    bookedRate = _getAppliedPureRate(plan, e.metal);
+                    label = plan.customerName;
+                }
                 if (!bookedRate || !e.rate) return;
                 const pnl = (bookedRate - e.rate) * (e.grams || 0);
                 totalPnl += pnl;
-                rows.push({ customerName: plan.customerName, metal: e.metal, grams: e.grams, rate: e.rate, bookedRate, pnl });
+                rows.push({ customerName: label, metal: e.metal, grams: e.grams, rate: e.rate, bookedRate, pnl });
             });
             return { totalPnl, rows };
         }
 
         function renderHedgeDashboard(){
-            const summary = computeHedgeSummary();
+            const instSummary = computeHedgeSummary();
+            const salesSummary = computeSalesTrackSummary(currentInvTrack);
+            // Combined total across both purposes — this is "how much do I
+            // need to buy right now, period", not installments-only. Keeps
+            // computeHedgeSummary()'s own installments-only shape intact
+            // (still used to size the Installment Plans section below),
+            // just adds the current track's sales figures on top for the
+            // headline cards.
+            const combined = {
+                Gold: {
+                    owed: instSummary.Gold.owed + salesSummary.Gold.owed,
+                    hedged: instSummary.Gold.hedged + salesSummary.Gold.hedged,
+                    toBuy: Math.max(0, (instSummary.Gold.owed + salesSummary.Gold.owed) - (instSummary.Gold.hedged + salesSummary.Gold.hedged))
+                },
+                Silver: {
+                    owed: instSummary.Silver.owed + salesSummary.Silver.owed,
+                    hedged: instSummary.Silver.hedged + salesSummary.Silver.hedged,
+                    toBuy: Math.max(0, (instSummary.Silver.owed + salesSummary.Silver.owed) - (instSummary.Silver.hedged + salesSummary.Silver.hedged))
+                }
+            };
             const cardsEl = document.getElementById('hedge-summary-cards');
-            const metalCard = (label, icon, s) => `
+            const metalCard = (label, icon, s, avgRate) => `
                 <div style="background:var(--surface); border-radius:var(--radius); padding:14px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                     <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:8px;">${icon} ${label}</div>
                     <div style="font-size:11px; color:var(--text2); margin-bottom:2px;">Owed: <b style="color:var(--text);">${s.owed.toFixed(2)}g</b></div>
                     <div style="font-size:11px; color:var(--text2); margin-bottom:8px;">Hedged: <b style="color:var(--text);">${s.hedged.toFixed(2)}g</b></div>
                     <div style="font-size:20px; font-weight:800; color:${s.toBuy > 0 ? '#C62828' : '#2E7D32'};">${s.toBuy.toFixed(2)}g</div>
-                    <div style="font-size:10px; color:var(--text2);">to buy</div>
+                    <div style="font-size:10px; color:var(--text2); margin-bottom:${avgRate ? '6' : '0'}px;">to buy</div>
+                    ${avgRate ? `<div style="font-size:10.5px; color:var(--text2); padding-top:6px; border-top:1px solid var(--border);">avg sold @ ₹${avgRate.toFixed(2)}/g</div>` : ''}
                 </div>`;
-            cardsEl.innerHTML = metalCard('Gold', '🟡', summary.Gold) + metalCard('Silver', '⚪', summary.Silver);
+            cardsEl.innerHTML = metalCard('Gold', '🟡', combined.Gold, computeCombinedAvgRate('Gold')) + metalCard('Silver', '⚪', combined.Silver, computeCombinedAvgRate('Silver'));
 
             const pnl = computeHedgePnl();
             const pnlEl = document.getElementById('hedge-pnl-card');
             if (!pnl.rows.length) {
-                pnlEl.innerHTML = `<div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Hedge P&L</div><p class="note">No plan-tied purchases with a rate logged yet.</p>`;
+                pnlEl.style.display = 'none';
+                pnlEl.innerHTML = '';
             } else {
+                pnlEl.style.display = '';
                 const pnlColor = pnl.totalPnl >= 0 ? '#2E7D32' : '#C62828';
                 pnlEl.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -8978,7 +9191,7 @@
                         <div onclick="_toggleHedgePlanEntries('${x.plan.id}')" style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border); font-size:11px; font-weight:700; color:var(--text2); cursor:pointer; user-select:none;">
                             ${expanded ? '▾' : '▸'} ${entries.length} purchase${entries.length === 1 ? '' : 's'} logged
                         </div>
-                        ${expanded ? `<div style="margin-top:6px;">${entries.map(e => _hedgeEntryRow(e, { showAssign: false })).join('')}</div>` : ''}
+                        ${expanded ? `<div style="margin-top:6px;">${entries.map(e => _hedgeEntryRow(e)).join('')}</div>` : ''}
                     ` : ''}
                 </div>`;
             };
@@ -8996,9 +9209,7 @@
             });
 
             let html = '';
-            if (!needsAttention.length) {
-                html += '<p class="note" style="text-align:center;">No active plans need hedging right now.</p>';
-            } else {
+            if (needsAttention.length) {
                 html += needsAttention.map(x => {
                     const statusLine = `
                         ${x.need.Gold > 0 ? `🟡 Gold: <b style="color:var(--text);">${x.need.Gold.toFixed(2)}g</b> needed` : ''}
@@ -9023,29 +9234,87 @@
                     }).join('') : ''}`;
             }
             plansEl.innerHTML = html;
+            // Hide the whole section (heading included) when there are no
+            // active plans at all — no point showing an empty-state
+            // message for something that's just not in use right now.
+            document.getElementById('hedge-plans-section').style.display = evaluated.length ? '' : 'none';
 
-            function _hedgeEntryRow(e, opts){
-                opts = opts || {};
+            // Regular (non-installment) sales — track-scoped, unlike
+            // everything above which is track-agnostic. Rendered like a
+            // single always-present "plan" for whichever track is
+            // currently active, reusing the same entry-row/expand/log UI.
+            const salesTrackEl = document.getElementById('hedge-sales-track');
+            if (salesTrackEl) {
+                const track = currentInvTrack;
+                const salesSummary = computeSalesTrackSummary(track);
+                const bucketId = SALES_HEDGE_BUCKET[track];
+                const trackStartDate = getSalesHedgeStartDate(track);
+                const salesEntries = hedgeLog
+                    .filter(e => e.planId === bucketId && new Date(e.createdAt) >= trackStartDate)
+                    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                const salesExpanded = _hedgeExpandedPlans.has(bucketId);
+                const need = { Gold: salesSummary.Gold.toBuy, Silver: salesSummary.Silver.toBuy };
+                const totalOwed = salesSummary.Gold.owed + salesSummary.Silver.owed;
+                let salesStatusLine;
+                if (need.Gold > 0 || need.Silver > 0) {
+                    salesStatusLine = `
+                        ${need.Gold > 0 ? `🟡 Gold: <b style="color:var(--text);">${need.Gold.toFixed(2)}g</b> needed` : ''}
+                        ${need.Gold > 0 && need.Silver > 0 ? ' · ' : ''}
+                        ${need.Silver > 0 ? `⚪ Silver: <b style="color:var(--text);">${need.Silver.toFixed(2)}g</b> needed` : ''}`;
+                } else if (totalOwed > 0) {
+                    salesStatusLine = `<span style="color:#2E7D32;">✓ Fully hedged (${totalOwed.toFixed(2)}g)</span>`;
+                } else {
+                    salesStatusLine = `<span style="color:var(--text2);">No gold/silver sold since ${trackStartDate.toLocaleDateString('en-IN')}.</span>`;
+                }
+                // Grams-weighted average of what these sales were actually
+                // priced at (same figure P&L compares hedge purchases
+                // against internally) — buying below this is a real
+                // profit on this track's stock; buying above it locks in
+                // a loss even if the purchase itself looks fine in
+                // isolation.
+                const avgRateParts = [];
+                if (salesSummary.Gold.owed > 0) {
+                    const r = getSalesTrackWeightedRate(track, 'Gold');
+                    if (r) avgRateParts.push(`🟡 avg sold @ ₹${r.toFixed(2)}/g`);
+                }
+                if (salesSummary.Silver.owed > 0) {
+                    const r = getSalesTrackWeightedRate(track, 'Silver');
+                    if (r) avgRateParts.push(`⚪ avg sold @ ₹${r.toFixed(2)}/g`);
+                }
+                const avgRateLine = avgRateParts.length ? `<div style="font-size:11px; color:var(--text2); margin-top:2px;">${avgRateParts.join(' · ')}</div>` : '';
+                salesTrackEl.innerHTML = `
+                    <div style="background:var(--surface); border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700;">Sales</span>
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <button onclick="resetSalesHedgeTrack('${track}')" title="Reset tracking to today" style="background:none; border:1.5px solid var(--border); color:var(--text2); font-weight:700; padding:5px 8px; border-radius:8px; font-size:11.5px; width:auto; margin:0;">↺</button>
+                                <button onclick="openHedgeLogModal('${bucketId}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:5px 10px; border-radius:8px; font-size:11.5px; width:auto; margin:0;">+ Log Hedge</button>
+                            </div>
+                        </div>
+                        <div style="font-size:10px; color:var(--text2); margin-bottom:4px;">Tracking since ${trackStartDate.toLocaleDateString('en-IN')}</div>
+                        <div style="font-size:12.5px; color:var(--text2);">${salesStatusLine}</div>
+                        ${avgRateLine}
+                        ${salesEntries.length ? `
+                            <div onclick="_toggleHedgePlanEntries('${bucketId}')" style="margin-top:8px; padding-top:8px; border-top:1px solid var(--border); font-size:11px; font-weight:700; color:var(--text2); cursor:pointer; user-select:none;">
+                                ${salesExpanded ? '▾' : '▸'} ${salesEntries.length} purchase${salesEntries.length === 1 ? '' : 's'} logged
+                            </div>
+                            ${salesExpanded ? `<div style="margin-top:6px;">${salesEntries.map(e => _hedgeEntryRow(e)).join('')}</div>` : ''}
+                        ` : ''}
+                    </div>`;
+            }
+
+            function _hedgeEntryRow(e){
                 return `
                     <div style="display:flex; justify-content:space-between; align-items:center; background:var(--surface); border-radius:var(--radius); padding:10px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                         <div style="font-size:12.5px;">
                             <b>${e.metal}</b> · ${(e.grams || 0).toFixed(2)}g ${e.rate ? `@ ₹${e.rate.toFixed(2)}/g` : ''}
-                            <div style="font-size:10.5px; color:var(--text2);">${e.date || ''}</div>
+                            <div style="font-size:10.5px; color:var(--text2);">${e.date || ''}${e.note ? ' · ' + e.note.replace(/</g, '&lt;') : ''}</div>
                         </div>
                         <div style="display:flex; align-items:center; gap:8px;">
-                            ${opts.showAssign ? `<button onclick="openAssignHedgeModal('${e.id}')" title="Assign to a plan" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:5px 10px; border-radius:8px; font-size:11px; width:auto; margin:0;">Assign</button>` : ''}
                             <button onclick="openHedgeLogModal(null, '${e.id}')" title="Edit" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:5px 10px; border-radius:8px; font-size:11px; width:auto; margin:0;">Edit</button>
                             <button onclick="deleteHedgeLogEntry('${e.id}')" title="Remove" style="background:none; border:none; color:#C62828; font-size:16px; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
                         </div>
                     </div>`;
-            }
-
-            const generalEl = document.getElementById('hedge-general-list');
-            const general = hedgeLog.filter(e => !e.planId);
-            if (!general.length) {
-                generalEl.innerHTML = '<p class="note" style="text-align:center;">No unassigned purchases logged.</p>';
-            } else {
-                generalEl.innerHTML = general.map(e => _hedgeEntryRow(e, { showAssign: true })).join('');
             }
         }
 
@@ -9076,10 +9345,25 @@
 
             document.getElementById('hedge-log-grams').value = existing ? existing.grams : '';
             document.getElementById('hedge-log-rate').value = existing ? existing.rate : '';
+            document.getElementById('hedge-log-note').value = existing ? (existing.note || '') : '';
 
             document.getElementById('hedge-log-title').textContent = editing ? 'Edit Hedge Purchase' : (effectivePlanId ? 'Log Hedge Purchase' : 'Log Purchase');
 
-            if (effectivePlanId) {
+            const salesTrack = effectivePlanId === SALES_HEDGE_BUCKET.A ? 'A' : (effectivePlanId === SALES_HEDGE_BUCKET.B ? 'B' : null);
+
+            if (salesTrack) {
+                noteEl.style.display = 'block';
+                noteEl.textContent = 'For regular sales';
+                if (existing) {
+                    metalSelect.value = existing.metal;
+                } else {
+                    const owed = getSalesTrackGrams(salesTrack);
+                    const hedged = getHedgedGramsSinceForTrack(salesTrack);
+                    const goldNeed = (owed.Gold || 0) - (hedged.Gold || 0);
+                    const silverNeed = (owed.Silver || 0) - (hedged.Silver || 0);
+                    metalSelect.value = (silverNeed > 0 && goldNeed <= 0) ? 'Silver' : 'Gold';
+                }
+            } else if (effectivePlanId) {
                 const plan = installmentPlans.find(p => p.id === effectivePlanId);
                 if (plan) {
                     noteEl.style.display = 'block';
@@ -9117,6 +9401,7 @@
             const metal = document.getElementById('hedge-log-metal').value;
             const grams = parseFloat(document.getElementById('hedge-log-grams').value) || 0;
             const rate = parseFloat(document.getElementById('hedge-log-rate').value) || 0;
+            const note = document.getElementById('hedge-log-note').value.trim();
             if (grams <= 0) { showCustomAlert('Enter grams purchased.'); return; }
 
             if (entryId) {
@@ -9124,7 +9409,7 @@
                 // purchase details themselves change.
                 const existing = hedgeLog.find(e => e.id === entryId);
                 if (!existing) { closeHedgeLogModal(); return; }
-                const updated = { ...existing, metal, grams, rate, amount: rate ? +(grams * rate).toFixed(2) : 0 };
+                const updated = { ...existing, metal, grams, rate, note: note || null, amount: rate ? +(grams * rate).toFixed(2) : 0 };
                 try {
                     await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeLog'), { [entryId]: updated });
                     Object.assign(existing, updated);
@@ -9139,7 +9424,7 @@
 
             const id = crypto.randomUUID();
             const entry = {
-                id, planId, metal, grams, rate,
+                id, planId, metal, grams, rate, note: note || null,
                 amount: rate ? +(grams * rate).toFixed(2) : 0,
                 date: new Date().toISOString().slice(0, 10),
                 createdAt: new Date().toISOString()
@@ -9168,65 +9453,22 @@
             });
         }
 
-        // Lets a general (unassigned) purchase be earmarked against a
-        // specific active plan after the fact — e.g. gold bought ahead
-        // of need, later mapped to whichever plan it's actually covering.
-        // Every active plan is offered regardless of metal/need, since
-        // the owner may have reasons to assign beyond what the numbers
-        // alone suggest.
-        function openAssignHedgeModal(entryId){
-            const entry = hedgeLog.find(e => e.id === entryId);
-            if (!entry) return;
-            document.getElementById('hedge-assign-entry-id').value = entryId;
-            const listEl = document.getElementById('hedge-assign-list');
-            const candidates = installmentPlans
-                .filter(p => p.status === 'active')
-                .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-            if (!candidates.length) {
-                listEl.innerHTML = '<p class="note" style="text-align:center;">No active plans to assign to.</p>';
-            } else {
-                listEl.innerHTML = candidates.map(p => {
-                    const g = getPlanHedgeGrams(p);
-                    const hedged = getHedgedGrams(p.id);
-                    const need = Math.max(0, (g.totals[entry.metal] || 0) - (hedged[entry.metal] || 0));
-                    return `
-                        <button onclick="assignHedgeEntryToPlan('${entryId}', '${p.id}')" style="width:100%; text-align:left; background:var(--bg); border:1.5px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px; font-size:13px; color:var(--text); cursor:pointer;">
-                            <b>${p.customerName}</b><br>
-                            <span style="font-size:11px; color:var(--text2);">${entry.metal} needed: ${need.toFixed(2)}g</span>
-                        </button>`;
-                }).join('');
-            }
-            document.getElementById('hedge-assign-modal').classList.add('show');
-        }
-
-        function closeHedgeAssignModal(){
-            document.getElementById('hedge-assign-modal').classList.remove('show');
-        }
-
-        async function assignHedgeEntryToPlan(entryId, planId){
-            try {
-                await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeLog'), { [entryId + '/planId']: planId });
-                const entry = hedgeLog.find(e => e.id === entryId);
-                if (entry) entry.planId = planId;
-                closeHedgeAssignModal();
-                renderHedgeDashboard();
-            } catch (e) {
-                console.error('[HedgeLog] assign failed', e);
-                showCustomAlert(window._writeAllowed ? 'Could not assign — try again.' : 'Writes are disabled — this copy is running in read-only mode.');
-            }
-        }
-
         // Cancelled plan's items never get delivered, but the raw metal
-        // already bought for it is still sitting in hand — release those
-        // entries back into the general pool so they can cover a
-        // different active plan instead of being stranded.
+        // already bought for it is still sitting in hand — real stock,
+        // just no longer tied to a dead plan. There's no general/unassigned
+        // pool anymore (every purchase is logged against something real —
+        // a plan or a sales track), so it moves into whichever sales track
+        // is currently active, where it counts toward covering regular
+        // sales instead of being stranded against a plan that no longer
+        // needs it.
         async function _releaseHedgeEntriesForPlan(planId){
             const affected = hedgeLog.filter(e => e.planId === planId);
             if (!affected.length) return;
+            const newPlanId = SALES_HEDGE_BUCKET[currentInvTrack];
             const updates = {};
-            affected.forEach(e => { updates[e.id + '/planId'] = null; });
+            affected.forEach(e => { updates[e.id + '/planId'] = newPlanId; });
             await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeLog'), updates);
-            affected.forEach(e => { e.planId = null; });
+            affected.forEach(e => { e.planId = newPlanId; });
         }
 
         // A completed plan's hedge entries are gone into a delivered item
@@ -10437,6 +10679,7 @@
             syncData();
             startInstallmentsSync();
             startHedgeLogSync();
+            startSalesHedgeDatesSync();
             initPrintServerIfEnabled();
             // Load ledger from cache immediately (Firebase will overwrite shortly)
             loadLedger();
@@ -13756,12 +13999,13 @@
 
         // ─── TABS ───
         function invSwitchTab(name) {
-            ['new','history','report'].forEach(t => {
+            ['new','history','report','purchase'].forEach(t => {
                 document.getElementById('inv-pane-'+t).style.display = t === name ? '' : 'none';
                 document.getElementById('inv-tab-'+t).classList.toggle('active', t === name);
             });
             if (name === 'history') invRenderHistory();
             if (name === 'report') invInitReportDates();
+            if (name === 'purchase') renderHedgeDashboard();
         }
 
         // Called only when the person manually taps the "New" tab button. If an edit
@@ -15964,6 +16208,7 @@
             let totalBilled = 0, ogTotal = 0;
             let cashTotal = 0, upiTotal = 0, cardTotal = 0;
             const grams = { Gold: 0, Silver: 0 };
+            const gramsByStamp = { Gold: {}, Silver: {} }; // metal -> stamp -> pure grams, for the card's own expandable breakdown
             const itemStats = {}; // desc -> { qty, weight, value, metal }
 
             inRange.forEach(inv => {
@@ -15981,54 +16226,31 @@
                 else if (pm === 'card') { cardTotal += receipt; }
 
                 (inv.items || []).forEach(item => {
-                    // Older invoices (pre-dating the metal-field fix in both
-                    // _invRowsFromCartItems and invDescChange) have this
-                    // frozen blank. Two fallbacks, in order:
-                    // 1. Live stock lookup by barcode — works if that stock
-                    //    record still exists.
-                    // 2. Text match on the item description ("Gold Chain",
-                    //    "Silver Kadla", etc.) — last resort for invoices
-                    //    whose barcode has since been removed from stock
-                    //    entirely (e.g. a later re-import that dropped it),
-                    //    where there's nothing else left to go on.
-                    let rawMetal = item.metal;
-                    if (!rawMetal && item.barcode && productData[item.barcode]) {
-                        rawMetal = productData[item.barcode].metal;
-                    }
-                    if (!rawMetal && item.desc) {
-                        const d = item.desc.toLowerCase();
-                        if (d.includes('gold')) rawMetal = 'gold';
-                        else if (d.includes('silver') || d.includes('925')) rawMetal = 'silver';
-                    }
-                    const metal = _normMetal(rawMetal);
-                    if (metal === 'Gold' || metal === 'Silver') {
-                        grams[metal] += (item.nlWt || 0);
-                    }
-
-                    // Item-wise breakdown uses the actual stock item name
-                    // (e.g. "S BRACELET A"), not the printName shown on
-                    // invoices ("Silver Bracelet") — different physical
-                    // stock items can share one printName, and grouping by
-                    // printName would wrongly merge them. Three tiers:
-                    // 1. item.itemName — frozen directly on the row for
-                    //    anything created after this fix, immune to stock
-                    //    data changing or disappearing later.
-                    // 2. Live productData lookup by barcode — works for
-                    //    older rows only if that stock record still exists.
-                    // 3. printName (item.desc) — last resort when neither
-                    //    of the above is available; this is what silently
-                    //    merges genuinely different items, unavoidable for
-                    //    invoices whose barcode's stock record is gone.
-                    const actualName = item.itemName
-                        || (item.barcode && productData[item.barcode] && productData[item.barcode].itemName)
-                        || (item.desc || 'Unnamed Item').trim();
-                    // Stamp (carat/purity) was already reliably frozen on
-                    // rows before this session's other fixes — same
-                    // live-lookup fallback pattern anyway, for older rows
-                    // that might be missing it for other reasons.
+                    // Single shared function for "how many pure grams did
+                    // this line represent" — see getInvoiceItemPureGrams
+                    // (also used by Purchase Manager), so the two can't
+                    // silently disagree on the definition of "grams sold"
+                    // the way they did before this fix.
+                    const mw = getInvoiceItemPureGrams(item);
+                    const metal = mw ? mw.metal : '';
                     const stamp = item.stamp
                         || (item.barcode && productData[item.barcode] && productData[item.barcode].stamp)
                         || '';
+                    if (mw) {
+                        grams[mw.metal] += mw.weight;
+                        const stampKey = stamp || 'Unstamped';
+                        gramsByStamp[mw.metal][stampKey] = (gramsByStamp[mw.metal][stampKey] || 0) + mw.weight;
+                    }
+
+                    // Item-wise breakdown intentionally uses the item's
+                    // own raw stamped weight, not the pure-equivalent
+                    // above — restocking a specific SKU is naturally
+                    // thought of in its own actual weight; the pure-gram
+                    // conversion only matters for the aggregate
+                    // bullion-buying figure this feeds into elsewhere.
+                    const actualName = item.itemName
+                        || (item.barcode && productData[item.barcode] && productData[item.barcode].itemName)
+                        || (item.desc || 'Unnamed Item').trim();
                     const key = metal + '|' + stamp + '|' + actualName;
                     if (!itemStats[key]) itemStats[key] = { name: actualName, metal, stamp, qty: 0, weight: 0, value: 0 };
                     itemStats[key].qty += (item.pc || 1);
@@ -16066,12 +16288,7 @@
             const metalCard = (metal, icon) => {
                 const clickable = grams[metal] > 0;
                 const expanded = _salesReportMetalCardExpanded === metal;
-                const totals = {};
-                Object.values(itemStats).filter(s => s.metal === metal).forEach(s => {
-                    const st = s.stamp || 'Unstamped';
-                    totals[st] = (totals[st] || 0) + s.weight;
-                });
-                const entries = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+                const entries = Object.entries(gramsByStamp[metal]).sort((a, b) => b[1] - a[1]);
                 return `
                     <div onclick="${clickable ? `_toggleSalesReportMetalCard('${metal}')` : ''}" style="background:var(--surface); border-radius:var(--radius); padding:14px; box-shadow:0 1px 6px rgba(0,0,0,.06); ${clickable ? 'cursor:pointer;' : ''}">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -17027,28 +17244,6 @@
 
     </div>
 
-    <div id="hedge-screen" style="display:none; flex:1; flex-direction:column; padding:14px; background:var(--bg); overflow-y:auto; -webkit-overflow-scrolling:touch; box-sizing:border-box; max-width:600px; margin:0 auto; width:100%; min-height:0;">
-
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <h2 style="margin:0; font-size:18px; font-weight:800; color:var(--text);">🛡️ Hedge Dashboard</h2>
-        </div>
-        <p class="note" style="margin:0 0 12px;">All grams shown are pure (24K/999) equivalent — converted from each item's stamped weight, since that's the rate hedge purchases are logged at.</p>
-
-        <div id="hedge-summary-cards" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;"></div>
-
-        <div id="hedge-pnl-card" style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:16px; box-shadow:0 1px 6px rgba(0,0,0,.06);"></div>
-
-        <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:8px;">Active Plans</div>
-        <div id="hedge-plans-list" style="margin-bottom:20px;"></div>
-
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">General Purchases</div>
-            <button onclick="openHedgeLogModal(null)" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:6px 12px; border-radius:8px; font-size:12px; width:auto; margin:0;">+ Log Purchase</button>
-        </div>
-        <div id="hedge-general-list"></div>
-
-    </div>
-
     <div id="hedge-log-modal">
         <div id="hedge-log-panel">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
@@ -17071,24 +17266,17 @@
                    style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:14px; box-sizing:border-box;">
 
             <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">RATE PAID (₹/gram)</label>
-            <input type="number" id="hedge-log-rate" placeholder="e.g. 6250" step="0.01" min="0"
+            <input type="number" id="hedge-log-rate" placeholder="e.g. 6250 — leave blank for a barter/melt exchange" step="0.01" min="0"
+                   style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:14px; box-sizing:border-box;">
+
+            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">NOTE (OPTIONAL)</label>
+            <input type="text" id="hedge-log-note" placeholder="e.g. Melt exchange, Cash purchase…"
                    style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:16px; box-sizing:border-box;">
 
             <button onclick="saveHedgeLogEntry()" id="hedge-log-save-btn"
                 style="width:100%; padding:14px; background:var(--gold); color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">
                 ✓ Save Purchase
             </button>
-        </div>
-    </div>
-
-    <div id="hedge-assign-modal">
-        <div id="hedge-assign-panel">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                <h3 style="margin:0; font-size:18px; color:#1a1a1a;">Assign to Plan</h3>
-                <button onclick="closeHedgeAssignModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
-            </div>
-            <input type="hidden" id="hedge-assign-entry-id" value="">
-            <div id="hedge-assign-list"></div>
         </div>
     </div>
 
@@ -17178,7 +17366,8 @@
         <div style="display:flex; min-height:48px; background:var(--surface); border-radius:var(--radius); overflow:hidden; border:1.5px solid var(--border); margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,.06);">
             <div class="inv-tab active" id="inv-tab-new" onclick="invNewTabClicked()" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">✏️ New</div>
             <div class="inv-tab" id="inv-tab-history" onclick="invSwitchTab('history')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📋 History</div>
-            <div class="inv-tab" id="inv-tab-report" onclick="invSwitchTab('report')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📈 Report</div>
+            <div class="inv-tab" id="inv-tab-report" onclick="invSwitchTab('report')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📈 Report</div>
+            <div class="inv-tab" id="inv-tab-purchase" onclick="invSwitchTab('purchase')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">🛡️ Purchase</div>
         </div>
 
         <!-- ══ PANE: NEW INVOICE ══ -->
@@ -17337,6 +17526,21 @@
                 <button onclick="invRunExport()" style="width:100%; background:var(--green); color:white; border:none; border-radius:var(--radius-sm); padding:12px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none;">📊 Export Excel</button>
             </div>
             <div id="inv-rep-results"></div>
+        </div>
+
+        <div id="inv-pane-purchase" style="display:none;">
+            <p class="note" style="margin:0 0 12px;">Grams shown are pure (24K/999) equivalent.</p>
+
+            <div id="hedge-summary-cards" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;"></div>
+
+            <div id="hedge-pnl-card" style="display:none; background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:16px; box-shadow:0 1px 6px rgba(0,0,0,.06);"></div>
+
+            <div id="hedge-plans-section" style="display:none; margin-bottom:20px;">
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:8px;">Installment Plans</div>
+                <div id="hedge-plans-list"></div>
+            </div>
+
+            <div id="hedge-sales-track" style="margin-bottom:20px;"></div>
         </div>
 
         <button onclick="invOpenSettings()" style="margin-top:8px; width:100%; background:var(--surface); color:var(--text2); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:12px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none;">⚙️ Settings</button>
