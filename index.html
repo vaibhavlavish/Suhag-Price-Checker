@@ -8864,22 +8864,22 @@
             return stored ? new Date(stored + 'T00:00:00') : SALES_HEDGE_START_DATE;
         }
 
-        async function resetSalesHedgeTrack(track){
-            const dateStr = new Date().toISOString().slice(0, 10);
-            showCustomConfirm(
-                `Reset Sales tracking for Track ${track} to today? Sales and hedge purchases before today will stop counting toward Owed/Hedged — they'll still show in Hedge P&L history, just not in the live totals.`,
-                'Reset Sales Tracking',
-                async () => {
-                    try {
-                        await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeSalesStartDates'), { [track]: dateStr });
-                        salesHedgeStartDates[track] = dateStr;
-                        renderHedgeDashboard();
-                    } catch (e) {
-                        console.error('[SalesHedgeDates] reset failed', e);
-                        showCustomAlert(window._writeAllowed ? 'Could not reset — try again.' : 'Writes are disabled — this copy is running in read-only mode.');
-                    }
-                }
-            );
+        // Direct setter for the current track's count-from date — no
+        // confirm dialog, just applies whatever date is picked. Sales and
+        // hedge purchases both filter by this same date (see
+        // getSalesTrackGrams / getHedgedGramsSinceForTrack), so Owed and
+        // Hedged always move together when it changes.
+        async function setSalesHedgeStartDate(dateStr){
+            if (!dateStr) return;
+            const track = currentInvTrack;
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeSalesStartDates'), { [track]: dateStr });
+                salesHedgeStartDates[track] = dateStr;
+                renderHedgeDashboard();
+            } catch (e) {
+                console.error('[SalesHedgeDates] set failed', e);
+                showCustomAlert(window._writeAllowed ? 'Could not save — try again.' : 'Writes are disabled — this copy is running in read-only mode.');
+            }
         }
 
         // Mirrors getInstallmentItemMetalWeight, but for a regular
@@ -9094,6 +9094,10 @@
         }
 
         function renderHedgeDashboard(){
+            const dateFieldEl = document.getElementById('hedge-sales-start-date');
+            if (dateFieldEl && document.activeElement !== dateFieldEl) {
+                dateFieldEl.value = getSalesHedgeStartDate(currentInvTrack).toISOString().slice(0, 10);
+            }
             const instSummary = computeHedgeSummary();
             const salesSummary = computeSalesTrackSummary(currentInvTrack);
             // Combined total across both purposes — this is "how much do I
@@ -9286,12 +9290,8 @@
                     <div style="background:var(--surface); border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                             <span style="font-weight:700;">Sales</span>
-                            <div style="display:flex; align-items:center; gap:6px;">
-                                <button onclick="resetSalesHedgeTrack('${track}')" title="Reset tracking to today" style="background:none; border:1.5px solid var(--border); color:var(--text2); font-weight:700; padding:5px 8px; border-radius:8px; font-size:11.5px; width:auto; margin:0;">↺</button>
-                                <button onclick="openHedgeLogModal('${bucketId}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:5px 10px; border-radius:8px; font-size:11.5px; width:auto; margin:0;">+ Log Hedge</button>
-                            </div>
+                            <button onclick="openHedgeLogModal('${bucketId}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:5px 10px; border-radius:8px; font-size:11.5px; width:auto; margin:0;">+ Log Hedge</button>
                         </div>
-                        <div style="font-size:10px; color:var(--text2); margin-bottom:4px;">Tracking since ${trackStartDate.toLocaleDateString('en-IN')}</div>
                         <div style="font-size:12.5px; color:var(--text2);">${salesStatusLine}</div>
                         ${avgRateLine}
                         ${salesEntries.length ? `
@@ -17530,6 +17530,11 @@
 
         <div id="inv-pane-purchase" style="display:none;">
             <p class="note" style="margin:0 0 12px;">Grams shown are pure (24K/999) equivalent.</p>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px; background:var(--surface); border-radius:var(--radius); padding:10px 14px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                <label for="hedge-sales-start-date" style="font-size:11px; color:var(--text2); font-weight:700;">Count sales since</label>
+                <input type="date" id="hedge-sales-start-date" onchange="setSalesHedgeStartDate(this.value)" style="margin:0; width:auto;">
+            </div>
 
             <div id="hedge-summary-cards" style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;"></div>
 
