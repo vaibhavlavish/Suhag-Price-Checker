@@ -620,7 +620,7 @@
         /* --- END NEW BUTTON LAYOUT STYLES --- */
 
         /* Reused Modal Styles */
-        #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal, #old-gold-modal, #preset-modal, #payment-modal, #upi-pay-select-modal, #upi-manage-modal, #auto-backup-modal, #weight-override-modal {
+        #detail-modal, #alter-modal, #loose-alter-modal, #cart-modal, #custom-modal, #old-gold-modal, #preset-modal, #payment-modal, #upi-pay-select-modal, #upi-manage-modal, #auto-backup-modal {
             display: none;
             position: fixed;
             top: 0;
@@ -634,7 +634,7 @@
             padding: 15px;
             animation: fadeIn 0.2s ease;
         }
-        #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content, #old-gold-content, #preset-content, #weight-override-content { /* Added preset-content */
+        #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content, #old-gold-content, #preset-content { /* Added preset-content */
             background: var(--surface);
             padding: 22px 20px;
             border-radius: 20px;
@@ -645,7 +645,7 @@
             display: flex;
             flex-direction: column;
         }
-        #detail-content h3, #alter-content h3, #loose-alter-content h3, #cart-content h3, #custom-modal-content h3, #old-gold-content h3, #preset-content h3, #weight-override-content h3 {
+        #detail-content h3, #alter-content h3, #loose-alter-content h3, #cart-content h3, #custom-modal-content h3, #old-gold-content h3, #preset-content h3 {
             margin: 0 0 16px 0;
             color: var(--text);
             font-size: 18px;
@@ -654,6 +654,31 @@
             border-bottom: 1px solid var(--border);
             padding-bottom: 12px;
             letter-spacing: -0.3px;
+        }
+        .form-accordion {
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .form-accordion-header {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #fafafa;
+            border: none;
+            padding: 12px 14px;
+            font-size: 14px;
+            font-weight: 700;
+            color: #333;
+            cursor: pointer;
+        }
+        .form-accordion-body {
+            padding: 0 14px 14px;
+        }
+        .form-accordion-chevron {
+            font-size: 12px;
+            color: #888;
         }
         #detail-content p {
             margin: 10px 0;
@@ -1199,7 +1224,7 @@
             #price-display, #loose-price-display {
                 font-size: 56px;
             }
-            #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content, #old-gold-content, #preset-content, #weight-override-content {
+            #detail-content, #alter-content, #loose-alter-content, #cart-content, #custom-modal-content, #old-gold-content, #preset-content {
                 max-width: 420px;
             }
             .manage-row {
@@ -1923,45 +1948,76 @@
 
     <div id="alter-modal">
         <div id="alter-content">
-            <h3>Alter Making Charge</h3>
+            <h3>Alter</h3>
             <div id="alter-body"></div>
-            <label for="alter-making-type" style="margin-top: 10px;">Making Type:</label>
-            <select id="alter-making-type" style="margin: 0 0 10px 0; padding: 12px; border: 1px solid #ddd; border-radius: 8px;">
-                <option value="%">% (Percent of Stamp)</option>
-                <option value="wastage">% (W)</option>
-                <option value="per g">₹ Per Gram</option>
-                <option value="per pc">₹ Fixed (Pc)</option>
-            </select>
-            <label for="new-making">New Making Charge:</label>
-            <div class="input-with-stepper">
-                <button class="stepper-btn" onclick="adjustMaking('new-making', -0.25)">-</button>
-                <input type="number" id="new-making" step="0.25">
-                <button class="stepper-btn" onclick="adjustMaking('new-making', 0.25)">+</button>
+
+            <div class="form-accordion" style="margin-bottom:10px;">
+                <button class="form-accordion-header" type="button" onclick="toggleAlterSection('making')">
+                    <span>Making Charge</span>
+                    <span class="form-accordion-chevron" id="alter-making-chevron">▾</span>
+                </button>
+                <div class="form-accordion-body" id="alter-making-section">
+                    <label for="alter-making-type" style="margin-top: 10px;">Making Type:</label>
+                    <select id="alter-making-type" style="margin: 0 0 10px 0; padding: 12px; border: 1px solid #ddd; border-radius: 8px;">
+                        <option value="%">% (Percent of Stamp)</option>
+                        <option value="wastage">% (W)</option>
+                        <option value="per g">₹ Per Gram</option>
+                        <option value="per pc">₹ Fixed (Pc)</option>
+                    </select>
+                    <label for="new-making">New Making Charge:</label>
+                    <div class="input-with-stepper">
+                        <button class="stepper-btn" onclick="adjustMaking('new-making', -0.25)">-</button>
+                        <input type="number" id="new-making" step="0.25">
+                        <button class="stepper-btn" onclick="adjustMaking('new-making', 0.25)">+</button>
+                    </div>
+                    <div id="alter-buttons">
+                        <button id="update-making-btn" onclick="updateMaking()">Update</button>
+                        <button id="cancel-making-btn" onclick="closeModal('alter-modal')">Cancel</button>
+                    </div>
+                </div>
             </div>
-            <div id="alter-buttons">
-                <button id="update-making-btn" onclick="updateMaking()">Update</button>
-                <button id="cancel-making-btn" onclick="closeModal('alter-modal')">Cancel</button>
+
+            <div class="form-accordion" style="margin-bottom:10px;">
+                <button class="form-accordion-header" type="button" onclick="toggleAlterSection('weight')">
+                    <span>Weight (one-time, this piece only)</span>
+                    <span class="form-accordion-chevron" id="alter-weight-chevron">▸</span>
+                </button>
+                <div class="form-accordion-body" id="alter-weight-section" style="display:none;">
+                    <p class="note" style="margin-top:10px;">Doesn't change the stock record — resets the moment a different barcode is scanned or the screen is cleared.</p>
+                    <label for="new-weight">Current Weight (g):</label>
+                    <div class="input-with-stepper">
+                        <button class="stepper-btn" onclick="adjustMaking('new-weight', -0.05)">-</button>
+                        <input type="number" id="new-weight" step="0.01">
+                        <button class="stepper-btn" onclick="adjustMaking('new-weight', 0.05)">+</button>
+                    </div>
+                    <div id="alter-weight-buttons">
+                        <button onclick="applyWeightOverride()">Update</button>
+                        <button onclick="closeModal('alter-modal')">Cancel</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-accordion">
+                <button class="form-accordion-header" type="button" onclick="toggleAlterSection('finalamt')">
+                    <span>Final Amount</span>
+                    <span class="form-accordion-chevron" id="alter-finalamt-chevron">▸</span>
+                </button>
+                <div class="form-accordion-body" id="alter-finalamt-section" style="display:none;">
+                    <p class="note" style="margin-top:10px;">Type the total you want the price to come to — the making charge adjusts to hit it exactly, keeping its current type (%, wastage, etc.).</p>
+                    <label for="new-final-amount">Target Final Amount (₹):</label>
+                    <div class="input-with-stepper">
+                        <button class="stepper-btn" onclick="adjustMaking('new-final-amount', -10)">-</button>
+                        <input type="number" id="new-final-amount" step="1">
+                        <button class="stepper-btn" onclick="adjustMaking('new-final-amount', 10)">+</button>
+                    </div>
+                    <div id="alter-finalamt-buttons">
+                        <button onclick="applyFinalAmountAlter()">Update</button>
+                        <button onclick="closeModal('alter-modal')">Cancel</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-
-    <div id="weight-override-modal">
-        <div id="weight-override-content">
-            <h3>Adjust Weight</h3>
-            <p style="margin:0 0 12px; font-size:13px; color:var(--text2);">One-time adjustment for this piece only — doesn't change the stock record. Resets the moment you scan a different barcode or clear the screen.</p>
-            <label for="new-weight">Current Weight (g):</label>
-            <div class="input-with-stepper">
-                <button class="stepper-btn" onclick="adjustWeightOverrideInput(-0.05)">-</button>
-                <input type="number" id="new-weight" step="0.01">
-                <button class="stepper-btn" onclick="adjustWeightOverrideInput(0.05)">+</button>
-            </div>
-            <div id="alter-buttons">
-                <button id="update-weight-btn" onclick="applyWeightOverride()">Update</button>
-                <button id="cancel-weight-btn" onclick="closeModal('weight-override-modal')">Cancel</button>
-            </div>
-        </div>
-    </div>
-
 
     <div id="loose-alter-modal">
 
@@ -3656,6 +3712,7 @@
         // Data variables now initialized to empty/default, filled by Firebase
         let rates = JSON.parse(JSON.stringify(defaultRates));
         let taxRate = 3; // factory default — overwritten by Firebase on load
+        let printWithLetterhead = false; // universal setting (moved from device-local localStorage) — factory default, overwritten by Firebase on load
         let productData = {};
 
         // Mirrors, per-tag, whether the catalogue has a shop-fixed display
@@ -4008,6 +4065,7 @@
         function applyDataSnapshot(cloudData) {
             rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
             taxRate = cloudData.taxRate ?? 3;
+            printWithLetterhead = cloudData.printWithLetterhead ?? false;
             productData = cloudData.products || {};
             productDataImportedAt = cloudData.productDataImportedAt || 0;
             // Per-item invoice settings (HSN override + custom print name), keyed
@@ -4255,6 +4313,7 @@
             return {
                 rates:            config.rates            || null,
                 taxRate:          config.taxRate          ?? 3,
+                printWithLetterhead: config.printWithLetterhead ?? false,
                 looseDefaults:    config.looseDefaults    || null,
                 baseCalcDefaults: config.baseCalcDefaults || {},
                 packagingWeights: config.packagingWeights || {},
@@ -5975,20 +6034,9 @@
         // One-time weight adjustment for the currently-scanned item — see
         // currentWeightOverride. Never touches productData/stock; resets
         // the moment a new barcode is scanned or the screen is cleared
-        // (lookupProduct / clearAll). Mirrors the making-charge alter
-        // dialog above exactly, same UI pattern.
-        function openWeightOverrideDialog(){
-            if (!currentProduct) { showCustomAlert('Scan an item first.'); return; }
-            const startingWeight = (currentWeightOverride != null) ? currentWeightOverride : currentProduct.netWeight;
-            document.getElementById('new-weight').value = startingWeight.toFixed(2);
-            document.getElementById('weight-override-modal').style.display = 'flex';
-            document.getElementById('new-weight').focus();
-        }
-
-        function adjustWeightOverrideInput(amount){
-            adjustMaking('new-weight', amount);
-        }
-
+        // (lookupProduct / clearAll). Lives inside the consolidated Alter
+        // modal now — see openAlterDialog for how this section gets
+        // pre-filled when the modal opens.
         function applyWeightOverride(){
             const val = parseFloat(document.getElementById('new-weight').value);
             if (isNaN(val) || val <= 0) {
@@ -5996,7 +6044,7 @@
                 return;
             }
             currentWeightOverride = val;
-            closeModal('weight-override-modal');
+            closeModal('alter-modal');
             runPriceCalculation();
             showDetails();
         }
@@ -6646,29 +6694,104 @@
             closeModal('alter-modal');
         }
 
-        function openAlterDialog() {
-            if (!currentProduct || currentMakingType === '') {
-                showCustomAlert('No making charge to alter.');
-                return;
-            }
+        // Single entry point for the consolidated Alter modal — Making,
+        // Weight, and Final Amount. `section` picks which one starts
+        // expanded ('making' | 'weight' | 'finalamt'); defaults to
+        // 'making'. Only applies to items scanned on this Main screen —
+        // the manual invoice tab already has directly-editable fields
+        // and doesn't need this.
+        function openAlterDialog(section) {
+            if (!currentProduct) { showCustomAlert('Scan an item first.'); return; }
+            section = section || 'making';
 
+            const hasMaking = currentMakingType !== '' || !!makingOverride;
             let currentInput = currentMakingInput;
             let currentType = currentMakingType;
-
             if (makingOverride) {
                 currentInput = makingOverride.input;
                 currentType = makingOverride.type;
             }
+            if (hasMaking) {
+                let displayType = currentType === 'wastage' ? '% (W)' : currentType;
+                document.getElementById('alter-body').innerHTML = `<p><strong>Current:</strong> ${currentInput.toFixed(2)} ${displayType}</p>`;
+                document.getElementById('alter-making-type').value = currentType;
+                document.getElementById('new-making').value = currentInput;
+            } else {
+                document.getElementById('alter-body').innerHTML = `<p class="note">No making charge on this item.</p>`;
+                document.getElementById('new-making').value = '';
+            }
 
-            let displayType = currentType === 'wastage' ? '% (W)' : currentType;
-            const html = `<p><strong>Current:</strong> ${currentInput.toFixed(2)} ${displayType}</p>`;
-            document.getElementById('alter-body').innerHTML = html;
+            const startingWeight = (currentWeightOverride != null) ? currentWeightOverride : currentProduct.netWeight;
+            document.getElementById('new-weight').value = startingWeight.toFixed(2);
 
-            document.getElementById('alter-making-type').value = currentType;
-            document.getElementById('new-making').placeholder = `Enter new value`;
-            document.getElementById('new-making').value = currentInput;
+            document.getElementById('new-final-amount').value = currentFinalPrice.toFixed(2);
+
+            ['making', 'weight', 'finalamt'].forEach(s => {
+                const isTarget = s === section;
+                document.getElementById('alter-' + s + '-section').style.display = isTarget ? 'block' : 'none';
+                document.getElementById('alter-' + s + '-chevron').textContent = isTarget ? '▾' : '▸';
+            });
+
             document.getElementById('alter-modal').style.display = 'flex';
-            document.getElementById('new-making').focus();
+        }
+
+        function toggleAlterSection(section){
+            const body = document.getElementById('alter-' + section + '-section');
+            const chevron = document.getElementById('alter-' + section + '-chevron');
+            const isOpen = body.style.display !== 'none';
+            body.style.display = isOpen ? 'none' : 'block';
+            chevron.textContent = isOpen ? '▸' : '▾';
+        }
+
+        // Reverse-solves the making charge needed to hit a target final
+        // amount exactly, preserving whatever making type is currently
+        // active (%, wastage, per gram, per piece) rather than converting
+        // to a flat override. Tax comes off the target first to get the
+        // real pre-tax subtotal, since the making charge itself is a
+        // pre-tax figure — same formula runPriceCalculation() builds
+        // final price from, just run in reverse.
+        function applyFinalAmountAlter(){
+            if (!currentProduct) { showCustomAlert('Scan an item first.'); return; }
+            const activeType = makingOverride ? makingOverride.type : currentMakingType;
+            if (!activeType) { showCustomAlert('This item has no making charge to solve for.'); return; }
+
+            const target = parseFloat(document.getElementById('new-final-amount').value);
+            if (isNaN(target) || target <= 0) { showCustomAlert('Enter a valid positive amount.'); return; }
+
+            const d = currentProduct;
+            const weight = (currentWeightOverride != null) ? currentWeightOverride : d.netWeight;
+            const mKey = d.metal, stamp = d.stamp;
+            const rate = (rates[mKey] && rates[mKey][stamp] !== undefined) ? rates[mKey][stamp] : 0;
+            const metalVal = weight * rate;
+            const otherCharge = d.otherCharge || 0;
+            const pureRate = getPureRate(mKey);
+
+            const subtotalNeeded = target / (1 + taxRate / 100);
+            const makingNeeded = subtotalNeeded - metalVal - otherCharge;
+
+            if (makingNeeded < 0) {
+                const minPossible = (metalVal + otherCharge) * (1 + taxRate / 100);
+                showCustomAlert(`That's too low — the minimum possible (₹0 making charge) is ₹${minPossible.toFixed(2)}.`);
+                return;
+            }
+
+            let newInput;
+            if (activeType === '%') {
+                if (metalVal <= 0) { showCustomAlert("Metal value is zero — can't solve for a percentage."); return; }
+                newInput = (makingNeeded / metalVal) * 100;
+            } else if (activeType === 'wastage') {
+                if (pureRate <= 0 || weight <= 0) { showCustomAlert("Pure rate or weight is zero — can't solve for wastage."); return; }
+                newInput = (makingNeeded / (pureRate * weight)) * 100;
+            } else if (activeType === 'per g') {
+                if (weight <= 0) { showCustomAlert("Weight is zero — can't solve per gram."); return; }
+                newInput = makingNeeded / weight;
+            } else { // per pc
+                newInput = makingNeeded;
+            }
+
+            makingOverride = { type: activeType, input: Math.max(0, newInput) };
+            runPriceCalculation();
+            closeModal('alter-modal');
         }
 
         // NEW: Function to display full formatted price breakdown
@@ -6948,7 +7071,7 @@
                 <p><strong>Gr. Wt.:</strong> <span>${d.grossWeight.toFixed(2)}g</span></p>
                 <p><strong>N. Wt.:</strong>
                     <span style="${weightOverridden ? 'color:#C62828; font-weight:700;' : ''}">
-                        <button onclick="openWeightOverrideDialog()" title="Adjust weight for this piece"
+                        <button onclick="openAlterDialog('weight')" title="Adjust weight for this piece"
                                 style="width: 22px; height: 22px; border-radius: 50%; border: none; background: #2196F3; color: white; font-size: 14px; font-weight: bold; font-style: normal; padding: 0; text-align: center; cursor: pointer; margin-right: 8px; vertical-align: middle; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
                             i
                         </button>
@@ -7060,7 +7183,7 @@
                 itemName: currentProduct.itemName || 'Unknown Item',
                 finalPrice: currentFinalPrice,
                 makingOverride: frozenMaking, // frozen effective making at add-time
-                weightOverride: currentWeightOverride // frozen one-time weight adjustment, if any — see openWeightOverrideDialog
+                weightOverride: currentWeightOverride // frozen one-time weight adjustment, if any — see openAlterDialog
             };
             cart.push(item);
             _autoRoundCartAdjustment();
@@ -13502,6 +13625,8 @@
 
         function invOpenSettings() {
             document.getElementById('inv-settings-modal').style.display = 'flex';
+            const bgEl = document.getElementById('inv-with-bg');
+            if (bgEl) bgEl.checked = invGetWithBgPref();
         }
 
         function invOpenItemSettingsList() {
@@ -13708,17 +13833,22 @@
             localStorage.setItem('invPrintColPref', JSON.stringify({ showRate, showMaking }));
         }
 
-        // Letterhead-background preference — same device-local persistence as the
-        // print-column prefs above. The cart-checkout invoice has no checkbox of its
-        // own, so it reads this saved value too, keeping the background toggle in
-        // sync everywhere a bill can be printed from.
+        // Universal letterhead-background preference — moved from device-local
+        // localStorage into the same Firebase config sync everything else in
+        // Settings uses (jewelryData/config/printWithLetterhead), since a
+        // per-device setting was exactly why reprinting from a different
+        // session could silently fall back to the wrong default and print
+        // over pre-printed letterhead stock. The cart-checkout invoice has
+        // no checkbox of its own, so it reads this same synced value too.
         function invGetWithBgPref() {
-            try { return localStorage.getItem('invWithBg') === '1'; } catch (e) { return false; }
+            return !!printWithLetterhead;
         }
 
         function invSaveWithBgPref() {
             const el = document.getElementById('inv-with-bg');
-            if (el) localStorage.setItem('invWithBg', el.checked ? '1' : '0');
+            if (!el) return;
+            printWithLetterhead = el.checked;
+            window.dbSafeUpdate({ 'jewelryData/config/printWithLetterhead': el.checked });
         }
 
         // Applies the saved preference to the manual invoice screen's checkboxes
@@ -13729,8 +13859,6 @@
             const makingEl = document.getElementById('inv-show-making');
             if (rateEl) rateEl.checked = pref.showRate;
             if (makingEl) makingEl.checked = pref.showMaking;
-            const bgEl = document.getElementById('inv-with-bg');
-            if (bgEl) bgEl.checked = invGetWithBgPref();
         }
 
         function invMakingFromProduct(d) {
@@ -14163,7 +14291,7 @@
                 const stamp = d.stamp || '';
                 const rv = (rates[metal] && rates[metal][stamp]) ? rates[metal][stamp] : 0;
                 // One-time weight adjustment from the Main screen (see
-                // openWeightOverrideDialog/addToCart) takes priority over
+                // openAlterDialog/addToCart) takes priority over
                 // the stock weight — frozen on the cart item, never
                 // touches productData/stock itself. Gross weight falls
                 // back to this resolved net weight (not the original
@@ -16700,10 +16828,6 @@
             <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Print Options</div>
                 <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:10px; font-size:13px; font-weight:500; color:var(--text);">
-                    <input type="checkbox" id="inv-with-bg" onchange="invSaveWithBgPref()" style="width:17px; height:17px; accent-color:var(--gold); margin:0;">
-                    Embed letterhead background
-                </label>
-                <label style="display:flex; align-items:center; gap:10px; cursor:pointer; margin-bottom:10px; font-size:13px; font-weight:500; color:var(--text);">
                     <input type="checkbox" id="inv-show-rate" checked onchange="invSavePrintColPref()" style="width:17px; height:17px; accent-color:var(--gold); margin:0;">
                     Print Rate column
                 </label>
@@ -16844,6 +16968,11 @@
                 <button onclick="invOpenCheckoutFormatPicker()" style="width:100%; text-align:left; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; font-size:14px; font-weight:700; color:var(--text); cursor:pointer; box-shadow:none; margin:0; display:flex; align-items:center; justify-content:space-between;">
                     <span>🧾 Checkout Print <span id="inv-checkout-format-current-label" style="font-weight:600; color:#999; font-size:12px;">(Invoice 1)</span></span><span style="color:#bbb;">›</span>
                 </button>
+                <label style="display:flex; align-items:center; gap:10px; cursor:pointer; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; margin:0;">
+                    <input type="checkbox" id="inv-with-bg" onchange="invSaveWithBgPref()" style="width:17px; height:17px; accent-color:var(--gold); margin:0;">
+                    <span style="font-size:14px; font-weight:700; color:var(--text);">Embed letterhead background</span>
+                </label>
+                <p class="note" style="margin:0; padding:0 2px;">Checked = leave the top blank for pre-printed letterhead paper. Unchecked = print the shop's name/address as the header. Applies everywhere, on every device.</p>
             </div>
         </div>
     </div>
