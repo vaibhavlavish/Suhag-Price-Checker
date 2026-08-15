@@ -8887,7 +8887,7 @@
                 }
                 await window.dbUpdate(window.dbRef(window.firebaseDB, 'installments/' + plan.id), { status: 'cancelled' });
                 plan.status = 'cancelled';
-                await _releaseHedgeEntriesForPlan(plan.id);
+                await _releasePlanPurchasesToGeneralPool(plan.id);
                 renderInstallmentDetailBody(plan);
                 renderInstallmentsList();
                 if (skippedSold > 0) {
@@ -8917,7 +8917,7 @@
                 await window.dbRemove(window.dbRef(window.firebaseDB, 'installments/' + plan.id));
                 await window.dbRemove(window.dbRef(window.firebaseDB, 'installmentIdPhotos/' + plan.id));
                 delete _installmentIdPhotosCache[plan.id];
-                await _deleteHedgeEntriesForPlan(plan.id);
+                await _releasePlanPurchasesToGeneralPool(plan.id);
                 installmentPlans = installmentPlans.filter(p => p.id !== plan.id);
                 document.getElementById('installment-detail-modal').style.display = 'none';
                 renderInstallmentsList();
@@ -8967,48 +8967,37 @@
         }
 
         // Hedge purchase tracking (grams owed/hedged, P&L, the whole
+        // Purchase Manager tracking (grams owed/purchased, the whole
         // display system) now lives entirely in the standalone Purchase
         // Manager app — POS.html shows none of it. But cancelling/
-        // deleting a plan still needs to correctly update the shared
-        // hedgeLog collection, since Purchase Manager reads it live —
-        // without this, a cancelled/deleted plan's already-bought gold
-        // would silently vanish from every total instead of moving to
-        // the sales pool (cancel) or being cleaned up (delete). One-shot
-        // Firebase reads here since POS.html no longer keeps a live
-        // local mirror of hedgeLog the way it used to.
-        const SALES_HEDGE_BUCKET = { A: '__sales_a__', B: '__sales_b__' };
-
-        async function _releaseHedgeEntriesForPlan(planId){
+        // deleting a plan still needs to correctly release its linked
+        // purchases (real metal bought specifically for it) in the
+        // shared `purchases` collection Purchase Manager reads live.
+        // Same behavior either way, cancelled or deleted/completed:
+        // clear the planId and drop it into the current track's general
+        // pool rather than deleting it — the item still gets a real
+        // invoice eventually (delivery, or a completed plan's final
+        // sale), and that invoice's own "Owed" will be offset by this
+        // now-general purchase automatically, settling out cleanly
+        // without needing to track why the plan ended. One-shot Firebase
+        // read here since POS.html no longer keeps a live local mirror
+        // of purchases the way it used to for hedgeLog.
+        async function _releasePlanPurchasesToGeneralPool(planId){
             try {
-                const snap = await window.dbGet(window.dbRef(window.firebaseDB, 'hedgeLog'));
+                const snap = await window.dbGet(window.dbRef(window.firebaseDB, 'purchases'));
                 const val = snap.val() || {};
                 const updates = {};
                 Object.keys(val).forEach(id => {
                     if ((val[id].planId || null) === planId) {
-                        updates[id + '/planId'] = SALES_HEDGE_BUCKET[currentInvTrack];
+                        updates[id + '/planId'] = null;
+                        updates[id + '/track'] = currentInvTrack;
                     }
                 });
                 if (Object.keys(updates).length) {
-                    await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeLog'), updates);
+                    await window.dbUpdate(window.dbRef(window.firebaseDB, 'purchases'), updates);
                 }
             } catch (e) {
-                console.error('[HedgeLog] release failed', e);
-            }
-        }
-
-        async function _deleteHedgeEntriesForPlan(planId){
-            try {
-                const snap = await window.dbGet(window.dbRef(window.firebaseDB, 'hedgeLog'));
-                const val = snap.val() || {};
-                const updates = {};
-                Object.keys(val).forEach(id => {
-                    if ((val[id].planId || null) === planId) updates[id] = null;
-                });
-                if (Object.keys(updates).length) {
-                    await window.dbUpdate(window.dbRef(window.firebaseDB, 'hedgeLog'), updates);
-                }
-            } catch (e) {
-                console.error('[HedgeLog] delete cleanup failed', e);
+                console.error('[Purchases] release to pool failed', e);
             }
         }
 
@@ -14812,7 +14801,34 @@
         }
 
         function chooseInvoiceHistoryPrintDestination(id) {
+            if (currentInvTrack === 'B') {
+                window._pendingHistoryFormatPrintId = id;
+                document.getElementById('inv-history-format-modal').style.display = 'flex';
+                return;
+            }
             _choosePrintDestination(() => invPrintFromHistory(id), () => invPrintFromHistoryViaMainPC(id));
+        }
+
+        // Track B only — lets a reprint use a different format than the
+        // current persisted default, for this one print only. Restores
+        // invActiveFormat right after (try/finally, so it restores even
+        // if the print itself throws) — never touches localStorage, so
+        // the user's normal default format is completely untouched.
+        function _chooseHistoryFormat(fmt) {
+            document.getElementById('inv-history-format-modal').style.display = 'none';
+            const id = window._pendingHistoryFormatPrintId;
+            window._pendingHistoryFormatPrintId = null;
+            if (!id) return;
+
+            const savedFormat = invActiveFormat;
+            const runWithFormat = (fn) => {
+                invActiveFormat = fmt;
+                try { fn(); } finally { invActiveFormat = savedFormat; }
+            };
+            _choosePrintDestination(
+                () => runWithFormat(() => invPrintFromHistory(id)),
+                () => runWithFormat(() => invPrintFromHistoryViaMainPC(id))
+            );
         }
 
         // Finds the most recent invoice overall — from checkout or the
@@ -16262,6 +16278,16 @@
             <button onclick="_linkActionChosen('copy')" style="width:100%; background:var(--gold); color:#fff; font-weight:800; padding:13px; border-radius:12px; border:none; font-size:14px; margin-bottom:10px;">🔗 Copy Link</button>
             <button onclick="_linkActionChosen('regenerate')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:13px; border-radius:12px; font-size:14px;">🔄 Regenerate Link</button>
             <button onclick="document.getElementById('link-action-modal').style.display='none';" style="width:100%; background:none; border:none; color:var(--text2); font-size:12.5px; margin-top:10px; padding:6px; cursor:pointer; box-shadow:none;">Cancel</button>
+        </div>
+    </div>
+
+    <div id="inv-history-format-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:340px; width:100%; padding:18px;">
+            <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:4px; text-align:center;">Choose Format</div>
+            <p class="note" style="text-align:center; margin-bottom:14px;">This print only — doesn't change your default format.</p>
+            <button onclick="_chooseHistoryFormat('invoice1')" style="width:100%; background:#4CAF50; color:#fff; font-weight:800; padding:13px; border-radius:12px; border:none; font-size:14px; margin-bottom:10px; box-shadow:0 2px 8px rgba(76,175,80,0.35);">Format 1</button>
+            <button onclick="_chooseHistoryFormat('invoice2')" style="width:100%; background:#1D6BB5; color:#fff; font-weight:800; padding:13px; border-radius:12px; border:none; font-size:14px; margin-bottom:10px; box-shadow:0 2px 8px rgba(29,107,181,0.35);">Format 2</button>
+            <button onclick="document.getElementById('inv-history-format-modal').style.display='none'; window._pendingHistoryFormatPrintId=null;" style="width:100%; background:none; border:none; color:var(--text2); font-size:12.5px; margin-top:4px; padding:6px; cursor:pointer; box-shadow:none;">Cancel</button>
         </div>
     </div>
 
