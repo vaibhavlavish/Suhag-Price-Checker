@@ -2382,7 +2382,7 @@
     <div id="stock-view" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:480px; margin:0 auto; min-height:0;">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
             <h2 style="margin:0; font-size:20px;">📦 Stock</h2>
-            <input type="text" id="stock-search" placeholder="Search..." oninput="renderStockView()"
+            <input type="text" id="stock-search" placeholder="Search..." oninput="debouncedStockSearch()"
                 style="flex:1; padding:9px 13px; border:1px solid #ddd; border-radius:20px; font-size:14px; background:white; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
             <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:20px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap;">← Back</button>
         </div>
@@ -5588,6 +5588,16 @@
         }
 
         let currentStockSort = 'default';
+        // Stock View performance: rendering the full ~4,000-item catalog
+        // as live DOM nodes on every open/keystroke is what made this
+        // screen slow to load AND slow to interact with afterward (huge
+        // DOM = slow scroll/paint, independent of render time itself).
+        // Capped by default; explicit "Show All" opts back into the full
+        // render. Resets whenever the actual filter/sort changes, so a
+        // fresh search or sort always starts capped again rather than
+        // silently staying expanded from a previous view.
+        let stockViewShowAll = false;
+        const STOCK_VIEW_CAP = 150;
 
         function toggleStockSortMenu() {
             const menu = document.getElementById('stock-sort-menu');
@@ -5596,6 +5606,7 @@
 
         function setStockSort(sortKey) {
             currentStockSort = sortKey;
+            stockViewShowAll = false;
             // Update button styles
             document.querySelectorAll('[id^="sort-btn-"]').forEach(btn => {
                 btn.classList.remove('active');
@@ -5604,6 +5615,20 @@
             if (active) active.classList.add('active');
             document.getElementById('stock-sort-menu').style.display = 'none';
             renderStockView();
+        }
+
+        function stockViewShowAllItems(){
+            stockViewShowAll = true;
+            renderStockView();
+        }
+
+        // Debounced search — waits until typing pauses instead of
+        // rebuilding the whole (potentially huge) list on every keystroke.
+        let _stockSearchDebounceTimer = null;
+        function debouncedStockSearch(){
+            stockViewShowAll = false;
+            clearTimeout(_stockSearchDebounceTimer);
+            _stockSearchDebounceTimer = setTimeout(renderStockView, 250);
         }
 
         function getMakingNumeric(priceResult) {
@@ -5656,7 +5681,10 @@
                 const colLabel = sort.startsWith('price') ? 'Price' : sort.startsWith('weight') ? 'Net Wt' : sort.startsWith('making') ? 'Making' : 'Size';
 
                 const productTypes = new Set(allItems.map(i => i.name)).size;
-                summary.innerHTML = `<strong>${productTypes}</strong> types &nbsp;|&nbsp; <strong>${allItems.length}</strong> items &nbsp;|&nbsp; <em style="color:#888;">sorted by ${colLabel}</em>`;
+                const capped = !stockViewShowAll && allItems.length > STOCK_VIEW_CAP;
+                const renderItems = capped ? allItems.slice(0, STOCK_VIEW_CAP) : allItems;
+                summary.innerHTML = `<strong>${productTypes}</strong> types &nbsp;|&nbsp; <strong>${allItems.length}</strong> items &nbsp;|&nbsp; <em style="color:#888;">sorted by ${colLabel}</em>`
+                    + (capped ? ` &nbsp;|&nbsp; <span style="color:#888;">showing first ${STOCK_VIEW_CAP}</span> <button onclick="stockViewShowAllItems()" style="background:none; border:1px solid #ccc; color:#4CAF50; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; cursor:pointer; box-shadow:none; width:auto; margin-left:4px;">Show All</button>` : '');
 
                 const card = document.createElement('div');
                 card.style.cssText = 'background:white; border-radius:12px; margin-bottom:14px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;';
@@ -5666,7 +5694,7 @@
                 thead.innerHTML = `<span>Barcode / Item</span><span style="text-align:center;">${colLabel}</span><span style="text-align:center;">Making</span><span style="text-align:right;">Price</span>`;
                 card.appendChild(thead);
 
-                allItems.forEach((item, idx) => {
+                renderItems.forEach((item, idx) => {
                     const { barcode, d, priceResult, effectivePrice } = item;
                     const priceStr = effectivePrice != null ? `₹${effectivePrice.toFixed(2)}` : '—';
                     let makingStr = '—';
@@ -5685,7 +5713,7 @@
                     if (sort.startsWith('size'))    colVal = d.size || '—';
 
                     const row = document.createElement('div');
-                    row.style.cssText = `display:grid; grid-template-columns:2fr 1.2fr 1fr 1fr; padding:9px 14px; font-size:13px; align-items:center; border-bottom:${idx < allItems.length - 1 ? '1px solid #f0f0f0' : 'none'}; background:${idx % 2 === 1 ? '#fafafa' : 'white'}; cursor:pointer;`;
+                    row.style.cssText = `display:grid; grid-template-columns:2fr 1.2fr 1fr 1fr; padding:9px 14px; font-size:13px; align-items:center; border-bottom:${idx < renderItems.length - 1 ? '1px solid #f0f0f0' : 'none'}; background:${idx % 2 === 1 ? '#fafafa' : 'white'}; cursor:pointer;`;
                     row.onclick = () => { showSection('main'); lookupProduct(barcode); };
                     row.innerHTML = `
                         <div><span style="font-weight:600; color:#333;">${barcode}</span><br><span style="font-size:11px; color:#999;">${d.itemName || ''}</span></div>
@@ -5705,9 +5733,23 @@
                     groups[item.name].push(item);
                 });
                 const sortedNames = Object.keys(groups).sort();
-                summary.innerHTML = `<strong>${sortedNames.length}</strong> product type${sortedNames.length !== 1 ? 's' : ''} &nbsp;|&nbsp; <strong>${allItems.length}</strong> total item${allItems.length !== 1 ? 's' : ''}`;
 
-                sortedNames.forEach(name => {
+                // Walk groups in order, stopping once the item cap is
+                // reached — a group is always rendered whole or not at
+                // all, never split mid-way.
+                let renderedItemCount = 0;
+                let cappedGrouped = false;
+                const namesToRender = [];
+                for (const name of sortedNames) {
+                    if (!stockViewShowAll && renderedItemCount >= STOCK_VIEW_CAP) { cappedGrouped = true; break; }
+                    namesToRender.push(name);
+                    renderedItemCount += groups[name].length;
+                }
+
+                summary.innerHTML = `<strong>${sortedNames.length}</strong> product type${sortedNames.length !== 1 ? 's' : ''} &nbsp;|&nbsp; <strong>${allItems.length}</strong> total item${allItems.length !== 1 ? 's' : ''}`
+                    + (cappedGrouped ? ` &nbsp;|&nbsp; <span style="color:#888;">showing first ${namesToRender.length} types</span> <button onclick="stockViewShowAllItems()" style="background:none; border:1px solid #ccc; color:#4CAF50; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; cursor:pointer; box-shadow:none; width:auto; margin-left:4px;">Show All</button>` : '');
+
+                namesToRender.forEach(name => {
                     const items = groups[name];
                     const card = document.createElement('div');
                     card.style.cssText = 'background:white; border-radius:12px; margin-bottom:14px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden;';
@@ -6904,7 +6946,15 @@
                 <p><strong>Barcode:</strong> <span>${currentBarcode}</span></p>
                 <p><strong>Size:</strong> <span>${d.size || '-'}</span></p>
                 <p><strong>Gr. Wt.:</strong> <span>${d.grossWeight.toFixed(2)}g</span></p>
-                <p><strong>N. Wt.:</strong> <span style="${weightOverridden ? 'color:#C62828; font-weight:700;' : ''}">${effectiveWeight.toFixed(2)}g${weightOverridden ? ' (adjusted)' : ''} <button onclick="openWeightOverrideDialog()" title="Adjust weight for this piece" style="background:none; border:1px solid var(--border); color:var(--text2); font-size:11px; width:auto; padding:1px 7px; border-radius:10px; margin-left:4px; cursor:pointer; box-shadow:none;">ℹ️</button></span></p>
+                <p><strong>N. Wt.:</strong>
+                    <span style="${weightOverridden ? 'color:#C62828; font-weight:700;' : ''}">
+                        <button onclick="openWeightOverrideDialog()" title="Adjust weight for this piece"
+                                style="width: 22px; height: 22px; border-radius: 50%; border: none; background: #2196F3; color: white; font-size: 14px; font-weight: bold; font-style: normal; padding: 0; text-align: center; cursor: pointer; margin-right: 8px; vertical-align: middle; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                            i
+                        </button>
+                        ${effectiveWeight.toFixed(2)}g${weightOverridden ? ' (adjusted)' : ''}
+                    </span>
+                </p>
                 <p><strong>Other Charge:</strong> <span>${(d.otherCharge || 0).toFixed(2)}</span></p>
             `;
             if (_productUsesMrp(d)) {
