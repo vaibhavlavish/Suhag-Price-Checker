@@ -6789,7 +6789,14 @@
                 newInput = makingNeeded;
             }
 
-            makingOverride = { type: activeType, input: Math.max(0, newInput) };
+            // Rounded to 2 decimals for a clean, readable making value —
+            // the exact solve above would otherwise produce something
+            // like 8.347156003552074%. This means the final price no
+            // longer lands exactly on the typed target (off by roughly
+            // ₹10-20, by design) — the small gap gets absorbed at
+            // checkout instead of showing an ugly precise percentage.
+            newInput = Math.round(Math.max(0, newInput) * 100) / 100;
+            makingOverride = { type: activeType, input: newInput };
             runPriceCalculation();
             closeModal('alter-modal');
         }
