@@ -1766,6 +1766,9 @@
             <button onclick="showSection('returns')" data-menu-key="returns">
                 <span class="menu-icon" style="background:#fce4ec;">↩️</span> Item Returns
             </button>
+            <button onclick="showSection('issue')" data-menu-key="issue">
+                <span class="menu-icon" style="background:#fff3e0;">⚠️</span> Item Issue
+            </button>
             <button onclick="showSection('reminders')" data-menu-key="reminders">
                 <span class="menu-icon" style="background:#f3e5f5;">🔔</span> Reminders
                 <span id="reminder-menu-badge">0</span>
@@ -1948,7 +1951,10 @@
 
     <div id="alter-modal">
         <div id="alter-content">
-            <h3>Alter</h3>
+            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #eee; padding-bottom:12px; margin-bottom:16px;">
+                <h3 style="margin:0; border:none; padding:0; text-align:left;">Alter</h3>
+                <button onclick="closeModal('alter-modal')" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0; line-height:1;">✕</button>
+            </div>
             <div id="alter-body"></div>
 
             <div class="form-accordion" style="margin-bottom:10px;">
@@ -3107,6 +3113,127 @@
             });
         }
 
+        // ═══ LOCAL INDEXEDDB LAYER ═══
+        // Two stores in one database: `pendingWrites` (the offline write
+        // queue — durable, unsynced changes waiting for Firebase) and
+        // `fullDataCache` (the complete last-known dataset — rates,
+        // stock, invoice history — read back the instant the app boots,
+        // before Firebase is even attempted). Both used to be split
+        // across localStorage keys, which caps out around 5MB total and
+        // is the first thing wiped by clearing browsing data or private
+        // browsing. IndexedDB has no such practical ceiling for data
+        // this size, and survives more of what localStorage doesn't.
+        const OFFLINE_QUEUE_DB = 'suhagOfflineQueueDB';
+        const OFFLINE_QUEUE_STORE = 'pendingWrites';
+        const FULL_CACHE_STORE = 'fullDataCache';
+        const OFFLINE_QUEUE_DB_VERSION = 2; // bumped from 1 to add fullDataCache — onupgradeneeded only creates whichever store doesn't already exist, so this is safe for devices that already have the v1 database
+
+        function _idbOpen() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open(OFFLINE_QUEUE_DB, OFFLINE_QUEUE_DB_VERSION);
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains(OFFLINE_QUEUE_STORE)) db.createObjectStore(OFFLINE_QUEUE_STORE);
+                    if (!db.objectStoreNames.contains(FULL_CACHE_STORE)) db.createObjectStore(FULL_CACHE_STORE);
+                };
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        }
+        async function _idbSet(storeName, key, val) {
+            const db = await _idbOpen();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                tx.objectStore(storeName).put(val, key);
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+        async function _idbGet(storeName, key) {
+            const db = await _idbOpen();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readonly');
+                const req = tx.objectStore(storeName).get(key);
+                req.onsuccess = () => resolve(req.result !== undefined ? req.result : null);
+                req.onerror = () => reject(req.error);
+            });
+        }
+        async function _idbDelete(storeName, key) {
+            const db = await _idbOpen();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readwrite');
+                tx.objectStore(storeName).delete(key);
+                tx.oncomplete = () => resolve(true);
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+        async function _idbGetAll(storeName) {
+            const db = await _idbOpen();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                const keysReq = store.getAllKeys();
+                const valsReq = store.getAll();
+                tx.oncomplete = () => resolve(keysReq.result.map((k, i) => ({ key: k, value: valsReq.result[i] })));
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+
+        // ═══ OFFLINE WRITE QUEUE ═══
+        // Durable, unlike localStorage — survives the tab closing before
+        // Firebase ever reconnects. Every invoice write goes through this
+        // queue FIRST, regardless of connectivity: queued immediately,
+        // then a Firebase write is attempted right away. If that succeeds
+        // (the normal case), it's removed from the queue immediately too
+        // — this only matters as a safety net for when it doesn't, e.g.
+        // Firebase's own SDK never loaded (cold start with no network) or
+        // the write itself failed. Thin wrappers over the shared
+        // IndexedDB layer above, scoped to the pendingWrites store.
+        const _oqSet = (key, val) => _idbSet(OFFLINE_QUEUE_STORE, key, val);
+        const _oqDelete = (key) => _idbDelete(OFFLINE_QUEUE_STORE, key);
+        const _oqGetAll = () => _idbGetAll(OFFLINE_QUEUE_STORE);
+
+        // Queues a Firebase update object durably first, then attempts to
+        // write it immediately. Succeeds → removed from the queue right
+        // away, no visible difference from before. Firebase not loaded,
+        // or the write itself fails → stays queued, picked up later by
+        // _flushOfflineQueue() once connectivity actually returns.
+        async function _durableWrite(queueKey, updateObj) {
+            try { await _oqSet(queueKey, updateObj); } catch (e) { console.error('[OfflineQueue] queue write failed', e); }
+            if (typeof window.dbSafeUpdate !== 'function') {
+                console.warn('[OfflineQueue] Firebase not ready — queued for later sync:', queueKey);
+                return;
+            }
+            try {
+                await window.dbSafeUpdate(updateObj);
+                _oqDelete(queueKey).catch(() => {});
+            } catch (e) {
+                console.error('[OfflineQueue] write failed, staying queued:', queueKey, e);
+            }
+        }
+
+        // Retries every queued write, in order, removing each on success.
+        // Stops at the first failure so remaining entries stay queued
+        // (rather than risking writing them out of order) — the next
+        // successful connection will pick up where this left off.
+        async function _flushOfflineQueue() {
+            if (typeof window.dbSafeUpdate !== 'function') return;
+            let entries;
+            try { entries = await _oqGetAll(); } catch (e) { console.error('[OfflineQueue] flush read failed', e); return; }
+            if (!entries.length) return;
+            console.log('[OfflineQueue] flushing', entries.length, 'queued write(s)');
+            for (const { key, value } of entries) {
+                try {
+                    await window.dbSafeUpdate(value);
+                    await _oqDelete(key);
+                } catch (e) {
+                    console.error('[OfflineQueue] flush failed for', key, e);
+                    break;
+                }
+            }
+        }
+        window.addEventListener('online', () => { _flushOfflineQueue(); });
+
         function _abGetTimes() {
             try {
                 const raw = localStorage.getItem('autoBackupTimes');
@@ -3907,13 +4034,14 @@
         }
 
         // === OFFLINE CACHE HELPERS ===
-        const CACHE_KEY = 'suhagPriceCheckerDataCache';
+        const FULL_CACHE_KEY = 'suhagPriceCheckerDataCache';
 
-        // --- Storage quota guard ---
-        // Returns approximate used KB across all suhag keys.
+        // --- Storage quota guard (remaining localStorage-based data only —
+        // the big dataset moved to IndexedDB above, which doesn't share
+        // this ~5MB ceiling, so it's no longer tracked here) ---
         function _suhagStorageUsedKB() {
             const keys = [
-                CACHE_KEY, 'suhagLedger', 'suhagReminders', 'suhagPriceCheckerCart',
+                'suhagLedger', 'suhagReminders', 'suhagPriceCheckerCart',
                 'suhagPriceCheckerOldGold', PENDING_SYNC_KEY, 'activeProfileId',
                 'suhagFlatKeysTombstoned', 'suhagInvoiceHistory'
             ];
@@ -3946,31 +4074,28 @@
         // Prune ledger to keep only the most recent N entries when saving.
         const LEDGER_MAX_ENTRIES = 400;
 
-        function saveDataToLocalCache(data) {
+        async function saveDataToLocalCache(data) {
             try {
                 const cachePayload = {
                     ...data,
                     _cachedAt: new Date().toISOString()
                 };
-                localStorage.setItem(CACHE_KEY, JSON.stringify(cachePayload));
-                _checkStorageQuota();
+                await _idbSet(FULL_CACHE_STORE, FULL_CACHE_KEY, cachePayload);
             } catch (e) {
-                // Storage is completely full — do NOT remove or wipe the cache.
-                // Deleting CACHE_KEY would destroy the entire offline database, leaving
-                // the app with an empty screen if the internet goes down.
-                // Instead, just warn the user and let them clear space manually.
-                console.warn("Could not save to local cache (quota exceeded):", e);
-                _storageWarnShown = false;
-                _checkStorageQuota();
-                showCustomAlert("⚠️ CRITICAL: Device storage is completely full. New changes cannot be saved offline. Please free up space on this device to avoid data loss.");
+                // IndexedDB failing here means the device is genuinely out
+                // of disk space, not just past a small quota — far less
+                // likely than the old 5MB localStorage ceiling, but still
+                // possible. Do NOT clear any existing cached data — that
+                // would leave the app with nothing to fall back on if the
+                // internet goes down right after this failure.
+                console.warn("Could not save to local cache:", e);
+                showCustomAlert("⚠️ CRITICAL: Could not save data locally — device storage may be full. New offline changes are at risk until this is resolved.");
             }
         }
 
-        function loadDataFromLocalCache() {
+        async function loadDataFromLocalCache() {
             try {
-                const raw = localStorage.getItem(CACHE_KEY);
-                if (!raw) return null;
-                return JSON.parse(raw);
+                return await _idbGet(FULL_CACHE_STORE, FULL_CACHE_KEY);
             } catch (e) {
                 console.warn("Could not read local cache:", e);
                 return null;
@@ -4166,6 +4291,13 @@
             if (cloudData.returnedBarcodes !== undefined) {
                 window._returnedBarcodes = cloudData.returnedBarcodes || {};
             }
+            // Issued barcodes — items removed from stock for a reason OTHER
+            // than a sale (damaged, lost, etc.). Excluded from available
+            // stock/weight the same way sold items are, but tracked
+            // separately with a reason, since it's not a real sale.
+            if (cloudData.issuedBarcodes !== undefined) {
+                window._issuedBarcodes = cloudData.issuedBarcodes || {};
+            }
 
             activeProfileId = localStorage.getItem('activeProfileId') || 'default';
             applyFactoryDefaults();
@@ -4322,6 +4454,7 @@
                 upiId:            config.upiId            || null,
                 upiIds:           config.upiIds           || null,
                 returnedBarcodes: config.returnedBarcodes || {},
+                issuedBarcodes:   config.issuedBarcodes   || {},
                 invItemSettings:  config.invItemSettings  || {},
                 invStampPrintToggle: config.invStampPrintToggle || {},
                 invTandC: config.invTandC || '',
@@ -4367,10 +4500,10 @@
         } // end _doRefreshUI
 
         // === FIREBASE SYNC FUNCTIONS ===
-        function syncData() {
+        async function syncData() {
 
             // --- Step 1: Try to load from local cache immediately so app works offline ---
-            const cachedData = loadDataFromLocalCache();
+            const cachedData = await loadDataFromLocalCache();
             if (cachedData) {
                 applyDataSnapshot(cachedData);
                 setDataSourceBadge('cached', cachedData._cachedAt);
@@ -4427,6 +4560,7 @@
                     saveDataToLocalCache(cloudData);
                     setDataSourceBadge('live');
                     console.log("Data synced from Firebase.");
+                    _flushOfflineQueue();
                 } else {
                     console.warn("No data in cloud. Using local cache/defaults.");
                     if (!cachedData) {
@@ -4669,6 +4803,7 @@
             document.getElementById('menu-settings').style.display = 'none';
             document.getElementById('device-access').style.display = 'none';
             document.getElementById('returns').style.display = 'none';
+            document.getElementById('issue').style.display = 'none';
             document.getElementById('invoice-screen').style.display = 'none';
             document.getElementById('installments-screen').style.display = 'none';
             document.getElementById('reminders').style.display = 'none';
@@ -4722,6 +4857,10 @@
             if (section === 'returns') {
                 resetReturnSection();
                 setTimeout(() => document.getElementById('return-barcode').focus(), 100);
+            }
+            if (section === 'issue') {
+                resetIssueSection();
+                setTimeout(() => document.getElementById('issue-barcode').focus(), 100);
             }
             if (section === 'invoice-screen') {
                 invRenderOg();
@@ -4781,6 +4920,7 @@
             { key: 'ledger',         label: 'Cash Ledger',        icon: '💰', action: () => showSection('ledger') },
             { key: 'bulk-check',     label: 'Bulk Price Check',   icon: '📋', action: () => showSection('bulk-check') },
             { key: 'returns',        label: 'Item Returns',        icon: '↩️', action: () => showSection('returns') },
+            { key: 'issue',          label: 'Item Issue',          icon: '⚠️', action: () => showSection('issue') },
             { key: 'reminders',      label: 'Reminders',          icon: '🔔', action: () => showSection('reminders') },
             { key: 'reprint-last',   label: 'Reprint Last Invoice', icon: '🖨️', action: () => reprintLastInvoice() },
             { key: 'print-server',   label: 'Print Server',       icon: '🖨️', action: () => openPrintServerModal() },
@@ -4909,6 +5049,12 @@
                     if (item && item.barcode) sold.add(String(item.barcode).trim().toUpperCase());
                 });
             });
+            // Issued items (damaged/lost/etc., not a sale) are excluded
+            // from available stock the same way sold items are — that's
+            // the whole point, their weight shouldn't count toward
+            // available stock anymore even though nothing was actually sold.
+            const issued = window._issuedBarcodes || {};
+            Object.keys(issued).forEach(bc => sold.add(bc.toUpperCase()));
             const returned = window._returnedBarcodes || {};
             Object.keys(returned).forEach(bc => sold.delete(bc.toUpperCase()));
             return sold;
@@ -6736,11 +6882,12 @@
         }
 
         function toggleAlterSection(section){
-            const body = document.getElementById('alter-' + section + '-section');
-            const chevron = document.getElementById('alter-' + section + '-chevron');
-            const isOpen = body.style.display !== 'none';
-            body.style.display = isOpen ? 'none' : 'block';
-            chevron.textContent = isOpen ? '▸' : '▾';
+            const isOpen = document.getElementById('alter-' + section + '-section').style.display !== 'none';
+            ['making', 'weight', 'finalamt'].forEach(s => {
+                const shouldBeOpen = (s === section) && !isOpen;
+                document.getElementById('alter-' + s + '-section').style.display = shouldBeOpen ? 'block' : 'none';
+                document.getElementById('alter-' + s + '-chevron').textContent = shouldBeOpen ? '▾' : '▸';
+            });
         }
 
         // Reverse-solves the making charge needed to hit a target final
@@ -10878,6 +11025,9 @@
             } else if (cameraTarget === 'return') {
                 document.getElementById('return-barcode').value = value;
                 returnLookup();
+            } else if (cameraTarget === 'issue') {
+                document.getElementById('issue-barcode').value = value;
+                issueLookup();
             } else {
                 const inp = document.getElementById('barcode');
                 inp.value = value;
@@ -12823,6 +12973,140 @@
         // === END RETURNS SECTION =====================
         // =============================================
 
+        // =============================================
+        // === ISSUE SECTION ===========================
+        // =============================================
+        // For an item removed from stock for a reason OTHER than a sale
+        // — damaged, lost, etc. Mirrors Item Returns' structure exactly,
+        // just the inverse effect: excludes the barcode from available
+        // stock/weight (via getSoldBarcodesForStock) instead of restoring
+        // it, and records why. Existing bills/invoices are untouched,
+        // same as returns.
+        let _issueSessionLog = [];
+        let _issuePendingBarcode = null;
+
+        function resetIssueSection() {
+            _issuePendingBarcode = null;
+            document.getElementById('issue-barcode').value = '';
+            document.getElementById('issue-preview').style.display = 'none';
+            document.getElementById('issue-error').style.display = 'none';
+        }
+
+        function issueLookup() {
+            const inp = document.getElementById('issue-barcode');
+            const barcode = (inp.value || '').trim().toUpperCase();
+            if (!barcode) return;
+
+            document.getElementById('issue-preview').style.display = 'none';
+            document.getElementById('issue-error').style.display = 'none';
+            _issuePendingBarcode = null;
+
+            const d = productData[barcode];
+            if (!d) {
+                const errEl = document.getElementById('issue-error');
+                errEl.textContent = '❌ Barcode "' + barcode + '" not found in product database.';
+                errEl.style.display = 'block';
+                return;
+            }
+
+            _issuePendingBarcode = barcode;
+            document.getElementById('issue-preview-name').textContent = d.itemName || '(No name)';
+            document.getElementById('issue-preview-barcode').textContent = barcode;
+
+            const weight = d.netWeight ? d.netWeight + 'g' : '—';
+            const metal  = d.metal ? d.metal.charAt(0).toUpperCase() + d.metal.slice(1) : '—';
+            const stamp  = d.stamp || '—';
+            document.getElementById('issue-preview-details').innerHTML =
+                'Metal: <strong>' + metal + '</strong> &nbsp;|&nbsp; ' +
+                'Stamp: <strong>' + stamp + '</strong> &nbsp;|&nbsp; ' +
+                'Weight: <strong>' + weight + '</strong>';
+
+            // Warn if already excluded (sold, or already issued) — same
+            // "already handled" check Returns does, just checking the
+            // opposite direction (already unavailable, not already in stock).
+            const soldBarcodes = getSoldBarcodesForStock();
+            const alreadyWarn = document.getElementById('issue-already-warn');
+            alreadyWarn.style.display = soldBarcodes.has(barcode) ? 'block' : 'none';
+
+            document.getElementById('issue-reason').value = 'Damaged';
+            document.getElementById('issue-note').value = '';
+            document.getElementById('issue-preview').style.display = 'block';
+        }
+
+        function confirmIssue() {
+            const barcode = _issuePendingBarcode;
+            if (!barcode) return;
+            const d = productData[barcode];
+            if (!d) { alert('Product not found. Please re-scan.'); return; }
+
+            const reason = document.getElementById('issue-reason').value;
+            const note = document.getElementById('issue-note').value.trim();
+
+            if (!window._issuedBarcodes) window._issuedBarcodes = {};
+            window._issuedBarcodes[barcode] = {
+                reason,
+                note: note || null,
+                date: new Date().toISOString().slice(0, 10),
+                ts: Date.now()
+            };
+
+            const update = {};
+            update['jewelryData/config/issuedBarcodes'] = window._issuedBarcodes;
+            window.dbSafeUpdate(update).catch(e => console.error('[Issue] save failed', e));
+            invSyncCatalogueAvailability();
+
+            _issueSessionLog.unshift({ barcode, name: d.itemName || barcode, reason, ts: Date.now() });
+            _renderIssueLog();
+
+            _issuePendingBarcode = null;
+            document.getElementById('issue-barcode').value = '';
+            document.getElementById('issue-preview').style.display = 'none';
+            document.getElementById('issue-error').style.display = 'none';
+            setTimeout(() => document.getElementById('issue-barcode').focus(), 80);
+
+            if (typeof renderStockView === 'function') renderStockView();
+            if (stockCalcMetal && typeof renderStockCalc === 'function') renderStockCalc();
+        }
+
+        function _renderIssueLog() {
+            const wrap = document.getElementById('issue-log-wrap');
+            const list = document.getElementById('issue-log-list');
+            if (!_issueSessionLog.length) { wrap.style.display = 'none'; return; }
+            wrap.style.display = 'block';
+            list.innerHTML = _issueSessionLog.map(entry => {
+                const t = new Date(entry.ts).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                return `<div style="background:white; border-radius:10px; padding:10px 14px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 1px 4px rgba(0,0,0,0.07);">
+                    <div>
+                        <div style="font-size:14px; font-weight:700; color:#222;">${escHtml(entry.name)}</div>
+                        <div style="font-size:11px; color:#aaa; font-family:monospace;">${escHtml(entry.barcode)} · ${escHtml(entry.reason)}</div>
+                    </div>
+                    <div style="font-size:12px; color:#e65100; font-weight:700;">${t} ⚠️</div>
+                </div>`;
+            }).join('');
+        }
+
+        window.issueLookup      = issueLookup;
+        window.confirmIssue     = confirmIssue;
+        window.resetIssueSection = resetIssueSection;
+
+        function clearAllIssuedBarcodes() {
+            if (!confirm('This will clear all issue history and restore all previously issued barcodes to available stock.\n\nUse this only to fix stuck barcodes. Continue?')) return;
+            window._issuedBarcodes = {};
+            const update = {};
+            update['jewelryData/config/issuedBarcodes'] = null; // delete node from Firebase
+            window.dbSafeUpdate(update)
+                .then(() => {
+                    _issueSessionLog = [];
+                    _renderIssueLog();
+                    alert('✅ Issue history cleared. Barcodes are back to available stock.');
+                })
+                .catch(() => alert('⚠️ Cleared locally but Firebase sync failed. Try again when online.'));
+        }
+        window.clearAllIssuedBarcodes = clearAllIssuedBarcodes;
+        // =============================================
+        // === END ISSUE SECTION ========================
+        // =============================================
+
         function openLedgerEntryModal(type) {
             setLedgerEntryType(type || 'in');
             document.getElementById('ledger-entry-amount').value = '';
@@ -13481,19 +13765,15 @@
 
         function _saveInvoiceRecord(entry) {
             if (!entry || !entry.id) return;
-            if (typeof window.dbSafeUpdate !== 'function') { console.warn('[Invoice] Firebase not ready yet, saved locally only'); return; }
             const update = {};
             update[`jewelryData/invoiceHistory/${entry.id}`] = entry;
-            try { window.dbSafeUpdate(update).catch(e => console.error('[Invoice] save failed', e)); }
-            catch(e) { console.error('[Invoice] save failed', e); }
+            _durableWrite('invoice_' + entry.id, update);
         }
 
         function _deleteInvoiceRecord(id) {
-            if (typeof window.dbSafeUpdate !== 'function') { console.warn('[Invoice] Firebase not ready yet, deleted locally only'); return; }
             const update = {};
             update[`jewelryData/invoiceHistory/${id}`] = null;
-            try { window.dbSafeUpdate(update).catch(e => console.error('[Invoice] delete failed', e)); }
-            catch(e) { console.error('[Invoice] delete failed', e); }
+            _durableWrite('invoice_delete_' + id, update);
         }
 
         // Saves a new record and removes another one in the SAME write —
@@ -13507,12 +13787,10 @@
         // like it silently behaved as "Copy".
         function _saveAndDeleteInvoiceRecord(newEntry, deleteId) {
             if (!newEntry || !newEntry.id) return;
-            if (typeof window.dbSafeUpdate !== 'function') { console.warn('[Invoice] Firebase not ready yet, saved locally only'); return; }
             const update = {};
             update[`jewelryData/invoiceHistory/${newEntry.id}`] = newEntry;
             update[`jewelryData/invoiceHistory/${deleteId}`] = null;
-            try { window.dbSafeUpdate(update).catch(e => console.error('[Invoice] move save+delete failed', e)); }
-            catch(e) { console.error('[Invoice] move save+delete failed', e); }
+            _durableWrite('invoice_move_' + newEntry.id, update);
         }
 
         // ─── TABS ───
@@ -13934,8 +14212,12 @@
                 desc = (metal === 'silver') ? 'Silver Jewellery' : 'Gold Jewellery';
             }
             let out;
-            // Silver: never append stamp
-            if (!stamp || metal === 'silver') {
+            // Loose-calculator items never get the stamp suffix, regardless
+            // of the per-stamp toggle — a preset like "Nosepin" should just
+            // print as "Nosepin", not "Nosepin(18K)". Scanned barcode items
+            // are unaffected — this only checks the isLoose marker set when
+            // the row was built from a loose-calculator cart item.
+            if (!stamp || metal === 'silver' || r.isLoose) {
                 out = invEscH(desc);
             } else {
                 const stampOn = invStampPrintToggle[stamp] !== false;
@@ -14248,7 +14530,8 @@
                                 makingType: typeMap[item.makingType],
                                 makingPct: parseFloat((item.makingValue || 0).toFixed(2)),
                                 metal: item.metal || '',
-                                stamp: item.stamp || ''
+                                stamp: item.stamp || '',
+                                isLoose: true
                             };
                         }
                         // wastage (or anything unrecognized) — safe remainder fallback
@@ -14262,7 +14545,8 @@
                             rate: parseFloat((item.rate || 0).toFixed(2)),
                             makingType: 'per_pc', makingPct: parseFloat(makingAmt.toFixed(2)),
                             metal: item.metal || '',
-                            stamp: item.stamp || ''
+                            stamp: item.stamp || '',
+                            isLoose: true
                         };
                     }
                     // Older cart items saved before this fix only have weight + tax-inclusive
@@ -14279,7 +14563,8 @@
                         rate: 0,
                         makingType: 'per_pc', makingPct: parseFloat(legacySubtotal.toFixed(2)),
                         metal: '',
-                        stamp: item.stamp || ''
+                        stamp: item.stamp || '',
+                        isLoose: true
                     };
                 }
                 const d = productData[item.barcode] || {};
@@ -16459,6 +16744,62 @@
         </div>
     </div>
     <!-- ==================== END RETURNS SECTION ==================== -->
+
+    <!-- ==================== ISSUE SECTION ==================== -->
+    <div id="issue" style="display:none; padding:16px; background:#f5f5f5; min-height:100%; box-sizing:border-box; max-width:480px; margin:0 auto;">
+        <h2 style="margin:0 0 4px; font-size:18px; font-weight:800; color:#222;">⚠️ Item Issue</h2>
+        <p style="font-size:13px; color:#888; margin:0 0 14px;">Scan an item removed from stock for a reason other than a sale — damaged, lost, etc. Its weight is excluded from Stock Weight Calc. Existing bills/invoices are NOT affected.</p>
+
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:14px;">
+            <input type="text" id="issue-barcode" placeholder="Scan or type barcode, press Enter…"
+                   autocomplete="off" maxlength="50"
+                   onkeydown="if(event.key==='Enter') issueLookup()"
+                   style="font-size:16px; flex:1; margin:0;">
+            <button onclick="openCamera('issue')" style="background:#e65100; color:white; border:none; border-radius:10px; padding:12px 14px; font-size:20px; cursor:pointer; flex-shrink:0; width:auto; margin:0; box-shadow:none;">📷</button>
+        </div>
+
+        <div id="issue-preview" style="display:none; background:white; border-radius:14px; box-shadow:0 2px 10px rgba(0,0,0,0.10); padding:16px; margin-bottom:14px;">
+            <div style="font-size:12px; color:#888; font-weight:600; letter-spacing:0.05em; text-transform:uppercase; margin-bottom:6px;">Item Found</div>
+            <div id="issue-preview-name" style="font-size:17px; font-weight:800; color:#222; margin-bottom:2px;"></div>
+            <div id="issue-preview-barcode" style="font-size:12px; color:#aaa; margin-bottom:10px; font-family:monospace;"></div>
+            <div id="issue-preview-details" style="font-size:13px; color:#555; margin-bottom:14px; line-height:1.6;"></div>
+            <div id="issue-already-warn" style="display:none; background:#fff3e0; border:1.5px solid #FF9800; border-radius:8px; padding:8px 12px; font-size:13px; color:#e65100; font-weight:600; margin-bottom:10px;">
+                ⚠️ This barcode is already excluded from stock (sold, or already issued).
+            </div>
+
+            <label style="font-size:12px; font-weight:700; color:#888; display:block; margin-bottom:4px;">REASON</label>
+            <select id="issue-reason" style="width:100%; padding:10px 12px; border:1.5px solid #ddd; border-radius:10px; font-size:14px; margin-bottom:10px; box-sizing:border-box;">
+                <option value="Damaged">Damaged</option>
+                <option value="Lost">Lost</option>
+                <option value="Other">Other</option>
+            </select>
+            <label style="font-size:12px; font-weight:700; color:#888; display:block; margin-bottom:4px;">NOTE (OPTIONAL)</label>
+            <input type="text" id="issue-note" placeholder="e.g. Chain snapped during cleaning"
+                   style="width:100%; padding:10px 12px; border:1.5px solid #ddd; border-radius:10px; font-size:14px; margin-bottom:14px; box-sizing:border-box;">
+
+            <button onclick="confirmIssue()" style="background:#e65100; color:white; border:none; border-radius:10px; padding:12px 18px; font-size:15px; font-weight:700; cursor:pointer; width:100%; box-shadow:none;">
+                ⚠️ Remove from Stock
+            </button>
+        </div>
+
+        <div id="issue-error" style="display:none; background:#ffebee; border:1.5px solid #f44336; border-radius:10px; padding:10px 14px; font-size:13px; color:#c62828; font-weight:600; margin-bottom:14px;"></div>
+
+        <div id="issue-log-wrap" style="display:none;">
+            <div style="font-size:12px; color:#888; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Issued this session</div>
+            <div id="issue-log-list"></div>
+        </div>
+
+        <button onclick="showSection('main')" style="margin-top:10px;">← Back to Main</button>
+
+        <div style="margin-top:24px; border-top:1px solid #e0e0e0; padding-top:16px;">
+            <div style="font-size:12px; color:#aaa; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px;">Danger Zone</div>
+            <button onclick="clearAllIssuedBarcodes()" style="background:#fff3e0; color:#e65100; border:1.5px solid #FF9800; border-radius:10px; padding:10px 16px; font-size:13px; font-weight:700; cursor:pointer; width:100%; box-shadow:none;">
+                🗑️ Clear All Issue History (fix stuck barcodes)
+            </button>
+            <div style="font-size:11px; color:#bbb; margin-top:6px; text-align:center;">Use this if a barcode shows as issued incorrectly</div>
+        </div>
+    </div>
+    <!-- ==================== END ISSUE SECTION ==================== -->
 
     <!-- ==================== INVOICE SCREEN ==================== -->
     <div id="installments-screen" style="display:none; flex:1; flex-direction:column; padding:14px; background:var(--bg); overflow-y:auto; -webkit-overflow-scrolling:touch; box-sizing:border-box; max-width:600px; margin:0 auto; width:100%; min-height:0;">
