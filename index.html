@@ -199,6 +199,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
     <style>
@@ -3126,7 +3129,8 @@
         const OFFLINE_QUEUE_DB = 'suhagOfflineQueueDB';
         const OFFLINE_QUEUE_STORE = 'pendingWrites';
         const FULL_CACHE_STORE = 'fullDataCache';
-        const OFFLINE_QUEUE_DB_VERSION = 2; // bumped from 1 to add fullDataCache — onupgradeneeded only creates whichever store doesn't already exist, so this is safe for devices that already have the v1 database
+        const ASSET_CACHE_STORE = 'assetCache'; // remote assets (like the custom header image) cached locally so they're fetched from Firebase Storage once per device, not once per invoice
+        const OFFLINE_QUEUE_DB_VERSION = 3; // bumped from 2 to add assetCache — onupgradeneeded only creates whichever store doesn't already exist, so this is safe for devices on any earlier version
 
         function _idbOpen() {
             return new Promise((resolve, reject) => {
@@ -3135,6 +3139,7 @@
                     const db = req.result;
                     if (!db.objectStoreNames.contains(OFFLINE_QUEUE_STORE)) db.createObjectStore(OFFLINE_QUEUE_STORE);
                     if (!db.objectStoreNames.contains(FULL_CACHE_STORE)) db.createObjectStore(FULL_CACHE_STORE);
+                    if (!db.objectStoreNames.contains(ASSET_CACHE_STORE)) db.createObjectStore(ASSET_CACHE_STORE);
                 };
                 req.onsuccess = () => resolve(req.result);
                 req.onerror = () => reject(req.error);
@@ -3840,6 +3845,8 @@
         let rates = JSON.parse(JSON.stringify(defaultRates));
         let taxRate = 3; // factory default — overwritten by Firebase on load
         let printWithLetterhead = false; // universal setting (moved from device-local localStorage) — factory default, overwritten by Firebase on load
+        let customHeaderImage = null; // { storagePath, url } — user-uploaded header image shown when the letterhead background is OFF, replacing the built-in S-mark/text header. Universal, Firebase-synced.
+        let _customHeaderDataUrl = null; // local IndexedDB-cached copy of customHeaderImage's bytes, as a data: URL — this is what invoice generation actually embeds, so Firebase Storage is only ever hit once per device (see _ensureCustomHeaderImageCached), never once per invoice.
         let productData = {};
 
         // Mirrors, per-tag, whether the catalogue has a shop-fixed display
@@ -4191,6 +4198,8 @@
             rates = cloudData.rates || JSON.parse(JSON.stringify(defaultRates));
             taxRate = cloudData.taxRate ?? 3;
             printWithLetterhead = cloudData.printWithLetterhead ?? false;
+            customHeaderImage = cloudData.customHeaderImage ?? null;
+            _ensureCustomHeaderImageCached();
             productData = cloudData.products || {};
             productDataImportedAt = cloudData.productDataImportedAt || 0;
             // Per-item invoice settings (HSN override + custom print name), keyed
@@ -4446,6 +4455,7 @@
                 rates:            config.rates            || null,
                 taxRate:          config.taxRate          ?? 3,
                 printWithLetterhead: config.printWithLetterhead ?? false,
+                customHeaderImage: config.customHeaderImage ?? null,
                 looseDefaults:    config.looseDefaults    || null,
                 baseCalcDefaults: config.baseCalcDefaults || {},
                 packagingWeights: config.packagingWeights || {},
@@ -11649,16 +11659,27 @@
                 fillerHtml += `<tr><td colspan="${fillerCellCount}" style="padding:${ITEMPAD};height:1px;">&nbsp;</td></tr>`;
             }
 
-            const inlineHdrPlain = `
-                <div style="height:42mm;box-sizing:border-box;padding:0 8mm;border-bottom:.5px solid #d4b44a;display:flex;align-items:center;">
+            const inlineHdrPlain = _customHeaderDataUrl ? `
+                <div style="box-sizing:border-box;">
+                  <img src="${_customHeaderDataUrl}" style="width:100%; display:block;">
+                </div>` : `
+                <div style="box-sizing:border-box;padding:5mm 8mm 0;border-bottom:.5px solid #d4b44a;">
                   <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
-                    <div><div style="font-size:32px;font-weight:800;letter-spacing:.16em;font-family:Georgia,serif;color:#000;">${invEscH(invoiceSettings.shopName)}</div></div>
+                    <div style="display:flex;align-items:center;gap:3mm;">
+                      <svg viewBox="1750 260 540 740" style="width:11mm;height:15mm;flex-shrink:0;">
+                        <defs><linearGradient id="sMarkGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stop-color="#945f50"/><stop offset="50%" stop-color="#fcc5b3"/><stop offset="100%" stop-color="#945f50"/>
+                        </linearGradient></defs>
+                        <path fill="url(#sMarkGrad)" fill-rule="nonzero" stroke="none" d="M 1956.878906 318.660156 C 1851.660156 365.058594 1801.121094 411.453125 1787.867188 472.761719 C 1774.609375 534.070312 1806.09375 578.808594 1897.226562 664.96875 C 1918.765625 686.511719 1938.652344 705.566406 1954.390625 722.136719 C 1947.765625 725.449219 1940.308594 727.933594 1935.335938 731.25 C 1854.144531 773.503906 1779.582031 826.527344 1768.808594 884.519531 C 1761.355469 928.429688 1799.464844 976.480469 1881.484375 983.9375 C 1966.820312 992.222656 2048.839844 954.941406 2058.78125 888.660156 C 2067.066406 835.640625 2045.527344 792.558594 1981.730469 725.449219 C 2074.523438 685.683594 2238.5625 638.457031 2257.617188 634.316406 C 2279.988281 630.171875 2275.84375 620.230469 2254.304688 625.203125 C 2234.421875 629.34375 2061.265625 678.226562 1970.960938 714.679688 C 1953.5625 696.453125 1932.851562 676.570312 1908.824219 654.199219 C 1826.804688 577.980469 1798.636719 533.238281 1811.0625 476.074219 C 1824.320312 418.910156 1897.226562 368.371094 1966.820312 335.230469 C 2048.011719 297.121094 2134.175781 282.207031 2176.425781 289.664062 C 2214.535156 296.292969 2229.449219 317.832031 2222.820312 349.316406 C 2217.023438 375.828125 2193.824219 388.253906 2179.742188 393.226562 C 2169.796875 397.367188 2174.769531 408.136719 2184.710938 406.480469 C 2194.652344 405.652344 2230.277344 388.253906 2238.5625 353.460938 C 2246.847656 314.519531 2228.621094 282.207031 2179.742188 273.921875 C 2169.261719 272.175781 2157.285156 271.113281 2143.726562 271.113281 C 2099.378906 271.113281 2038.089844 282.496094 1956.878906 318.660156 M 1882.3125 964.882812 C 1814.378906 959.910156 1779.582031 922.628906 1786.207031 884.519531 C 1794.492188 839.78125 1844.203125 798.355469 1946.105469 742.847656 C 1951.90625 739.535156 1957.707031 736.21875 1965.160156 732.90625 C 2031.441406 804.984375 2046.355469 843.09375 2039.726562 884.519531 C 2031.921875 928.222656 1972.65625 965.3125 1896.554688 965.3125 C 1891.871094 965.171875 1887.117188 965.171875 1882.3125 964.882812"/>
+                      </svg>
+                      <div style="font-size:19px;font-weight:700;letter-spacing:.08em;font-family:Georgia,serif;color:#2b2b2b;line-height:1.25;">${invEscH(invoiceSettings.shopName)}</div>
+                    </div>
                     <div style="text-align:right;">
-                      <div style="font-size:16px;font-weight:700;letter-spacing:.03em;color:#000;">&#9742; ${invEscH(invoiceSettings.phone)}</div>
-                      <div style="font-size:11px;letter-spacing:.02em;color:#000;margin-top:4px;">${invEscH(invoiceSettings.addr)}</div>
+                      <div style="font-size:14px;font-weight:700;letter-spacing:.03em;color:#333;">&#9742; ${invEscH(invoiceSettings.phone)}</div>
                     </div>
                   </div>
-                </div>`;
+                </div>
+                <div style="background:linear-gradient(to right,#fef6eb,#f9e7cc,#fef7ed);padding:2mm 8mm;font-size:11px;letter-spacing:.02em;color:#5a4a3a;">${invEscH(invoiceSettings.addr)}</div>`;
             const withBg = invGetWithBgPref();
             // Same 42mm reserved top margin as the manual-invoice print path keeps the
             // letterhead's printed header clear without leaving extra dead space below it.
@@ -13901,6 +13922,7 @@
             document.getElementById('inv-settings-modal').style.display = 'flex';
             const bgEl = document.getElementById('inv-with-bg');
             if (bgEl) bgEl.checked = invGetWithBgPref();
+            _renderCustomHeaderPreview();
         }
 
         function invOpenItemSettingsList() {
@@ -14123,6 +14145,131 @@
             if (!el) return;
             printWithLetterhead = el.checked;
             window.dbSafeUpdate({ 'jewelryData/config/printWithLetterhead': el.checked });
+        }
+
+        // Custom header image — shown when the letterhead background is
+        // OFF, replacing the built-in S-mark/text header entirely.
+        // Deliberately uploaded as-is, no compression or format
+        // conversion (unlike _compressImageFile, which forces JPEG +
+        // grayscale for ID-photo legibility on a dot-matrix printer —
+        // wrong here, since it would destroy PNG transparency and any
+        // color in the design). The whole point of this feature is exact
+        // fidelity to whatever the person actually uploads.
+        async function uploadCustomHeaderImage(file){
+            if (!file) return;
+            const validTypes = ['image/png', 'image/jpeg', 'image/svg+xml'];
+            if (!validTypes.includes(file.type)) {
+                showCustomAlert('Please upload a PNG, JPEG, or SVG file.');
+                return;
+            }
+            if (file.size > 5 * 1024 * 1024) {
+                showCustomAlert('That file is over 5MB — please use a smaller export.');
+                return;
+            }
+            const ext = file.type === 'image/svg+xml' ? 'svg' : (file.type === 'image/png' ? 'png' : 'jpg');
+            const oldEntry = customHeaderImage;
+            try {
+                const path = `invoiceCustomHeader/header_${Date.now()}.${ext}`;
+                const sref = window.storageRef(window.firebaseStorage, path);
+                await window.uploadBytes(sref, file);
+                const url = await window.getDownloadURL(sref);
+                const entry = { storagePath: path, url };
+                await window.dbSafeUpdate({ 'jewelryData/config/customHeaderImage': entry });
+                customHeaderImage = entry;
+
+                // Populate the cache directly from the file we already have
+                // locally, rather than turning around and re-fetching the
+                // same bytes back from Firebase — this device already has
+                // them right here.
+                try {
+                    const dataUrl = await new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = () => resolve(reader.result);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(file);
+                    });
+                    _customHeaderDataUrl = dataUrl;
+                    await _idbSet(ASSET_CACHE_STORE, 'customHeaderImage', { storagePath: path, dataUrl });
+                } catch (e) { console.warn('[CustomHeader] local cache populate failed', e); }
+
+                if (oldEntry && oldEntry.storagePath) {
+                    try { await window.deleteObject(window.storageRef(window.firebaseStorage, oldEntry.storagePath)); }
+                    catch (e) { console.warn('[CustomHeader] old file cleanup failed', e); }
+                }
+                _renderCustomHeaderPreview();
+            } catch (e) {
+                console.error('[CustomHeader] upload failed', e);
+                showCustomAlert(window._writeAllowed ? 'Upload failed — try again.' : 'Writes are disabled — this copy is running in read-only mode.');
+            }
+        }
+
+        async function removeCustomHeaderImage(){
+            if (!customHeaderImage) return;
+            showCustomConfirm('Remove the custom header image? The default design will be used instead.', 'Confirm', async () => {
+                try {
+                    if (customHeaderImage.storagePath) {
+                        await window.deleteObject(window.storageRef(window.firebaseStorage, customHeaderImage.storagePath)).catch(() => {});
+                    }
+                    await window.dbSafeUpdate({ 'jewelryData/config/customHeaderImage': null });
+                    customHeaderImage = null;
+                    _customHeaderDataUrl = null;
+                    try { await _idbDelete(ASSET_CACHE_STORE, 'customHeaderImage'); } catch (e) { console.warn('[CustomHeader] cache clear failed', e); }
+                    _renderCustomHeaderPreview();
+                } catch (e) {
+                    console.error('[CustomHeader] remove failed', e);
+                    showCustomAlert(window._writeAllowed ? 'Could not remove — try again.' : 'Writes are disabled — this copy is running in read-only mode.');
+                }
+            });
+        }
+
+        function _renderCustomHeaderPreview(){
+            const wrap = document.getElementById('custom-header-preview-wrap');
+            const img = document.getElementById('custom-header-preview-img');
+            const removeBtn = document.getElementById('custom-header-remove-btn');
+            if (!wrap) return;
+            if (customHeaderImage && customHeaderImage.url) {
+                wrap.style.display = 'block';
+                img.src = customHeaderImage.url;
+                removeBtn.style.display = 'inline-block';
+            } else {
+                wrap.style.display = 'none';
+                removeBtn.style.display = 'none';
+            }
+        }
+
+        // Makes sure _customHeaderDataUrl reflects whatever customHeaderImage
+        // currently points to, fetching from Firebase Storage only when the
+        // local IndexedDB cache is missing or stale (i.e. a different image
+        // was uploaded since this device last cached one). Called on boot
+        // and whenever customHeaderImage changes via the live listener —
+        // never called from inside invoice generation itself, which is the
+        // whole point: by the time an invoice is created, the data is
+        // already sitting in memory, no network fetch in that path at all.
+        async function _ensureCustomHeaderImageCached(){
+            if (!customHeaderImage || !customHeaderImage.url) { _customHeaderDataUrl = null; return; }
+            try {
+                const cached = await _idbGet(ASSET_CACHE_STORE, 'customHeaderImage');
+                if (cached && cached.storagePath === customHeaderImage.storagePath) {
+                    _customHeaderDataUrl = cached.dataUrl;
+                    return;
+                }
+            } catch (e) { console.warn('[CustomHeader] cache read failed', e); }
+
+            try {
+                const resp = await fetch(customHeaderImage.url);
+                const blob = await resp.blob();
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+                _customHeaderDataUrl = dataUrl;
+                await _idbSet(ASSET_CACHE_STORE, 'customHeaderImage', { storagePath: customHeaderImage.storagePath, dataUrl });
+            } catch (e) {
+                console.error('[CustomHeader] fetch/cache failed', e);
+                _customHeaderDataUrl = null;
+            }
         }
 
         // Applies the saved preference to the manual invoice screen's checkboxes
@@ -14714,7 +14861,7 @@
                 }
             }
 
-            const withBg = document.getElementById('inv-with-bg').checked;
+            const withBg = invGetWithBgPref();
             const showRatePref = document.getElementById('inv-show-rate').checked;
             const showMakingPref = document.getElementById('inv-show-making').checked;
             localStorage.setItem('invPrintColPref', JSON.stringify({ showRate: showRatePref, showMaking: showMakingPref }));
@@ -14810,16 +14957,27 @@
 
             const bgCss = withBg ? `background:white url('INVOICES_BEST.png') no-repeat top center/cover;` : 'background:white;';
             const contentTop = withBg ? '42mm' : '5mm';
-            const inlineHdr = withBg ? '' : `
-                <div style="height:42mm;box-sizing:border-box;padding:0 8mm;border-bottom:.5px solid #d4b44a;display:flex;align-items:center;">
+            const inlineHdr = withBg ? '' : (_customHeaderDataUrl ? `
+                <div style="box-sizing:border-box;">
+                  <img src="${_customHeaderDataUrl}" style="width:100%; display:block;">
+                </div>` : `
+                <div style="box-sizing:border-box;padding:5mm 8mm 0;border-bottom:.5px solid #d4b44a;">
                   <div style="display:flex;justify-content:space-between;align-items:center;width:100%;">
-                    <div><div style="font-size:32px;font-weight:800;letter-spacing:.16em;font-family:Georgia,serif;color:#000;">${invEscH(invoiceSettings.shopName)}</div></div>
+                    <div style="display:flex;align-items:center;gap:3mm;">
+                      <svg viewBox="1750 260 540 740" style="width:11mm;height:15mm;flex-shrink:0;">
+                        <defs><linearGradient id="sMarkGrad2" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stop-color="#945f50"/><stop offset="50%" stop-color="#fcc5b3"/><stop offset="100%" stop-color="#945f50"/>
+                        </linearGradient></defs>
+                        <path fill="url(#sMarkGrad2)" fill-rule="nonzero" stroke="none" d="M 1956.878906 318.660156 C 1851.660156 365.058594 1801.121094 411.453125 1787.867188 472.761719 C 1774.609375 534.070312 1806.09375 578.808594 1897.226562 664.96875 C 1918.765625 686.511719 1938.652344 705.566406 1954.390625 722.136719 C 1947.765625 725.449219 1940.308594 727.933594 1935.335938 731.25 C 1854.144531 773.503906 1779.582031 826.527344 1768.808594 884.519531 C 1761.355469 928.429688 1799.464844 976.480469 1881.484375 983.9375 C 1966.820312 992.222656 2048.839844 954.941406 2058.78125 888.660156 C 2067.066406 835.640625 2045.527344 792.558594 1981.730469 725.449219 C 2074.523438 685.683594 2238.5625 638.457031 2257.617188 634.316406 C 2279.988281 630.171875 2275.84375 620.230469 2254.304688 625.203125 C 2234.421875 629.34375 2061.265625 678.226562 1970.960938 714.679688 C 1953.5625 696.453125 1932.851562 676.570312 1908.824219 654.199219 C 1826.804688 577.980469 1798.636719 533.238281 1811.0625 476.074219 C 1824.320312 418.910156 1897.226562 368.371094 1966.820312 335.230469 C 2048.011719 297.121094 2134.175781 282.207031 2176.425781 289.664062 C 2214.535156 296.292969 2229.449219 317.832031 2222.820312 349.316406 C 2217.023438 375.828125 2193.824219 388.253906 2179.742188 393.226562 C 2169.796875 397.367188 2174.769531 408.136719 2184.710938 406.480469 C 2194.652344 405.652344 2230.277344 388.253906 2238.5625 353.460938 C 2246.847656 314.519531 2228.621094 282.207031 2179.742188 273.921875 C 2169.261719 272.175781 2157.285156 271.113281 2143.726562 271.113281 C 2099.378906 271.113281 2038.089844 282.496094 1956.878906 318.660156 M 1882.3125 964.882812 C 1814.378906 959.910156 1779.582031 922.628906 1786.207031 884.519531 C 1794.492188 839.78125 1844.203125 798.355469 1946.105469 742.847656 C 1951.90625 739.535156 1957.707031 736.21875 1965.160156 732.90625 C 2031.441406 804.984375 2046.355469 843.09375 2039.726562 884.519531 C 2031.921875 928.222656 1972.65625 965.3125 1896.554688 965.3125 C 1891.871094 965.171875 1887.117188 965.171875 1882.3125 964.882812"/>
+                      </svg>
+                      <div style="font-size:19px;font-weight:700;letter-spacing:.08em;font-family:Georgia,serif;color:#2b2b2b;line-height:1.25;">${invEscH(invoiceSettings.shopName)}</div>
+                    </div>
                     <div style="text-align:right;">
-                      <div style="font-size:16px;font-weight:700;letter-spacing:.03em;color:#000;">&#9742; ${invEscH(invoiceSettings.phone)}</div>
-                      <div style="font-size:11px;letter-spacing:.02em;color:#000;margin-top:4px;">${invEscH(invoiceSettings.addr)}</div>
+                      <div style="font-size:14px;font-weight:700;letter-spacing:.03em;color:#333;">&#9742; ${invEscH(invoiceSettings.phone)}</div>
                     </div>
                   </div>
-                </div>`;
+                </div>
+                <div style="background:linear-gradient(to right,#fef6eb,#f9e7cc,#fef7ed);padding:2mm 8mm;font-size:11px;letter-spacing:.02em;color:#5a4a3a;">${invEscH(invoiceSettings.addr)}</div>`);
 
             invPrintHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8">
             <style>
@@ -15674,6 +15832,130 @@
             window._invBulkTotal = ids.length;
             invToast(`🖨 Printing 1 of ${ids.length}…`);
             invPrintFromHistory(ids[0]);
+        }
+
+        // ─── BULK PDF EXPORT (ZIP) ───
+        // Renders each selected invoice using the app's own real invoice
+        // HTML (invGenerate builds invPrintHtml — the exact same markup
+        // used for actual printing, not a separate reimplementation),
+        // captures it via html2canvas (genuine browser rendering of that
+        // HTML, not an approximation), and bundles everything into one
+        // ZIP with each PDF named by its own bill number. Deliberately
+        // does NOT touch invPrint()/_invDoActualPrint() — those are what
+        // trigger the real print dialog/job AND the save-to-history side
+        // effect (which only fires on a genuine afterprint event) — this
+        // path only ever calls invGenerate(true, true), which builds the
+        // HTML and stops there, so re-exporting existing historical
+        // invoices can never create a duplicate or altered record.
+        async function invStartBulkPdfExport() {
+            const ids = Array.from(document.querySelectorAll('.inv-bulk-chk:checked')).map(el => el.value);
+            if (!ids.length) { invToast('Select at least one invoice first'); return; }
+
+            if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined' || typeof JSZip === 'undefined') {
+                showCustomAlert('PDF export is still loading its libraries — wait a moment and try again.');
+                return;
+            }
+
+            const btn = document.getElementById('inv-bulk-pdf-btn');
+            const printBtn = document.getElementById('inv-bulk-print-btn');
+            const progressWrap = document.getElementById('inv-bulk-pdf-progress');
+            const progressBar = document.getElementById('inv-bulk-pdf-progress-bar');
+            const progressText = document.getElementById('inv-bulk-pdf-progress-text');
+            btn.disabled = true; btn.style.opacity = '0.6';
+            printBtn.disabled = true; printBtn.style.opacity = '0.6';
+            progressWrap.style.display = 'block';
+
+            const zip = new JSZip();
+            const usedNames = {}; // guards against two invoices ending up with the same filename
+
+            for (let i = 0; i < ids.length; i++) {
+                const id = ids[i];
+                progressText.textContent = `Rendering ${i + 1} of ${ids.length}…`;
+                progressBar.style.width = Math.round((i / ids.length) * 100) + '%';
+
+                try {
+                    invReloadBill(id, false);
+                    invGenerate(true, true);
+                    const pdfBlob = await _invRenderHtmlToPdfBlob(invPrintHtml);
+
+                    const inv = invoiceHistory.find(x => x.id === id);
+                    let name = String((inv && inv.billNo) ? inv.billNo : id).replace(/[\\/:*?"<>|]/g, '-');
+                    if (usedNames[name]) { usedNames[name]++; name = name + '_' + usedNames[name]; }
+                    else { usedNames[name] = 1; }
+                    zip.file(name + '.pdf', pdfBlob);
+                } catch (e) {
+                    console.error('[BulkPdfExport] failed for', id, e);
+                }
+            }
+
+            progressText.textContent = 'Building ZIP…';
+            progressBar.style.width = '100%';
+
+            try {
+                const content = await zip.generateAsync({ type: 'blob' });
+                const url = URL.createObjectURL(content);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Invoices_${new Date().toISOString().slice(0, 10)}.zip`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+                progressText.textContent = `✓ Done — ${ids.length} invoice(s) exported.`;
+            } catch (e) {
+                console.error('[BulkPdfExport] zip build failed', e);
+                showCustomAlert('Could not build the ZIP file — try again.');
+                progressText.textContent = 'Failed — see console.';
+            }
+
+            btn.disabled = false; btn.style.opacity = '1';
+            printBtn.disabled = false; printBtn.style.opacity = '1';
+            setTimeout(() => { progressWrap.style.display = 'none'; }, 4000);
+        }
+
+        // Renders a complete invoice HTML document off-screen and returns
+        // a single-page A5 PDF Blob — same page size the app actually
+        // prints at (see the @page rule inside invPrintHtml itself).
+        // html2canvas does the actual rendering (genuine browser layout
+        // engine on the real invoice markup), jsPDF just wraps that
+        // rendered image into a PDF page.
+        function _invRenderHtmlToPdfBlob(htmlString) {
+            return new Promise((resolve, reject) => {
+                const iframe = document.createElement('iframe');
+                // A5 at 96dpi ≈ 559×794px — sized to match so html2canvas
+                // captures at roughly the real print proportions.
+                iframe.style.cssText = 'position:fixed; left:-9999px; top:0; width:559px; height:794px; border:none;';
+                document.body.appendChild(iframe);
+
+                iframe.onload = async () => {
+                    try {
+                        // srcdoc's load event fires on DOM-ready, not necessarily
+                        // after every image/font inside has finished painting —
+                        // a short settle delay avoids capturing mid-load.
+                        await new Promise(r => setTimeout(r, 200));
+                        const doc = iframe.contentDocument;
+                        const target = doc.querySelector('.page') || doc.body;
+                        const canvas = await html2canvas(target, {
+                            scale: 2, // captures at 2x resolution for sharper text than a flat 1:1 snapshot
+                            useCORS: true,
+                            backgroundColor: '#ffffff'
+                        });
+                        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                        const { jsPDF } = window.jspdf;
+                        const pdf = new jsPDF({ unit: 'mm', format: 'a5' });
+                        const pageW = pdf.internal.pageSize.getWidth();
+                        const pageH = pdf.internal.pageSize.getHeight();
+                        pdf.addImage(imgData, 'JPEG', 0, 0, pageW, pageH);
+                        document.body.removeChild(iframe);
+                        resolve(pdf.output('blob'));
+                    } catch (e) {
+                        document.body.removeChild(iframe);
+                        reject(e);
+                    }
+                };
+                iframe.onerror = () => { document.body.removeChild(iframe); reject(new Error('iframe load failed')); };
+                iframe.srcdoc = htmlString;
+            });
         }
 
         // ─── LIST BARCODE ───
@@ -17288,7 +17570,14 @@
                 <button onclick="invBulkSelectAll(false)" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:var(--surface); color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Clear</button>
             </div>
             <div id="inv-bulk-print-list" style="flex:1; overflow-y:auto; max-height:45vh; border:1px solid #eee; border-radius:10px; padding:4px 8px; margin-bottom:14px;"></div>
-            <button id="inv-bulk-print-btn" onclick="invStartBulkPrint()" style="width:100%; background:var(--green); color:white; border:none; border-radius:var(--radius-sm); padding:12px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">🖨 Print Selected</button>
+            <button id="inv-bulk-print-btn" onclick="invStartBulkPrint()" style="width:100%; background:var(--green); color:white; border:none; border-radius:var(--radius-sm); padding:12px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none; margin:0 0 8px 0;">🖨 Print Selected</button>
+            <button id="inv-bulk-pdf-btn" onclick="invStartBulkPdfExport()" style="width:100%; background:#1D6BB5; color:white; border:none; border-radius:var(--radius-sm); padding:12px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">📄 Export PDFs (ZIP)</button>
+            <div id="inv-bulk-pdf-progress" style="display:none; margin-top:10px;">
+                <div style="background:#eee; border-radius:8px; height:8px; overflow:hidden;">
+                    <div id="inv-bulk-pdf-progress-bar" style="background:#1D6BB5; height:100%; width:0%; transition:width 0.2s;"></div>
+                </div>
+                <div id="inv-bulk-pdf-progress-text" style="font-size:11.5px; color:var(--text2); text-align:center; margin-top:4px;"></div>
+            </div>
         </div>
     </div>
 
@@ -17347,6 +17636,19 @@
                     <span style="font-size:14px; font-weight:700; color:var(--text);">Embed letterhead background</span>
                 </label>
                 <p class="note" style="margin:0; padding:0 2px;">Checked = leave the top blank for pre-printed letterhead paper. Unchecked = print the shop's name/address as the header. Applies everywhere, on every device.</p>
+
+                <div style="background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px;">
+                    <div style="font-size:14px; font-weight:700; color:var(--text); margin-bottom:6px;">Custom header image (unchecked state)</div>
+                    <p class="note" style="margin:0 0 10px;">Upload your own header design (PNG, JPEG, or SVG) to use instead of the built-in one when the background above is unchecked. PNG/SVG with a transparent background works best.</p>
+                    <div id="custom-header-preview-wrap" style="display:none; margin-bottom:10px;">
+                        <img id="custom-header-preview-img" style="width:100%; max-height:120px; object-fit:contain; border:1px solid var(--border); border-radius:8px; background:white; display:block;">
+                    </div>
+                    <input type="file" id="custom-header-file-input" accept="image/png,image/jpeg,image/svg+xml" style="display:none;" onchange="uploadCustomHeaderImage(this.files[0])">
+                    <div style="display:flex; gap:8px;">
+                        <button onclick="document.getElementById('custom-header-file-input').click()" style="flex:1; background:var(--gold); color:white; border:none; border-radius:9px; padding:10px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">📤 Upload Image</button>
+                        <button id="custom-header-remove-btn" onclick="removeCustomHeaderImage()" style="display:none; background:none; border:1.5px solid #C62828; color:#C62828; border-radius:9px; padding:10px 14px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">Remove</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
