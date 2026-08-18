@@ -17634,24 +17634,22 @@
                 <div style="width:60px;"></div>
             </div>
 
-            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; margin:0;">
-                <input type="checkbox" id="inv-with-bg" onchange="invSaveWithBgPref()" style="width:17px; height:17px; accent-color:var(--gold); margin:0;">
-                <span style="font-size:14px; font-weight:700; color:var(--text);">Embed letterhead background</span>
+            <label style="display:flex; align-items:center; justify-content:space-between; cursor:pointer; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; margin:0; font-size:14px; font-weight:700; color:var(--text);">
+                <span>Embed letterhead background</span>
+                <input type="checkbox" id="inv-with-bg" onchange="invSaveWithBgPref()" style="width:17px; height:17px; accent-color:var(--gold); margin:0; flex-shrink:0;">
             </label>
-            <p class="note" style="margin:0; padding:0 2px;">Checked = leave the top blank for pre-printed letterhead paper. Unchecked = print the shop's name/address as the header. Applies everywhere, on every device.</p>
 
-            <div style="background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px;">
-                <div style="font-size:14px; font-weight:700; color:var(--text); margin-bottom:6px;">Custom full-page background (unchecked state)</div>
-                <p class="note" style="margin:0 0 10px;">A genuine full A5-page design (148mm × 210mm) — header, watermark, everything baked into one image, same as how the letterhead background above works when checked. PNG, JPEG, or SVG, up to 8MB. When not set, the built-in design is used instead.</p>
-                <div id="custom-fullbg-preview-wrap" style="display:none; margin-bottom:10px;">
-                    <img id="custom-fullbg-preview-img" style="width:100%; max-height:160px; object-fit:contain; border:1px solid var(--border); border-radius:8px; background:white; display:block;">
-                </div>
-                <input type="file" id="custom-fullbg-file-input" accept="image/png,image/jpeg,image/svg+xml" style="display:none;" onchange="uploadCustomFullPageBackground(this.files[0])">
-                <div style="display:flex; gap:8px;">
-                    <button onclick="document.getElementById('custom-fullbg-file-input').click()" style="flex:1; background:var(--gold); color:white; border:none; border-radius:9px; padding:10px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">📤 Upload Background</button>
-                    <button id="custom-fullbg-remove-btn" onclick="removeCustomFullPageBackground()" style="display:none; background:none; border:1.5px solid #C62828; color:#C62828; border-radius:9px; padding:10px 14px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">Remove</button>
+            <div style="display:flex; align-items:center; justify-content:space-between; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; gap:10px;">
+                <span style="font-size:14px; font-weight:700; color:var(--text);">Custom full-page background</span>
+                <div style="display:flex; gap:8px; flex-shrink:0;">
+                    <button onclick="document.getElementById('custom-fullbg-file-input').click()" style="background:var(--gold); color:white; border:none; border-radius:9px; padding:8px 12px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">📤 Upload</button>
+                    <button id="custom-fullbg-remove-btn" onclick="removeCustomFullPageBackground()" style="display:none; background:none; border:1.5px solid #C62828; color:#C62828; border-radius:9px; padding:8px 12px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">Remove</button>
                 </div>
             </div>
+            <div id="custom-fullbg-preview-wrap" style="display:none;">
+                <img id="custom-fullbg-preview-img" style="width:100%; max-height:160px; object-fit:contain; border:1.5px solid var(--border); border-radius:11px; background:white; display:block;">
+            </div>
+            <input type="file" id="custom-fullbg-file-input" accept="image/png,image/jpeg,image/svg+xml" style="display:none;" onchange="uploadCustomFullPageBackground(this.files[0])">
 
             <button onclick="invOpenTandCModal()" style="width:100%; text-align:left; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; font-size:14px; font-weight:700; color:var(--text); cursor:pointer; box-shadow:none; margin:0; display:flex; align-items:center; justify-content:space-between;">
                 <span>📋 Terms &amp; Conditions</span><span style="color:#bbb;">›</span>
