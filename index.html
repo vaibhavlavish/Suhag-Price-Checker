@@ -3845,6 +3845,12 @@
         let rates = JSON.parse(JSON.stringify(defaultRates));
         let taxRate = 3; // factory default — overwritten by Firebase on load
         let printWithLetterhead = false; // universal setting (moved from device-local localStorage) — factory default, overwritten by Firebase on load
+        // Checkout track (A/B) and checkout print format — universal settings,
+        // synced via Firebase like printWithLetterhead above. Toggled by the
+        // hidden 5-tap gestures (invHandleSettingsHeadingTap / invHandleNetPayableTap);
+        // localStorage is kept only as an offline-fallback cache, not the source of truth.
+        let invCheckoutTrackSynced = localStorage.getItem('invCheckoutTrack') || 'B';
+        let invCheckoutFormatSynced = localStorage.getItem('invCheckoutFormat') || 'invoice2';
         let customFullPageBackground = null; // { storagePath, url } — a genuine full-A5-page background (e.g. with a centered watermark). Universal, Firebase-synced. (Replaced the older customHeaderImage/header-banner feature entirely — removed as redundant once this existed.)
         let printPhoneNumber = null; // editable via Print Settings — overlaid on the built-in fallback background image (which has a phone number baked into its pixels) so it can be updated without needing a new image export. Falls back to invoiceSettings.phone at the point of use until explicitly set. Universal, Firebase-synced.
         let _customFullPageBgDataUrl = null; // same local-cache pattern as before, IndexedDB-cached copy of the bytes.
@@ -4229,6 +4235,22 @@
                 localStorage.setItem('invBillStartNumber', String(invoiceSettings.invStartNumber));
             } else {
                 invoiceSettings.invStartNumber = parseInt(localStorage.getItem('invBillStartNumber'), 10) || invoiceSettings.invStartNumber || 1;
+            }
+            // Checkout track + checkout print format — universal, cloud-synced
+            // (5-tap toggles write here; other open devices pick this up live
+            // via this same onValue snapshot). localStorage stays in sync as
+            // an offline-fallback cache only.
+            if (cloudData.checkoutTrack === 'A' || cloudData.checkoutTrack === 'B') {
+                invCheckoutTrackSynced = cloudData.checkoutTrack;
+                localStorage.setItem('invCheckoutTrack', invCheckoutTrackSynced);
+            } else {
+                invCheckoutTrackSynced = localStorage.getItem('invCheckoutTrack') || 'B';
+            }
+            if (cloudData.checkoutFormat === 'invoice1' || cloudData.checkoutFormat === 'invoice2') {
+                invCheckoutFormatSynced = cloudData.checkoutFormat;
+                localStorage.setItem('invCheckoutFormat', invCheckoutFormatSynced);
+            } else {
+                invCheckoutFormatSynced = localStorage.getItem('invCheckoutFormat') || 'invoice2';
             }
             // packagingWeights (P.WEIGHT/B WEIGHT/EXTRA BAG + hide flags from Stock
             // Weight Calc) is edited locally with a debounce before it's written to
@@ -11435,22 +11457,24 @@
         // to the main active format until the user picks one explicitly.
         // ══════════════════════════════════════════════════════════
         function invGetCheckoutFormat() {
-            return localStorage.getItem('invCheckoutFormat') || 'invoice2';
+            return invCheckoutFormatSynced || 'invoice2';
         }
 
         // ══════════════════════════════════════════════════════════
         // CHECKOUT INVOICE TRACK — which track (A or B) checkout-generated invoices
         // are filed under. Defaults to Track B (the original behaviour). Switched via
         // a hidden 5-tap gesture on the "Shopping Cart" heading in the checkout modal —
-        // see invHandleSettingsHeadingTap().
+        // see invHandleSettingsHeadingTap(). Universal/cloud-synced (see applyDataSnapshot)
+        // so the same track/format follow across every device, not just this one.
         // ══════════════════════════════════════════════════════════
         function invGetCheckoutTrack() {
-            const t = localStorage.getItem('invCheckoutTrack');
-            return (t === 'A' || t === 'B') ? t : 'B';
+            return (invCheckoutTrackSynced === 'A' || invCheckoutTrackSynced === 'B') ? invCheckoutTrackSynced : 'B';
         }
 
         function invSetCheckoutTrack(track) {
-            localStorage.setItem('invCheckoutTrack', track);
+            invCheckoutTrackSynced = track;
+            localStorage.setItem('invCheckoutTrack', track); // offline-fallback cache
+            window.dbSafeUpdate({ 'jewelryData/config/checkoutTrack': track });
         }
 
         let _invSettingsTapCount = 0, _invSettingsTapTimer = null;
@@ -11468,7 +11492,9 @@
         }
 
         function invSetCheckoutFormat(fmt) {
-            localStorage.setItem('invCheckoutFormat', fmt);
+            invCheckoutFormatSynced = fmt;
+            localStorage.setItem('invCheckoutFormat', fmt); // offline-fallback cache
+            window.dbSafeUpdate({ 'jewelryData/config/checkoutFormat': fmt });
             invUpdateCheckoutFormatLabel();
         }
 
