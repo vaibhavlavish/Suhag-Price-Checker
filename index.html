@@ -2535,6 +2535,12 @@
         /* Simplify mode for Stock Weight Calc — purely visual column hide,
            never touches any stored value or data. */
         #stock-calc-table.stockcalc-simplified .stockcalc-detail-col { display: none; }
+
+        /* Tap-to-copy barcode tag in List Barcode — light grey highlight on
+           hover (desktop) and on tap (:active covers touch, since :hover
+           doesn't fire on mobile) as the discoverability cue. */
+        .inv-bcl-copytag { border-radius: 4px; transition: background-color 0.1s ease; }
+        .inv-bcl-copytag:hover, .inv-bcl-copytag:active { background-color: #e0e0e0; }
     </style>
 
     <div id="excel-upload">
@@ -16037,6 +16043,22 @@
             document.getElementById('inv-barcode-list-modal').style.display = 'none';
         }
 
+        // Tap-to-copy for barcodes in the List Barcode view — copies just the
+        // tag number (nothing else). Reuses the same clipboard pattern as the
+        // existing "copy link" flow: navigator.clipboard with a prompt()
+        // fallback for browsers/webviews without Clipboard API access.
+        function invCopyBarcodeTag(bc) {
+            const text = String(bc || '');
+            if (!text) return;
+            const done = () => invToast('📋 Copied: ' + text);
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(done).catch(() => prompt('Copy this tag:', text));
+            } else {
+                prompt('Copy this tag:', text);
+            }
+        }
+        window.invCopyBarcodeTag = invCopyBarcodeTag;
+
         function invRenderBarcodeList() {
             const listEl = document.getElementById('inv-bcl-list');
             const summaryEl = document.getElementById('inv-bcl-summary');
@@ -16103,7 +16125,7 @@
                             <div style="font-size:12.5px; font-weight:700; color:var(--text); margin-bottom:4px;">Vou No. ${invEscH(g.vouchNo)}</div>
                             ${g.barcodes.map(b => `
                                 <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:12px; padding:3px 0 3px 6px; border-bottom:1px solid #f2f2f2; gap:8px;">
-                                    <span style="font-weight:700; white-space:nowrap;">${invEscH(b.barcode)}</span>
+                                    <span class="inv-bcl-copytag" onclick="invCopyBarcodeTag('${invEscAttr(b.barcode)}')" title="Tap to copy" style="font-weight:700; white-space:nowrap; cursor:pointer; padding:6px 2px; margin:-6px -2px; display:inline-block;">${invEscH(b.barcode)}</span>
                                     <span style="color:#666; flex:1; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${invEscH(b.itemName || '')}</span>
                                     <span style="color:#999; white-space:nowrap;">${invEscH(b.billNo || '')}</span>
                                 </div>
