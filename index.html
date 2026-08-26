@@ -13874,6 +13874,24 @@
             return '';
         }
 
+        // Normalizes a barcode/tag for comparison — trimmed + uppercased — so the
+        // same tag stored with different casing or stray whitespace across
+        // invoices still matches. Shared by the barcode-entry duplicate check
+        // below and by invCopyToTrackA()'s own duplicate check.
+        function _normTag(s) { return String(s || '').trim().toUpperCase(); }
+
+        // Looks for a tag/barcode anywhere in invoiceHistory (both tracks),
+        // excluding a given invoice id (so editing an invoice doesn't flag its
+        // own existing row as a duplicate of itself). Returns the first
+        // matching invoice found, or null.
+        function invFindTagInHistory(tag, excludeId) {
+            const t = _normTag(tag);
+            if (!t) return null;
+            return (invoiceHistory || []).find(inv =>
+                inv.id !== excludeId && (inv.items || []).some(it => _normTag(it.barcode) === t)
+            ) || null;
+        }
+
         function invDescChange(i, val) {
             const raw = (val || '').trim();
             const key = raw ? Object.keys(productData).find(k => k.toUpperCase() === raw.toUpperCase()) : null;
@@ -13899,7 +13917,18 @@
                 invRows[i].rate = parseFloat(rv.toFixed(2));
                 invRows[i].makingType = mk.makingType;
                 invRows[i].makingPct = parseFloat((mk.makingPct || 0).toFixed(2));
-                invToast('Loaded: ' + (d.itemName || key));
+
+                // Warn if this exact tag already appears in a saved invoice
+                // (either track) — that piece may already be sold/invoiced,
+                // and entering it again here would create a duplicate record
+                // for the same physical item. Track A only — Track B is a
+                // separate workflow that doesn't need this check.
+                const dupInv = (currentInvTrack === 'A') ? invFindTagInHistory(key, invEditingId) : null;
+                if (dupInv) {
+                    invToast('⚠️ Repeated tag entered: ' + key + ' — already in ' + dupInv.billNo + ' (Track ' + dupInv.track + ')', 4500);
+                } else {
+                    invToast('Loaded: ' + (d.itemName || key));
+                }
             } else {
                 invRows[i].desc = raw;
                 invRows[i].barcode = null;
@@ -16137,7 +16166,6 @@
             // physical item. Normalized (trimmed + uppercased) before
             // comparing — a strict match would miss the same tag stored
             // with different casing or stray whitespace between invoices.
-            const _normTag = (s) => String(s || '').trim().toUpperCase();
             const trackAInvoices = invoiceHistory.filter(i => i.track === 'A');
             const duplicateTags = [];
             (inv.items || []).forEach(item => {
@@ -16148,7 +16176,7 @@
                 if (match) duplicateTags.push(`${item.barcode} (already in ${match.billNo})`);
             });
             if (duplicateTags.length) {
-                const msg = `⚠️ The following tag(s) are already present in Track A:\n\n${duplicateTags.join('\n')}\n\nContinue anyway?`;
+                const msg = `⚠️ Repeated tag entered — already present in Track A:\n\n${duplicateTags.join('\n')}\n\nContinue anyway?`;
                 if (!confirm(msg)) return;
             }
 
