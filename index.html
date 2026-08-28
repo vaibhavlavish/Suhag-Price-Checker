@@ -2168,7 +2168,7 @@
 
     <div id="cart-modal" class="modal">
         <div id="cart-content">
-            <h3 onclick="invHandleSettingsHeadingTap()" style="cursor:pointer; user-select:none;">Shopping Cart</h3>
+            <h3 onclick="invHandleSettingsHeadingTap()" class="inv-tap-trigger" style="cursor:pointer;">Shopping Cart</h3>
             <div id="cart-scroll-body">
             <div id="cart-items-container">
                 </div>
@@ -2541,6 +2541,17 @@
            doesn't fire on mobile) as the discoverability cue. */
         .inv-bcl-copytag { border-radius: 4px; transition: background-color 0.1s ease; }
         .inv-bcl-copytag:hover, .inv-bcl-copytag:active { background-color: #e0e0e0; }
+
+        /* Hidden 5-tap gesture triggers (Shopping Cart heading, Net Payable
+           label) — user-select:none alone isn't enough on mobile: rapid taps
+           can still trigger native text selection or (on iOS) a press-and-hold
+           copy/select callout, both of which eat taps and break the counter.
+           touch-action:manipulation also skips the double-tap-to-zoom delay. */
+        .inv-tap-trigger {
+            user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;
+            -webkit-touch-callout: none;
+            touch-action: manipulation;
+        }
     </style>
 
     <div id="excel-upload">
@@ -9860,7 +9871,7 @@
             }
             summaryHtml += `
                 <div style="display:flex; justify-content:space-between; font-size:1.2em; font-weight:bold; border-top:1px dashed #ccc; padding-top:5px; margin-top:5px;">
-                    <span onclick="invHandleNetPayableTap()" style="cursor:pointer; user-select:none;">Net Payable:</span><span style="color:${cartAdjustment !== 0 ? '#6a1b9a' : (netPayable < 0 ? '#e53935' : '#222')};">₹${netPayable.toFixed(2)}</span>
+                    <span onclick="invHandleNetPayableTap()" class="inv-tap-trigger" style="cursor:pointer;">Net Payable:</span><span style="color:${cartAdjustment !== 0 ? '#6a1b9a' : (netPayable < 0 ? '#e53935' : '#222')};">₹${netPayable.toFixed(2)}</span>
                 </div>
             `;
 
