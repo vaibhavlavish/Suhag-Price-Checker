@@ -4347,6 +4347,16 @@
             // separately with a reason, since it's not a real sale.
             if (cloudData.issuedBarcodes !== undefined) {
                 window._issuedBarcodes = cloudData.issuedBarcodes || {};
+                // The on-screen Issued Items list (_issueSessionLog) used to be
+                // populated ONLY as items were issued in the current browser
+                // session — so it started empty on every refresh/new device
+                // even though the underlying issued data above was already
+                // correctly loaded. Rebuild the visible list from the actual
+                // persisted data every time it loads/updates, so it always
+                // reflects everything that's really issued, not just this tab's
+                // history since the last reload.
+                _rebuildIssueLogFromPersisted();
+                if (typeof _renderIssueLog === 'function' && document.getElementById('issue-log-wrap')) _renderIssueLog();
             }
 
             activeProfileId = localStorage.getItem('activeProfileId') || 'default';
@@ -13057,6 +13067,25 @@
             document.getElementById('issue-error').style.display = 'none';
         }
 
+        // Rebuilds _issueSessionLog (the list the Issued Items UI renders)
+        // from the persisted window._issuedBarcodes object — the actual
+        // source of truth — instead of relying on an in-memory log that only
+        // grew as items were issued in the current tab. Safe to call anytime
+        // (page load, right after issuing, right after clearing).
+        function _rebuildIssueLogFromPersisted() {
+            const issued = window._issuedBarcodes || {};
+            _issueSessionLog = Object.keys(issued).map(barcode => {
+                const rec = issued[barcode] || {};
+                const d = productData[barcode];
+                return {
+                    barcode,
+                    name: (d && d.itemName) || barcode,
+                    reason: rec.reason || '—',
+                    ts: rec.ts || 0
+                };
+            }).sort((a, b) => b.ts - a.ts);
+        }
+
         function issueLookup() {
             const inp = document.getElementById('issue-barcode');
             const barcode = (inp.value || '').trim().toUpperCase();
@@ -13120,7 +13149,7 @@
             window.dbSafeUpdate(update).catch(e => console.error('[Issue] save failed', e));
             invSyncCatalogueAvailability();
 
-            _issueSessionLog.unshift({ barcode, name: d.itemName || barcode, reason, ts: Date.now() });
+            _rebuildIssueLogFromPersisted();
             _renderIssueLog();
 
             _issuePendingBarcode = null;
