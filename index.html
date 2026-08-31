@@ -1299,6 +1299,7 @@
         }
         .ledger-action-btn {
             flex: 1;
+            margin: 0;
             padding: 11px 6px;
             border: none;
             border-radius: 12px;
@@ -1325,6 +1326,7 @@
         }
         .ledger-tab {
             flex: 1;
+            margin: 0;
             padding: 9px 4px;
             border: none !important;
             background: #eee !important;
@@ -13968,6 +13970,113 @@
             }
         }
 
+        // ＋ Add Payment on the Ledger screen — asks which kind of payment
+        // this is first, then routes into the existing Installment picker
+        // or the new Savings Scheme picker below.
+        function openLedgerAddPaymentChoice(){
+            document.getElementById('ledger-payment-type-modal').style.display = 'flex';
+        }
+
+        function _ledgerAddPaymentTypeChosen(type){
+            document.getElementById('ledger-payment-type-modal').style.display = 'none';
+            if (type === 'installment') openLedgerInstallmentPicker();
+            else if (type === 'savings') openLedgerSavingsPicker();
+        }
+
+        // Mirrors openLedgerInstallmentPicker()/renderLedgerInstallmentPickerList()
+        // above, but lists active Savings Scheme plans instead.
+        function openLedgerSavingsPicker(){
+            document.getElementById('ledger-savings-picker-search').value = '';
+            renderLedgerSavingsPickerList();
+            document.getElementById('ledger-savings-picker-modal').style.display = 'flex';
+        }
+
+        function renderLedgerSavingsPickerList(){
+            const q = (document.getElementById('ledger-savings-picker-search').value || '').trim().toLowerCase();
+            const listEl = document.getElementById('ledger-savings-picker-list');
+            const active = savingsPlans
+                .filter(p => p.status === 'active')
+                .filter(p => !q || (p.customerName || '').toLowerCase().includes(q) || (p.customerMobile || '').includes(q));
+
+            if (!active.length) {
+                listEl.innerHTML = '<p class="note" style="text-align:center; padding:16px 0;">No active Savings Scheme plans found.</p>';
+                return;
+            }
+
+            listEl.innerHTML = active.map(p => `
+                <div onclick="selectLedgerSavingsPlan('${p.id}')" style="background:var(--bg); border-radius:10px; padding:11px 13px; margin-bottom:8px; cursor:pointer; user-select:none; -webkit-user-select:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700; font-size:14px;">${p.customerName}</span>
+                        <span style="font-weight:800; font-size:13px; color:#E65100;">₹${(p.monthlyAmount||0).toFixed(2)}/mo</span>
+                    </div>
+                    <div style="font-size:12px; color:var(--text2); margin-top:2px;">${p.customerMobile || 'No mobile'}</div>
+                </div>
+            `).join('');
+        }
+
+        let _ledgerSavPaymentPlanId = null;
+
+        function selectLedgerSavingsPlan(planId){
+            document.getElementById('ledger-savings-picker-modal').style.display = 'none';
+            const plan = savingsPlans.find(p => p.id === planId);
+            if (!plan) return;
+            _ledgerSavPaymentPlanId = planId;
+
+            document.getElementById('ledger-sav-pay-title').textContent = plan.customerName;
+            document.getElementById('ledger-sav-pay-mobile').textContent = plan.customerMobile || '';
+
+            const monthsPaid = _savingsMonthsPaid(plan);
+            document.getElementById('ledger-sav-pay-info').innerHTML = `
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Monthly Amount</span><strong>₹${(plan.monthlyAmount||0).toFixed(2)}</strong></div>
+                <div style="display:flex; justify-content:space-between;"><span>Months Paid</span><strong>${monthsPaid} / ${plan.totalMonths}</strong></div>
+            `;
+
+            document.getElementById('ledger-sav-pay-amount').value = (plan.monthlyAmount||0).toFixed(2);
+            document.getElementById('ledger-sav-pay-date').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('ledger-sav-pay-note').value = '';
+            document.getElementById('ledger-sav-pay-status').textContent = '';
+            document.getElementById('ledger-savings-payment-modal').style.display = 'flex';
+        }
+
+        // Mirrors logSavingsPayment()'s exact math and its deliberate
+        // no-ledger-write rule — cash collected against a Savings Scheme
+        // plan stays a standalone record, same as when logged from the
+        // Savings Scheme screen itself. Kept as its own function since this
+        // dialog uses its own dedicated element ids.
+        async function saveLedgerSavingsPayment(){
+            const plan = savingsPlans.find(p => p.id === _ledgerSavPaymentPlanId);
+            if (!plan || plan.status !== 'active') return;
+            const statusEl = document.getElementById('ledger-sav-pay-status');
+
+            const amount = parseFloat(document.getElementById('ledger-sav-pay-amount').value);
+            const date = document.getElementById('ledger-sav-pay-date').value;
+            const note = document.getElementById('ledger-sav-pay-note').value.trim();
+            if (isNaN(amount) || amount <= 0) { statusEl.textContent = 'Enter a valid amount.'; return; }
+            if (!date) { statusEl.textContent = 'Pick a date.'; return; }
+
+            const payments = [...(plan.payments || []), { amount, date, note: note || null }];
+            const status = payments.length >= plan.totalMonths ? 'completed' : 'active';
+
+            statusEl.textContent = 'Saving…';
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'savingsPlans/' + plan.id), { payments, status });
+                plan.payments = payments;
+                plan.status = status;
+                document.getElementById('ledger-savings-payment-modal').style.display = 'none';
+                renderSavingsList();
+                showCustomAlert('Payment logged.');
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not save — try again.';
+            }
+        }
+
+        window.openLedgerAddPaymentChoice = openLedgerAddPaymentChoice;
+        window._ledgerAddPaymentTypeChosen = _ledgerAddPaymentTypeChosen;
+        window.openLedgerSavingsPicker = openLedgerSavingsPicker;
+        window.renderLedgerSavingsPickerList = renderLedgerSavingsPickerList;
+        window.selectLedgerSavingsPlan = selectLedgerSavingsPlan;
+        window.saveLedgerSavingsPayment = saveLedgerSavingsPayment;
         window.openLedgerInstallmentPicker = openLedgerInstallmentPicker;
         window.renderLedgerInstallmentPickerList = renderLedgerInstallmentPickerList;
         window.selectLedgerInstallmentPlan = selectLedgerInstallmentPlan;
@@ -17359,8 +17468,8 @@
             </button>
         </div>
 
-        <div style="padding:0 14px 12px;">
-            <button onclick="openLedgerInstallmentPicker()" style="width:100%; background:var(--gold); color:#fff; border:none; border-radius:12px; padding:13px; font-size:14px; font-weight:800; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.10); margin:0;">＋ Add Installment Payment</button>
+        <div style="padding:0 14px 4px;">
+            <button onclick="openLedgerAddPaymentChoice()" style="width:100%; background:var(--gold); color:#fff; border:none; border-radius:12px; padding:13px; font-size:14px; font-weight:800; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.10); margin:0;">＋ Add Payment</button>
         </div>
 
         <!-- Tabs -->
@@ -17427,6 +17536,58 @@
                 style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">
                 ✓ Save Entry
             </button>
+        </div>
+    </div>
+
+    <!-- ＋ Add Payment on the Ledger screen first asks which kind of
+         payment this is, then routes to the existing Installment picker
+         or the new Savings Scheme picker below. -->
+    <div id="ledger-payment-type-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:530; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:360px; width:100%; padding:18px;">
+            <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:14px; text-align:center;">Add Payment For</div>
+            <button onclick="_ledgerAddPaymentTypeChosen('installment')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:13px; border-radius:12px; font-size:14px; margin-bottom:10px;">📅 Installment Plan</button>
+            <button onclick="_ledgerAddPaymentTypeChosen('savings')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:13px; border-radius:12px; font-size:14px;">💰 Saving Scheme</button>
+            <button onclick="document.getElementById('ledger-payment-type-modal').style.display='none';" style="width:100%; background:none; border:none; color:var(--text2); font-size:12.5px; margin-top:10px; padding:6px; cursor:pointer; box-shadow:none;">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Picks an active Savings Scheme plan to log a payment against, from
+         the Ledger screen — mirrors the Installment picker/payment pair
+         below, but writes into savingsPlans and never touches the ledger,
+         same as logSavingsPayment() from the Savings Scheme screen itself. -->
+    <div id="ledger-savings-picker-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:540; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);">Select Savings Plan</span>
+                <button onclick="document.getElementById('ledger-savings-picker-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <input type="text" id="ledger-savings-picker-search" placeholder="🔍 Search by customer name or mobile…" style="margin-bottom:10px;" oninput="renderLedgerSavingsPickerList()">
+            <div id="ledger-savings-picker-list"></div>
+        </div>
+    </div>
+
+    <!-- Focused payment-entry dialog for a Savings Scheme plan — same
+         amount/date/note fields as the Log a Payment form inside the full
+         plan detail modal, just reachable directly from Ledger. -->
+    <div id="ledger-savings-payment-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:550; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:2px;">
+                <div>
+                    <div style="font-size:16px; font-weight:800; color:var(--text);" id="ledger-sav-pay-title">Customer</div>
+                    <div style="font-size:12.5px; color:var(--text2); margin-top:2px;" id="ledger-sav-pay-mobile"></div>
+                </div>
+                <button onclick="document.getElementById('ledger-savings-payment-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0; flex-shrink:0;">✕</button>
+            </div>
+            <div id="ledger-sav-pay-info" style="background:var(--bg); border-radius:10px; padding:12px; margin:12px 0 14px; font-size:13px;"></div>
+
+            <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">AMOUNT (₹)</label>
+            <input type="number" id="ledger-sav-pay-amount" step="0.01" style="margin:0 0 10px; width:100%;">
+            <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">DATE</label>
+            <input type="date" id="ledger-sav-pay-date" style="margin:0 0 12px; width:100%;">
+
+            <input type="text" id="ledger-sav-pay-note" placeholder="Note (optional)" style="margin:0 0 12px; width:100%;">
+            <button onclick="saveLedgerSavingsPayment()" style="width:100%; background:var(--gold); color:#fff; font-weight:800; padding:12px; border-radius:var(--radius); border:none; font-size:14px;">Add Payment</button>
+            <p class="note" id="ledger-sav-pay-status" style="text-align:center; margin-top:8px;"></p>
         </div>
     </div>
 
