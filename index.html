@@ -1884,7 +1884,10 @@
                 <span id="cart-counter" class="badge" style="display: none;">0</span>
             </button>
         </div>
-        <div id="active-profile-badge" onclick="_handleProfileBadgeTap()" style="position:absolute; bottom:8px; left:10px; font-size:11px; color:#1565C0; font-weight:600; cursor:pointer; background:rgba(21,101,192,0.08); padding:3px 8px; border-radius:10px; display:none;"></div>
+        <div style="position:absolute; bottom:8px; left:10px; display:flex; align-items:center; gap:6px;">
+            <div id="active-profile-badge" onclick="_handleProfileBadgeTap()" style="font-size:11px; color:#1565C0; font-weight:600; cursor:pointer; background:rgba(21,101,192,0.08); padding:3px 8px; border-radius:10px; display:none;"></div>
+            <button id="remote-backup-btn" onclick="triggerRemoteBackup()" title="Trigger a backup on the main PC" style="width:34px; height:18px; border-radius:999px; background:#43A047; border:none; padding:0; cursor:pointer; box-shadow:none; margin:0; min-width:0; flex-shrink:0;"></button>
+        </div>
     </div>
 
     <button id="add-old-gold-btn" onclick="openOldGoldModal()">+</button>
@@ -2700,7 +2703,7 @@
 
         function setPrintServerEnabled(enabled){
             try { localStorage.setItem(PRINT_SERVER_KEY, enabled ? '1' : '0'); } catch (e) {}
-            if (enabled) startPrintQueueListener();
+            if (enabled) { startPrintQueueListener(); startBackupTriggerListener(); }
         }
 
         // Safe to call unconditionally at startup — it checks the toggle
@@ -2767,6 +2770,74 @@
             el.textContent = isPrintServerEnabled()
                 ? '✓ Active — watching for print jobs sent from other devices.'
                 : 'Off — this device will not auto-print anything sent to it.';
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // REMOTE BACKUP TRIGGER — the small green pill next to the active
+        // Making Profile badge on the main screen. Any device can tap it;
+        // it just writes a request into Firebase. Only the device that has
+        // "Print Server" turned on (see isPrintServerEnabled() above) — the
+        // same main PC that already has the Drive backup folder connected —
+        // is listening for these requests, since only that device actually
+        // holds the folder handle needed to write a backup file. Mirrors the
+        // existing printQueue pattern above almost exactly, just triggering
+        // runAutoBackup() instead of a print.
+        // ══════════════════════════════════════════════════════════════════
+        function triggerRemoteBackup(){
+            const btn = document.getElementById('remote-backup-btn');
+            if (btn) { btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none'; }
+            const reqId = crypto.randomUUID();
+            window.dbSet(window.dbRef(window.firebaseDB, 'backupTrigger/' + reqId), {
+                id: reqId, status: 'pending', requestedAt: new Date().toISOString()
+            }).then(() => {
+                invToast('☁️ Backup requested — will run on the main PC shortly');
+            }).catch(() => {
+                invToast('⚠️ Could not send backup request — check connection');
+            }).finally(() => {
+                if (btn) setTimeout(() => { btn.style.opacity = '1'; btn.style.pointerEvents = ''; }, 1500);
+            });
+        }
+        window.triggerRemoteBackup = triggerRemoteBackup;
+
+        let _backupTriggerListenerStarted = false;
+        const _processingBackupReqIds = new Set();
+
+        // Safe to call unconditionally at startup — checks isPrintServerEnabled()
+        // itself and does nothing on any device that isn't the designated main PC.
+        function initBackupTriggerListenerIfEnabled(){
+            if (isPrintServerEnabled()) startBackupTriggerListener();
+        }
+
+        function startBackupTriggerListener(){
+            if (_backupTriggerListenerStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB || !window.dbRef) {
+                setTimeout(startBackupTriggerListener, 1000);
+                return;
+            }
+            _backupTriggerListenerStarted = true;
+            const triggerRef = window.dbRef(window.firebaseDB, 'backupTrigger');
+            window.dbOnValue(triggerRef, (snapshot) => {
+                const reqs = snapshot.val() || {};
+                Object.values(reqs).forEach(req => {
+                    if (req && req.status === 'pending') _processRemoteBackupRequest(req);
+                });
+            }, (error) => {
+                console.error('[RemoteBackup] queue read failed', error);
+            });
+        }
+
+        async function _processRemoteBackupRequest(req){
+            if (_processingBackupReqIds.has(req.id)) return; // already being handled this session
+            _processingBackupReqIds.add(req.id);
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'backupTrigger/' + req.id), { status: 'running' });
+            } catch (e) { /* proceed anyway */ }
+            const ok = await runAutoBackup(false);
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'backupTrigger/' + req.id), {
+                    status: ok ? 'done' : 'failed', completedAt: new Date().toISOString()
+                });
+            } catch (e) {}
         }
 
         function getDeviceLabel() {
@@ -10450,6 +10521,7 @@
             startInstallmentsSync();
             startSavingsSync();
             initPrintServerIfEnabled();
+            initBackupTriggerListenerIfEnabled();
             // Load ledger from cache immediately (Firebase will overwrite shortly)
             loadLedger();
             // Load reminders from cache immediately (Firebase will overwrite shortly)
