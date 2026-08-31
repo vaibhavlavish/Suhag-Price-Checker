@@ -1782,6 +1782,9 @@
             <button onclick="showSection('installments-screen')" data-menu-key="installments">
                 <span class="menu-icon" style="background:#FCE4EC;">📆</span> Installment Plans
             </button>
+            <button onclick="showSection('savings-screen')" data-menu-key="savings">
+                <span class="menu-icon" style="background:#FFF3E0;">💰</span> Savings Scheme
+            </button>
             <button onclick="openPrintServerModal()" data-menu-key="print-server">
                 <span class="menu-icon" style="background:#E0F2F1;">🖨️</span> Print Server
             </button>
@@ -4035,6 +4038,34 @@
         // printName) rather than fetched live — a plan always shows the T&C
         // as it stood when created, not whatever it's since been edited to.
         let installmentWebTandC = '';
+
+        // ═══════════════════════════════════════════════════════════════
+        // SAVINGS SCHEME — a cash-savings scheme (the classic "11+1"):
+        // customer pays a fixed amount every month for a configurable number
+        // of months with NO items/ID-proof attached; once fully paid the
+        // shop adds a configurable bonus on top, and the customer can spend
+        // the combined total against any future purchase (handled manually
+        // at checkout, not wired into the invoice screen). Deliberately kept
+        // as its own separate feature/data-node rather than folded into
+        // Installment Plans above, since almost nothing about pricing,
+        // items, rate-risk, or ID proof carries over.
+        // ═══════════════════════════════════════════════════════════════
+        let savingsPlans = [];
+        let _savingsSyncStarted = false;
+        let _savingsSyncRetries = 0;
+        let currentSavingsDetailId = null;
+        // Cloud-synced, editable separately from installmentReminderTemplate
+        // (per shop's explicit choice — same {name}/{date}/{amount} style
+        // placeholders, plus {paidmonths}/{totalmonths} for this scheme's
+        // month-count progress instead of a remaining-balance figure).
+        let savingsReminderTemplate = '';
+        const DEFAULT_SAVINGS_REMINDER_TEMPLATE = 'Dear {name},\n\nthis is a Savings Scheme payment reminder from Suhag Jewellers\npayment date = {date}\nmonthly amount = ₹ {amount}\nmonths paid = {paidmonths} of {totalmonths}';
+        // Separate customer-facing page (savings_book.html), same repo as
+        // the Installment Plans one — NOT the same page, since the content
+        // shape (a running savings balance, no items) is fundamentally
+        // different from the item-based installments-view page.
+        const SAVINGS_CUSTOMER_SITE_URL = 'https://vaibhavlavish.github.io/Customer_Book/savings_book.html';
+
         // NEW: Global for Presets - Now synced from cloud, default empty
         let loosePresets = [];
         // Making Charge Profiles
@@ -4240,6 +4271,7 @@
             installmentReminderTemplate = cloudData.installmentReminderTemplate || '';
             installmentTandC = cloudData.installmentTandC || '';
             installmentWebTandC = cloudData.installmentWebTandC || '';
+            savingsReminderTemplate = cloudData.savingsReminderTemplate || '';
             // Bill number format (literal prefix + editable start number) — cloud-synced, offline fallback via localStorage
             if (cloudData.invBillPrefix !== undefined && cloudData.invBillPrefix !== null) {
                 invoiceSettings.invPrefix = cloudData.invBillPrefix;
@@ -4523,6 +4555,7 @@
                 installmentReminderTemplate: config.installmentReminderTemplate || '',
                 installmentTandC: config.installmentTandC || '',
                 installmentWebTandC: config.installmentWebTandC || '',
+                savingsReminderTemplate: config.savingsReminderTemplate || '',
                 invBillPrefix: config.invBillPrefix || null,
                 invBillStartNumber: config.invBillStartNumber || null,
                 checkoutTrack: config.checkoutTrack || null,
@@ -4870,6 +4903,7 @@
             document.getElementById('issue').style.display = 'none';
             document.getElementById('invoice-screen').style.display = 'none';
             document.getElementById('installments-screen').style.display = 'none';
+            document.getElementById('savings-screen').style.display = 'none';
             document.getElementById('reminders').style.display = 'none';
             const brandHeaderEl = document.getElementById('brand-header');
             if (brandHeaderEl) brandHeaderEl.style.display = 'none';
@@ -4896,11 +4930,15 @@
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen') ? 'flex' : 'block';
+                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen' || section === 'savings-screen') ? 'flex' : 'block';
             }
 
             if (section === 'installments-screen') {
                 openInstallmentsScreen();
+            }
+
+            if (section === 'savings-screen') {
+                openSavingsScreen();
             }
 
             if (section === 'ledger') {
@@ -4974,6 +5012,7 @@
         const MENU_ITEMS_REGISTRY = [
             { key: 'invoice',        label: 'Invoice',            icon: '🧾', action: () => showSection('invoice-screen') },
             { key: 'installments',   label: 'Installment Plans',  icon: '📆', action: () => showSection('installments-screen') },
+            { key: 'savings',        label: 'Savings Scheme',     icon: '💰', action: () => showSection('savings-screen') },
             { key: 'update-rates',   label: 'Update Rates',       icon: '💰', action: () => showSection('update-rates') },
             { key: 'excel-upload',   label: 'Upload Excel',       icon: '📂', action: () => showSection('excel-upload') },
             { key: 'stock-view',     label: 'Stock View',         icon: '📦', action: () => showStockSection() },
@@ -10409,6 +10448,7 @@
             // --- Start Firebase Sync ---
             syncData();
             startInstallmentsSync();
+            startSavingsSync();
             initPrintServerIfEnabled();
             // Load ledger from cache immediately (Firebase will overwrite shortly)
             loadLedger();
@@ -13201,6 +13241,421 @@
         // === END ISSUE SECTION ========================
         // =============================================
 
+        // =============================================
+        // === SAVINGS SCHEME SECTION ===================
+        // =============================================
+        // See the big comment near the `savingsPlans` declaration above for
+        // why this is a separate feature from Installment Plans rather than
+        // an extension of it.
+
+        function openSavingsScreen(){
+            startSavingsSync();
+            savingsSwitchTab('new');
+        }
+
+        function savingsSwitchTab(tab){
+            document.getElementById('sav-tab-new').classList.toggle('active', tab === 'new');
+            document.getElementById('sav-tab-list').classList.toggle('active', tab === 'list');
+            document.getElementById('sav-pane-new').style.display = tab === 'new' ? 'block' : 'none';
+            document.getElementById('sav-pane-list').style.display = tab === 'list' ? 'block' : 'none';
+            if (tab === 'new') resetNewSavingsForm();
+            if (tab === 'list') renderSavingsList();
+        }
+
+        // Keeps the Bonus field mirroring the Monthly Amount field until the
+        // shopkeeper deliberately edits Bonus themselves — covers the
+        // overwhelmingly common "bonus = one month's amount" case with zero
+        // extra taps, while still letting a shop run a different bonus
+        // (flat ₹ or otherwise) for a particular customer.
+        let _savBonusManuallyEdited = false;
+        function onSavingsMonthlyAmountChange(){
+            if (_savBonusManuallyEdited) return;
+            const m = parseFloat(document.getElementById('sav-monthly-amount').value) || 0;
+            document.getElementById('sav-bonus-amount').value = m > 0 ? m.toFixed(2) : '';
+        }
+        function onSavingsBonusAmountEdited(){
+            _savBonusManuallyEdited = true;
+        }
+
+        function resetNewSavingsForm(){
+            document.getElementById('sav-cust-name').value = '';
+            document.getElementById('sav-cust-mob').value = '';
+            document.getElementById('sav-cust-addr').value = '';
+            document.getElementById('sav-monthly-amount').value = '';
+            document.getElementById('sav-months').value = '11';
+            document.getElementById('sav-bonus-amount').value = '';
+            document.getElementById('sav-first-due').value = new Date().toISOString().slice(0, 10);
+            document.getElementById('sav-create-status').textContent = '';
+            _savBonusManuallyEdited = false;
+        }
+
+        async function createSavingsPlan(){
+            const statusEl = document.getElementById('sav-create-status');
+            const name = document.getElementById('sav-cust-name').value.trim();
+            const mobile = document.getElementById('sav-cust-mob').value.trim();
+            const address = document.getElementById('sav-cust-addr').value.trim();
+            const monthlyAmount = parseFloat(document.getElementById('sav-monthly-amount').value);
+            const totalMonths = parseInt(document.getElementById('sav-months').value, 10);
+            const bonusAmount = parseFloat(document.getElementById('sav-bonus-amount').value);
+            const firstDue = document.getElementById('sav-first-due').value;
+
+            if (!name) { statusEl.textContent = '⚠️ Customer name is required.'; return; }
+            if (isNaN(monthlyAmount) || monthlyAmount <= 0) { statusEl.textContent = '⚠️ Enter a valid monthly amount.'; return; }
+            if (isNaN(totalMonths) || totalMonths <= 0) { statusEl.textContent = '⚠️ Enter a valid number of months.'; return; }
+            if (isNaN(bonusAmount) || bonusAmount < 0) { statusEl.textContent = '⚠️ Enter a valid bonus amount (0 is fine).'; return; }
+            if (!firstDue) { statusEl.textContent = '⚠️ Pick the first due date.'; return; }
+
+            statusEl.textContent = 'Creating…';
+            const id = crypto.randomUUID();
+            const dueDates = computeInstallmentDueDates(firstDue, totalMonths, 'monthly', null)
+                .map(d => d.toISOString().slice(0, 10));
+            const plan = {
+                id,
+                customerName: name,
+                customerMobile: mobile || null,
+                customerAddress: address || null,
+                monthlyAmount, totalMonths, bonusAmount,
+                dueDates,
+                payments: [],
+                status: 'active',
+                createdAt: new Date().toISOString().slice(0, 10)
+            };
+            try {
+                await window.dbSet(window.dbRef(window.firebaseDB, 'savingsPlans/' + id), plan);
+                statusEl.textContent = '✅ Plan created.';
+                savingsSwitchTab('list');
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = '⚠️ Could not create plan — try again.';
+            }
+        }
+
+        function startSavingsSync(){
+            if (_savingsSyncStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB) {
+                if (_savingsSyncRetries++ < 20) setTimeout(startSavingsSync, 500);
+                return;
+            }
+            _savingsSyncStarted = true;
+            const savRef = window.dbRef(window.firebaseDB, 'savingsPlans');
+            window.dbOnValue(savRef, (snapshot) => {
+                const val = snapshot.val() || {};
+                savingsPlans = Object.values(val).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                if (document.getElementById('savings-screen').style.display !== 'none') {
+                    renderSavingsList();
+                }
+            }, (error) => {
+                console.error('[Savings] Firebase read error:', error);
+            });
+        }
+
+        function _savingsAmountPaid(plan){
+            return (plan.payments || []).reduce((s, p) => s + (p.amount || 0), 0);
+        }
+        function _savingsMonthsPaid(plan){
+            return Math.min((plan.payments || []).length, plan.totalMonths || 0);
+        }
+        // The redeemable total only ever includes the bonus once the plan
+        // has genuinely completed (all months paid) — per the shop's rule
+        // that redemption, and the bonus itself, only apply once fully paid.
+        function _savingsTotalValue(plan){
+            const paid = _savingsAmountPaid(plan);
+            return plan.status === 'completed' ? paid + (plan.bonusAmount || 0) : paid;
+        }
+
+        function renderSavingsList(){
+            const summaryEl = document.getElementById('sav-list-summary');
+            if (summaryEl) {
+                const activePlans = savingsPlans.filter(p => p.status === 'active');
+                const totalHeld = activePlans.reduce((s, p) => s + _savingsAmountPaid(p), 0);
+                summaryEl.innerHTML = activePlans.length
+                    ? `<div style="font-size:22px; font-weight:800; color:var(--gold);">₹${totalHeld.toFixed(2)}</div><div style="font-size:11px; color:var(--text2); font-weight:700; text-transform:uppercase; letter-spacing:.06em; margin-top:2px;">Held across ${activePlans.length} active plan${activePlans.length === 1 ? '' : 's'}</div>`
+                    : `<div style="font-size:13px; color:var(--text2);">No active plans right now</div>`;
+            }
+            const q = (document.getElementById('sav-search').value || '').trim().toLowerCase();
+            const listEl = document.getElementById('sav-list-body');
+            const filtered = savingsPlans.filter(p =>
+                !q || (p.customerName || '').toLowerCase().includes(q) || (p.customerMobile || '').includes(q)
+            );
+            if (!filtered.length) {
+                listEl.innerHTML = '<p class="note" style="text-align:center;">No Savings Scheme plans found.</p>';
+                return;
+            }
+            listEl.innerHTML = filtered.map(p => {
+                const badgeBg = p.status === 'completed' ? '#E8F5E9' : (p.status === 'cancelled' ? '#FFEBEE' : '#FFF3E0');
+                const badgeColor = p.status === 'completed' ? '#2E7D32' : (p.status === 'cancelled' ? '#C62828' : '#E65100');
+                const badgeLabel = p.status === 'completed' ? 'COMPLETED' : (p.status === 'cancelled' ? 'CANCELLED' : 'ACTIVE');
+                const monthsPaid = _savingsMonthsPaid(p);
+                return `
+                <div class="sav-list-row" data-plan-id="${p.id}" style="background:var(--surface); border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; box-shadow:0 1px 6px rgba(0,0,0,.06); cursor:pointer; user-select:none; -webkit-user-select:none; ${p.status === 'cancelled' ? 'opacity:0.6;' : ''}">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700;">${escHtml(p.customerName)}</span>
+                        <span style="font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; background:${badgeBg}; color:${badgeColor};">${badgeLabel}</span>
+                    </div>
+                    <div style="font-size:12.5px; color:var(--text2); margin-top:4px;">${escHtml(p.customerMobile || 'No mobile')} · ₹${(p.monthlyAmount||0).toFixed(2)}/mo</div>
+                    <div style="display:flex; justify-content:space-between; margin-top:6px; font-size:13px;">
+                        <span>Paid: ${monthsPaid} / ${p.totalMonths} months</span>
+                        <span style="font-weight:700; color:${p.status === 'completed' ? '#2E7D32' : '#e65100'};">₹${_savingsTotalValue(p).toFixed(2)}${p.status === 'completed' ? ' (incl. bonus)' : ''}</span>
+                    </div>
+                </div>
+            `;
+            }).join('');
+
+            if (!listEl.dataset.delegatedClickWired) {
+                listEl.dataset.delegatedClickWired = '1';
+                listEl.addEventListener('click', e => {
+                    const row = e.target.closest('.sav-list-row');
+                    if (row && row.dataset.planId) openSavingsDetail(row.dataset.planId);
+                });
+            }
+        }
+
+        function openSavingsDetail(planId){
+            currentSavingsDetailId = planId;
+            const plan = savingsPlans.find(p => p.id === planId);
+            if (!plan) {
+                showCustomAlert("Couldn't open that plan — try again in a moment.");
+                return;
+            }
+            document.getElementById('savings-detail-title').textContent = plan.customerName;
+            renderSavingsDetailBody(plan);
+            document.getElementById('savings-detail-modal').style.display = 'flex';
+        }
+
+        function renderSavingsDetailBody(plan){
+            const bodyEl = document.getElementById('savings-detail-body');
+            const isActive = plan.status === 'active';
+            const isCancelled = plan.status === 'cancelled';
+            const isCompleted = plan.status === 'completed';
+            const amountPaid = _savingsAmountPaid(plan);
+            const monthsPaid = _savingsMonthsPaid(plan);
+            const totalValue = _savingsTotalValue(plan);
+
+            const paymentsHtml = (plan.payments || []).length
+                ? (plan.payments || []).map((pmt, idx) => ({ pmt, idx })).reverse().map(({ pmt, idx }) => `
+                    <div style="display:flex; justify-content:space-between; align-items:center; font-size:12.5px; padding:3px 0; border-bottom:1px solid var(--border);">
+                        <span>${new Date(pmt.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}${pmt.note ? ' · ' + escHtml(pmt.note) : ''}</span>
+                        <span style="display:flex; align-items:center; gap:8px;">
+                            <span>₹${pmt.amount.toFixed(2)}</span>
+                            ${!isCancelled ? `<button onclick="deleteSavingsPayment(${idx})" title="Delete this payment" style="background:none; border:none; color:#C62828; font-size:14px; font-weight:800; padding:0; cursor:pointer; box-shadow:none; margin:0; width:auto; line-height:1;">✕</button>` : ''}
+                        </span>
+                    </div>
+                `).join('')
+                : '<p class="note">No payments logged yet.</p>';
+
+            bodyEl.innerHTML = `
+                <div style="font-size:12.5px; color:var(--text2);">${escHtml(plan.customerMobile || 'No mobile on file')}</div>
+                <div style="font-size:12.5px; color:var(--text2); margin-bottom:10px;">${plan.customerAddress ? escHtml(plan.customerAddress).replace(/\n/g, '<br>') : 'No address on file'}</div>
+                ${isCancelled ? `<div style="background:#FFEBEE; color:#C62828; font-weight:700; text-align:center; padding:8px; border-radius:8px; margin-bottom:12px; font-size:13px;">✕ This plan was cancelled. The customer keeps what they've already paid; the shop's bonus no longer applies.</div>` : ''}
+                ${isCompleted ? `<div style="background:#E8F5E9; color:#2E7D32; font-weight:700; text-align:center; padding:10px; border-radius:8px; margin-bottom:12px; font-size:13px;">✅ Fully paid — total redeemable value ₹${totalValue.toFixed(2)} (₹${amountPaid.toFixed(2)} paid + ₹${(plan.bonusAmount||0).toFixed(2)} bonus)</div>` : ''}
+
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Monthly Amount:</span><span>₹${(plan.monthlyAmount||0).toFixed(2)}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Months Paid:</span><span>${monthsPaid} / ${plan.totalMonths}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:4px; color:#2E7D32;"><span>Amount Paid:</span><span>₹${amountPaid.toFixed(2)}</span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:12px;"><span>Bonus (on completion):</span><span>₹${(plan.bonusAmount||0).toFixed(2)}</span></div>
+
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Payment History</div>
+                <div style="margin-bottom:14px;">${paymentsHtml}</div>
+
+                ${isActive ? `
+                    <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Log a Payment</div>
+                    <div style="display:flex; gap:6px; margin-bottom:6px;">
+                        <input type="number" id="sav-pay-amount" placeholder="Amount" step="0.01" style="margin:0; flex:1;" value="${(plan.monthlyAmount||0).toFixed(2)}">
+                        <input type="date" id="sav-pay-date" style="margin:0; flex:1;" value="${new Date().toISOString().slice(0, 10)}">
+                    </div>
+                    <input type="text" id="sav-pay-note" placeholder="Note (optional)" style="margin:0 0 8px;">
+                    <button onclick="logSavingsPayment()" style="background:var(--gold); color:#fff; font-weight:800; padding:11px; border-radius:var(--radius); border:none; font-size:14px;">Add Payment</button>
+                    <p class="note" id="sav-pay-status" style="margin-top:6px; text-align:center;"></p>
+                ` : ''}
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px;">
+                    <button onclick="copySavingsLink('${plan.id}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">📋 Copy Link</button>
+                    <button onclick="sendSavingsLinkWhatsApp()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🔗 Send Link</button>
+                    ${isActive ? `<button onclick="sendSavingsWhatsAppReminder()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">💬 Send Reminder</button>` : ''}
+                    ${isActive ? `<button onclick="cancelSavingsPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">✕ Cancel Plan</button>` : ''}
+                    ${(isCancelled || isCompleted) ? `<button onclick="deleteSavingsPlan()" style="background:none; border:1.5px solid #C62828; color:#C62828; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🗑️ Delete This Plan</button>` : ''}
+                </div>
+                <p class="note" id="sav-link-status" style="margin-top:8px; text-align:center;"></p>
+                <p class="note" id="sav-cancel-status" style="margin-top:2px; text-align:center;"></p>
+                <p class="note" id="sav-delete-status" style="margin-top:2px; text-align:center;"></p>
+            `;
+        }
+
+        // Deliberately no ledger write here — the shop asked for this to
+        // stay a simple standalone record; cash collected against a Savings
+        // Scheme plan isn't reflected in the Cash Ledger automatically.
+        async function logSavingsPayment(){
+            const statusEl = document.getElementById('sav-pay-status');
+            const plan = savingsPlans.find(p => p.id === currentSavingsDetailId);
+            if (!plan || plan.status !== 'active') return;
+
+            const amount = parseFloat(document.getElementById('sav-pay-amount').value);
+            const date = document.getElementById('sav-pay-date').value;
+            const note = document.getElementById('sav-pay-note').value.trim();
+            if (isNaN(amount) || amount <= 0) { statusEl.textContent = 'Enter a valid amount.'; return; }
+            if (!date) { statusEl.textContent = 'Pick a date.'; return; }
+
+            const payments = [...(plan.payments || []), { amount, date, note: note || null }];
+            // Completed only once every committed month has actually been
+            // paid — matches the shop's "bonus only once fully paid" rule.
+            const status = payments.length >= plan.totalMonths ? 'completed' : 'active';
+
+            statusEl.textContent = 'Saving…';
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'savingsPlans/' + plan.id), { payments, status });
+                plan.payments = payments;
+                plan.status = status;
+                document.getElementById('sav-pay-note').value = '';
+                renderSavingsDetailBody(plan);
+                renderSavingsList();
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not save — try again.';
+            }
+        }
+
+        async function deleteSavingsPayment(idx){
+            const plan = savingsPlans.find(p => p.id === currentSavingsDetailId);
+            if (!plan || plan.status === 'cancelled') return;
+            const payment = (plan.payments || [])[idx];
+            if (!payment) return;
+            if (!checkPin()) return;
+            const dateLabel = new Date(payment.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+            if (!confirm(`Delete this payment of ₹${payment.amount.toFixed(2)} logged on ${dateLabel}? This can't be undone.`)) return;
+
+            const newPayments = plan.payments.filter((_, i) => i !== idx);
+            const status = newPayments.length >= plan.totalMonths ? 'completed' : 'active';
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'savingsPlans/' + plan.id), { payments: newPayments, status });
+                plan.payments = newPayments;
+                plan.status = status;
+                renderSavingsDetailBody(plan);
+                renderSavingsList();
+            } catch (e) {
+                console.error(e);
+                showCustomAlert('Could not delete — try again.');
+            }
+        }
+
+        // Per the shop's own rule: cancelling just marks the plan cancelled.
+        // No ledger touch, no reversing anything — the customer keeps
+        // whatever cash they already paid (handled outside this app), they
+        // simply lose the shop's bonus contribution going forward.
+        async function cancelSavingsPlan(){
+            const plan = savingsPlans.find(p => p.id === currentSavingsDetailId);
+            if (!plan) return;
+            if (!checkPin()) return;
+            if (!confirm(`Cancel this Savings Scheme plan for ${plan.customerName}?\n\nThey keep whatever they've already paid — this only stops the plan and forfeits the shop's bonus. Nothing else changes, and the plan is kept on record, not deleted.`)) return;
+
+            const statusEl = document.getElementById('sav-cancel-status');
+            statusEl.textContent = 'Cancelling…';
+            try {
+                await window.dbUpdate(window.dbRef(window.firebaseDB, 'savingsPlans/' + plan.id), { status: 'cancelled' });
+                plan.status = 'cancelled';
+                renderSavingsDetailBody(plan);
+                renderSavingsList();
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not cancel — try again.';
+            }
+        }
+
+        async function deleteSavingsPlan(){
+            const plan = savingsPlans.find(p => p.id === currentSavingsDetailId);
+            if (!plan || plan.status === 'active') return;
+            if (!checkPin()) return;
+            if (!confirm(`Permanently delete this Savings Scheme plan for ${plan.customerName}? This cannot be undone.`)) return;
+
+            const statusEl = document.getElementById('sav-delete-status');
+            statusEl.textContent = 'Deleting…';
+            try {
+                await window.dbRemove(window.dbRef(window.firebaseDB, 'savingsPlans/' + plan.id));
+                savingsPlans = savingsPlans.filter(p => p.id !== plan.id);
+                document.getElementById('savings-detail-modal').style.display = 'none';
+                renderSavingsList();
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not delete — try again.';
+            }
+        }
+
+        function copySavingsLink(planId){
+            const link = SAVINGS_CUSTOMER_SITE_URL + '?id=' + planId;
+            navigator.clipboard.writeText(link).then(() => showCustomAlert('Link copied!')).catch(() => prompt('Copy this link:', link));
+        }
+
+        function sendSavingsLinkWhatsApp(){
+            const plan = savingsPlans.find(p => p.id === currentSavingsDetailId);
+            if (!plan) return;
+            if (!plan.customerMobile) { showCustomAlert('No mobile number on file for this customer.'); return; }
+            const link = SAVINGS_CUSTOMER_SITE_URL + '?id=' + plan.id;
+            const message = `Dear ${plan.customerName},\n\nhere is your Savings Scheme link from Suhag Jewellers — you can check your progress and payment history here:\n${link}`;
+            let mobile = plan.customerMobile.replace(/\D/g, '');
+            if (mobile.length === 10) mobile = '91' + mobile;
+            window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(message)}`, '_blank');
+        }
+
+        function sendSavingsWhatsAppReminder(){
+            const plan = savingsPlans.find(p => p.id === currentSavingsDetailId);
+            if (!plan) return;
+            if (!plan.customerMobile) { showCustomAlert('No mobile number on file for this customer.'); return; }
+            const nextDueIdx = _savingsMonthsPaid(plan); // next unpaid month's index
+            const nextDue = plan.dueDates[nextDueIdx] || plan.dueDates[plan.dueDates.length - 1];
+            const dueDateStr = nextDue
+                ? new Date(nextDue + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                : 'soon';
+            const template = (savingsReminderTemplate && savingsReminderTemplate.trim()) ? savingsReminderTemplate : DEFAULT_SAVINGS_REMINDER_TEMPLATE;
+            const message = template
+                .replace(/\{name\}/g, plan.customerName)
+                .replace(/\{date\}/g, dueDateStr)
+                .replace(/\{amount\}/g, (plan.monthlyAmount||0).toFixed(2))
+                .replace(/\{paidmonths\}/g, _savingsMonthsPaid(plan))
+                .replace(/\{totalmonths\}/g, plan.totalMonths);
+            let mobile = plan.customerMobile.replace(/\D/g, '');
+            if (mobile.length === 10) mobile = '91' + mobile;
+            window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(message)}`, '_blank');
+        }
+
+        function openSavingsReminderTemplateModal(){
+            const ta = document.getElementById('sav-reminder-template-textarea');
+            ta.value = (savingsReminderTemplate && savingsReminderTemplate.trim()) ? savingsReminderTemplate : DEFAULT_SAVINGS_REMINDER_TEMPLATE;
+            document.getElementById('sav-reminder-template-status').textContent = '';
+            document.getElementById('savings-reminder-template-modal').style.display = 'flex';
+        }
+
+        function saveSavingsReminderTemplate(){
+            if (!checkPin()) return;
+            const val = document.getElementById('sav-reminder-template-textarea').value;
+            const statusEl = document.getElementById('sav-reminder-template-status');
+            savingsReminderTemplate = val.trim();
+            statusEl.textContent = 'Saving…';
+            window.dbSafeUpdate({ 'jewelryData/config/savingsReminderTemplate': savingsReminderTemplate })
+                .then(() => {
+                    statusEl.textContent = 'Saved.';
+                    setTimeout(() => { document.getElementById('savings-reminder-template-modal').style.display = 'none'; }, 500);
+                })
+                .catch(() => { statusEl.textContent = 'Could not save — try again.'; });
+        }
+
+        window.openSavingsScreen = openSavingsScreen;
+        window.savingsSwitchTab = savingsSwitchTab;
+        window.onSavingsMonthlyAmountChange = onSavingsMonthlyAmountChange;
+        window.onSavingsBonusAmountEdited = onSavingsBonusAmountEdited;
+        window.createSavingsPlan = createSavingsPlan;
+        window.openSavingsDetail = openSavingsDetail;
+        window.logSavingsPayment = logSavingsPayment;
+        window.deleteSavingsPayment = deleteSavingsPayment;
+        window.cancelSavingsPlan = cancelSavingsPlan;
+        window.deleteSavingsPlan = deleteSavingsPlan;
+        window.copySavingsLink = copySavingsLink;
+        window.sendSavingsLinkWhatsApp = sendSavingsLinkWhatsApp;
+        window.sendSavingsWhatsAppReminder = sendSavingsWhatsAppReminder;
+        window.openSavingsReminderTemplateModal = openSavingsReminderTemplateModal;
+        window.saveSavingsReminderTemplate = saveSavingsReminderTemplate;
+        // =============================================
+        // === END SAVINGS SCHEME SECTION ===============
+        // =============================================
+
         function openLedgerEntryModal(type) {
             setLedgerEntryType(type || 'in');
             document.getElementById('ledger-entry-amount').value = '';
@@ -14630,9 +15085,18 @@
             return { disc, taxable, sgst, cgst, igst, net, rounded, rndOff, isHome, pct, exempt };
         }
 
-        // Sum of rows whose amount is already tax-inclusive (settled/flat prices —
-        // repair charges, loose-screen "Other"/Jewellery flat amounts) and so must
-        // NOT be taxed again when the invoice computes GST. See invComputeTotals.
+        // Sum of rows whose amount is already tax-inclusive (settled/flat prices)
+        // and so must NOT be taxed again when the invoice computes GST. See
+        // invComputeTotals.
+        // Nothing currently sets taxInclusive: true — the repair/Jewellery-Amount
+        // row (see "DO NOT CHANGE THIS WITHOUT READING" in _invRowsFromCartItems)
+        // used to, for Format 2 specifically, but that caused a cross-format
+        // reprint bug and was removed in favor of always storing a genuine
+        // pre-tax value instead. This function and the taxInclusive flag are left
+        // in place for any future genuinely-fixed/settled amount that must never
+        // be taxed AND must never need to be redisplayed in a different format
+        // later — read that comment fully before reintroducing this flag on any
+        // row type.
         function invExemptSub(rows) {
             // MRP-type rows (product items priced via a direct MRP figure, and manual
             // "MRP (direct)" entries) hold a genuine pre-tax taxable value — GST must be
@@ -14714,6 +15178,22 @@
                 // (loose items' finalPrice is even tax-inclusive already), so both map straight
                 // to an MRP-type row: invTaxableVal uses the figure as-is, no further making/GST
                 // math applied on top (see invTaxableVal/invMakingAmt).
+                // ═══════════════════════════════════════════════════════════════════
+                // ⚠️ DO NOT CHANGE THIS WITHOUT READING — repair/Jewellery-Amount tax logic
+                // has been broken and re-fixed twice now. The amount typed into the
+                // "Jewellery Amount" box on the Loose Calculator screen (item.type
+                // === 'repair') IS ALREADY TAX-INCLUSIVE — it's the final price the
+                // customer pays, not a pre-tax figure. Example: 1500 entered here at
+                // a 3% tax rate must become Taxable ≈1456.31 + SGST 21.85 + CGST 21.85
+                // = 1500 total.
+                //
+                // ALWAYS back-calculate to the pre-tax value below, regardless of
+                // which invoice format (fmt/_fmt) is currently active — do NOT branch
+                // on format here again. This row is deliberately stored the exact same
+                // way no matter which format is active at save time, so it stays
+                // correct no matter which format it's later REPRINTED in — see the
+                // full explanation below.
+                // ═══════════════════════════════════════════════════════════════════
                 if (item.type === 'repair') {
                     // The amount typed into the Jewellery Amount box IS the final,
                     // tax-inclusive price — never a pre-tax taxable value. Treating
@@ -14722,24 +15202,31 @@
                     // total back down to what was actually charged — confusing and
                     // wrong on a document meant to show real numbers.
                     //
-                    // Format 1 (full breakdown): back-calculate the taxable value so
-                    // Taxable Value + SGST/CGST reconcile EXACTLY to the entered
-                    // amount, with no Discount line needed at all.
-                    // Format 2 (flat, no breakdown): show the entered amount
-                    // directly, and mark the row taxInclusive so invExemptSub
-                    // excludes it from tax math entirely — no invisible GST gets
-                    // added on top of a figure that's already final.
+                    // A PAST version of this code stored two different row shapes
+                    // depending on which format was active AT CHECKOUT: a raw
+                    // taxInclusive flat amount for Format 2, back-calculated for
+                    // Format 1. That caused a real, separate bug: an invoice saved
+                    // under Format 2 and later REPRINTED under Format 1 (reprinting
+                    // always re-derives the display from these same stored row
+                    // values, using whichever format is picked at reprint time, not
+                    // whichever was picked at save time) showed the raw amount as an
+                    // untaxed "Taxable Value" with 0 tax — because a taxInclusive
+                    // row is excluded from tax math entirely (see invExemptSub),
+                    // which is correct for Format 2's flat display but wrong the
+                    // moment the exact same row is redisplayed in Format 1.
+                    //
+                    // Fix: always back-calculate to a genuine pre-tax value here, in
+                    // BOTH formats, and never set taxInclusive on this row. It then
+                    // behaves exactly like any other MRP-priced row for tax purposes:
+                    //   • Format 1 shows it broken out — Taxable Value + SGST/CGST
+                    //     reconcile exactly to the entered amount.
+                    //   • Format 2's existing per-item display logic already
+                    //     re-multiplies any non-exempt row by (1+taxRate) to get its
+                    //     single GST-inclusive Value column — which reconstructs the
+                    //     original entered amount right back.
+                    // One stored shape, correct in either format, at save time OR
+                    // reprint time, regardless of which format is active when.
                     const amt = parseFloat((item.finalPrice || 0).toFixed(2));
-                    if (_fmt === 'invoice2') {
-                        return {
-                            desc: item.itemName || 'Jewellery',
-                            hsn: '7113', pc: 1,
-                            grWt: 0, nlWt: 0, rate: 0,
-                            makingType: 'mrp', makingPct: amt,
-                            taxInclusive: true,
-                            metal: ''
-                        };
-                    }
                     const taxRate = invoiceSettings.taxRate || 0;
                     const backCalcTaxable = Math.round((amt / (1 + taxRate / 100)) * 100) / 100;
                     return {
@@ -15343,24 +15830,21 @@
         }
 
         // Track B only — lets a reprint use a different format than the
-        // current persisted default, for this one print only. Restores
-        // invActiveFormat right after (try/finally, so it restores even
-        // if the print itself throws) — never touches localStorage, so
-        // the user's normal default format is completely untouched.
+        // current persisted default, for this one print only. Uses the same
+        // one-shot window._invForceFormat flag invGenerate() already checks
+        // (see the comment above its use, and reprintLastInvoice's use of the
+        // same flag) — it's consumed and cleared automatically inside
+        // invGenerate(), so it can never leak into a later, unrelated print.
         function _chooseHistoryFormat(fmt) {
             document.getElementById('inv-history-format-modal').style.display = 'none';
             const id = window._pendingHistoryFormatPrintId;
             window._pendingHistoryFormatPrintId = null;
             if (!id) return;
 
-            const savedFormat = invActiveFormat;
-            const runWithFormat = (fn) => {
-                invActiveFormat = fmt;
-                try { fn(); } finally { invActiveFormat = savedFormat; }
-            };
+            window._invForceFormat = fmt;
             _choosePrintDestination(
-                () => runWithFormat(() => invPrintFromHistory(id)),
-                () => runWithFormat(() => invPrintFromHistoryViaMainPC(id))
+                () => invPrintFromHistory(id),
+                () => invPrintFromHistoryViaMainPC(id)
             );
         }
 
@@ -17312,9 +17796,55 @@
 
     </div>
 
+    <!-- ══════════════════ SAVINGS SCHEME SCREEN ══════════════════ -->
+    <div id="savings-screen" style="display:none; flex:1; flex-direction:column; padding:14px; background:var(--bg); overflow-y:auto; -webkit-overflow-scrolling:touch; box-sizing:border-box; max-width:600px; margin:0 auto; width:100%; min-height:0;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+            <button onclick="showSection('main')" style="background:none; border:none; font-size:20px; color:var(--text2); cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">←</button>
+            <h2 style="margin:0; font-size:18px; font-weight:800; color:var(--text);">💰 Savings Scheme</h2>
+        </div>
+
+        <div style="display:flex; background:var(--surface); border-radius:var(--radius); overflow:hidden; margin-bottom:14px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+            <div class="inst-tab active" id="sav-tab-new" onclick="savingsSwitchTab('new')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; border-right:1px solid var(--border); background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">➕ New Plan</div>
+            <div class="inst-tab" id="sav-tab-list" onclick="savingsSwitchTab('list')" style="flex:1; display:flex; align-items:center; justify-content:center; padding:13px 4px; font-size:13px; font-weight:700; background:transparent; cursor:pointer; color:var(--text2); text-align:center; white-space:nowrap; user-select:none;">📋 All Plans</div>
+        </div>
+
+        <!-- ── PANE: NEW PLAN ── -->
+        <div id="sav-pane-new">
+            <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                <p class="note" style="margin:0 0 10px;">No item selection, no ID proof — just the customer's details and the plan terms.</p>
+                <input type="text" id="sav-cust-name" placeholder="Customer Name" style="margin:0 0 8px;">
+                <input type="tel" id="sav-cust-mob" placeholder="Mobile Number" style="margin:0 0 8px;">
+                <textarea id="sav-cust-addr" placeholder="Address (optional)" rows="2" style="margin:0 0 8px; padding:12px; border:1.5px solid var(--border); border-radius:var(--radius-sm); width:100%; font-size:15px; font-family:'Inter', sans-serif; box-sizing:border-box; resize:none;"></textarea>
+
+                <label class="note" style="display:block; margin-bottom:3px;">MONTHLY AMOUNT (₹)</label>
+                <input type="number" id="sav-monthly-amount" min="0" step="0.01" placeholder="e.g. 1000" style="margin:0 0 8px;" oninput="onSavingsMonthlyAmountChange()">
+
+                <label class="note" style="display:block; margin-bottom:3px;">NUMBER OF MONTHS (customer pays)</label>
+                <input type="number" id="sav-months" min="1" step="1" value="11" style="margin:0 0 8px;">
+
+                <label class="note" style="display:block; margin-bottom:3px;">BONUS AMOUNT (₹, shop contributes on completion)</label>
+                <input type="number" id="sav-bonus-amount" min="0" step="0.01" placeholder="e.g. 1000" style="margin:0 0 8px;" oninput="onSavingsBonusAmountEdited()">
+
+                <label class="note" style="display:block; margin-bottom:3px;">FIRST DUE DATE</label>
+                <input type="date" id="sav-first-due" style="margin:0;">
+            </div>
+            <button onclick="createSavingsPlan()" style="width:100%; background:var(--gold); color:white; border:none; border-radius:12px; padding:14px; font-size:16px; font-weight:800; cursor:pointer;">Create Plan</button>
+            <p class="note" id="sav-create-status" style="margin-top:8px; text-align:center;"></p>
+        </div>
+
+        <!-- ── PANE: ALL PLANS ── -->
+        <div id="sav-pane-list" style="display:none;">
+            <div id="sav-list-summary" style="background:var(--surface); border-radius:var(--radius); padding:12px 14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06); text-align:center;"></div>
+            <input type="text" id="sav-search" placeholder="🔍 Search by customer name or mobile…" style="margin-bottom:12px;" oninput="renderSavingsList()">
+            <button onclick="openSavingsReminderTemplateModal()" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px; border-radius:var(--radius); font-size:13px; margin-bottom:12px;">✏️ Edit Reminder Message</button>
+            <div id="sav-list-body"></div>
+        </div>
+    </div>
+
     <div id="inv-export-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:1150; align-items:flex-end; justify-content:center;">
         <div style="background:white; border-radius:20px 20px 0 0; width:100%; max-width:480px; padding:22px 20px 30px; box-shadow:0 -8px 32px rgba(0,0,0,.15); max-height:88vh; overflow-y:auto;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+
                 <h3 style="margin:0; font-size:18px; color:#1a1a1a;">Export Sale Register</h3>
                 <button onclick="invCloseExportModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
             </div>
@@ -17413,6 +17943,29 @@
                 <button onclick="document.getElementById('installment-detail-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
             <div id="installment-detail-body"></div>
+        </div>
+    </div>
+
+    <div id="savings-detail-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);" id="savings-detail-title">Plan Detail</span>
+                <button onclick="document.getElementById('savings-detail-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <div id="savings-detail-body"></div>
+        </div>
+    </div>
+
+    <div id="savings-reminder-template-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:530; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text);">Savings Scheme Reminder Message</span>
+                <button onclick="document.getElementById('savings-reminder-template-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <p class="note" style="margin-bottom:10px;">Use {name}, {date}, {amount}, {paidmonths}, {totalmonths} — filled in automatically for each customer when the reminder is sent. Separate from the Installment Plans reminder message.</p>
+            <textarea id="sav-reminder-template-textarea" rows="8" style="width:100%; box-sizing:border-box; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:13px; line-height:1.5; resize:vertical; font-family:inherit; margin:0 0 12px 0;"></textarea>
+            <button onclick="saveSavingsReminderTemplate()" style="width:100%; background:var(--gold); border:none; border-radius:11px; padding:13px; font-size:14px; font-weight:700; color:white; cursor:pointer; box-shadow:none; margin:0;">Save</button>
+            <p class="note" id="sav-reminder-template-status" style="text-align:center; margin-top:8px;"></p>
         </div>
     </div>
 
