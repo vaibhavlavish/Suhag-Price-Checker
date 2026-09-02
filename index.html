@@ -3680,12 +3680,16 @@
 
         const FACTORY_BASE_CALC_DEFAULTS = {
             gold:   { baseRate: 0, percentages: { '22K': 92, '18K': 76, '9K': 40.5 } },
-            silver: { baseRate: 0, percentages: { 'S92': 100, 'S7': 77 } }
+            silver: { baseRate: 0, percentages: { 'S92': 100, 'S7': 70 } }
         };
 
         const FACTORY_PRESETS = [
-            { id: 'preset_veetla', name: 'Veetla', metal: 'Silver', stamp: 'S7', makingType: '%', makingValue: 50 },
-            { id: 'e0e1ed20-8e07-4d6d-af81-85654430051f', name: 'Nosepin', metal: 'Gold', stamp: '18K', makingType: '%', makingValue: 35 }
+            { id: '195d4d46-8c33-44fd-85b5-7ee90933d060', name: 'Latkan', metal: 'Gold', stamp: '18K', makingType: 'wastage', makingValue: 25 },
+            { id: 'a2696c69-16cb-4b75-8faa-35db2cf5c75a', name: 'Taar', metal: 'Gold', stamp: '18K', makingType: '%', makingValue: 27 },
+            { id: 'aac8982a-09ef-4f2e-9b7f-41522523a01c', name: 'Silver tawij', metal: 'Silver', stamp: 'S7', makingType: '%', makingValue: 50 },
+            { id: 'e0719c7c-ccf5-4186-a3d3-92adec09f519', name: 'Murti', metal: 'Silver', stamp: 'S7', makingType: '%', makingValue: 35 },
+            { id: 'e0e1ed20-8e07-4d6d-af81-85654430051f', name: 'Nosepin', metal: 'Gold', stamp: '18K', makingType: '%', makingValue: 35 },
+            { id: 'preset_veetla', name: 'Veetla', metal: 'Silver', stamp: 'S7', makingType: '%', makingValue: 50 }
         ];
 
         // Invoice: Terms & Conditions footer text
@@ -3697,6 +3701,47 @@
 
         // Invoice: which stamps get printed beside the item name (default ON unless listed here as false)
         const FACTORY_INV_STAMP_TOGGLE = { 'S7': false, 'S92': false };
+
+        // More-menu: which items are shown/hidden (false = hidden). Missing
+        // keys default to visible, so this only needs to list the ones
+        // that are turned OFF.
+        const FACTORY_MENU_PREFS = {
+            "auto-backup": true,
+            "backup": false,
+            "bulk-check": false,
+            "clear-all-data": false,
+            "clear-cart": false,
+            "clear-screen": false,
+            "device-access": false,
+            "installments": false,
+            "ledger": false,
+            "print-server": false,
+            "profiles": false,
+            "reminders": false,
+            "restore": false,
+            "returns": true,
+            "savings": false,
+            "sign-out": false,
+            "upi-setting": false
+        };
+
+        // Recurring cleaning/task reminders. NOTE: this is a snapshot of
+        // completedDates as of the last time this file was updated — after
+        // a Clear All Data, ticked-off dates from AFTER that point won't be
+        // reflected here. Re-export a backup and refresh this block
+        // periodically if you want the tick history to stay current.
+        const FACTORY_REMINDERS = [
+            { id: '16ad02f0-2e43-4019-a689-7280523cdc69', title: 'ઉપ્પર ના કચરા-પોતા', repeat: 'weekly', weeklyDays: [2], active: true, createdAt: '2026-07-11T18:05:32.324Z', completedDates: ["2026-07-14", "2026-07-21", "2026-07-28", "2026-08-04", "2026-08-11", "2026-08-18", "2026-08-25"] },
+            { id: '321e7add-90cc-4f8e-a853-b5eba72aeece', title: 'સ્લાઇડર નીચે સફાઈ', repeat: 'weekly', weeklyDays: [0], active: true, createdAt: '2026-07-11T18:08:25.349Z', completedDates: ["2026-07-12", "2026-07-19", "2026-07-26", "2026-08-02", "2026-08-09", "2026-08-16", "2026-08-23"] },
+            { id: '708ebf4a-f439-4412-9f97-14e9f7663148', title: 'A/c ફિલ્ટર', repeat: 'twice-monthly', monthlyDates: [10, 20], active: true, createdAt: '2026-07-12T05:02:09.621Z', completedDates: ["2026-07-20", "2026-08-10", "2026-08-20"] },
+            { id: '827acb07-8587-4612-a6e1-432014058986', title: 'ચોકડી', repeat: 'weekly', weeklyDays: [3], active: true, createdAt: '2026-07-11T18:03:57.045Z', completedDates: ["2026-07-15", "2026-07-22", "2026-07-29", "2026-08-05", "2026-08-12", "2026-08-19", "2026-08-26"] },
+            { id: 'a0bce942-46bf-4af2-8122-687c6fefe5ec', title: 'ટ્રે સાફ', repeat: 'twice-monthly', monthlyDates: [15, 30], active: true, createdAt: '2026-07-11T18:04:30.244Z', completedDates: ["2026-07-15", "2026-07-30", "2026-08-15"] },
+            { id: 'c280c571-9c9f-4736-9d05-8ea93eb5df3c', title: 'સ્ટોક', repeat: 'daily', active: true, createdAt: '2026-07-11T18:03:32.994Z', completedDates: ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-29", "2026-08-30"] },
+            { id: 'c32b4ef2-a17b-4f34-9434-a7bcbdd1f591', title: 'A/c ફિલ્ટર', repeat: 'monthly', monthlyDates: [30], active: true, createdAt: '2026-07-12T05:02:22.643Z', completedDates: ["2026-07-30"] },
+            { id: 'd1ad12a7-79b2-498d-9d37-4603eccb2ad4', title: 'ડિસ્પ્લે સાફ વ્હાઇટ+કાચ', repeat: 'weekly', weeklyDays: [6], active: true, createdAt: '2026-07-11T18:07:40.880Z', completedDates: ["2026-07-11", "2026-07-18", "2026-07-25", "2026-08-01", "2026-08-08", "2026-08-15", "2026-08-22", "2026-08-29"] },
+            { id: 'd1c35dd0-558e-473e-ba37-961724adb790', title: 'પુથ્થા', repeat: 'twice-monthly', monthlyDates: [14, 28], active: true, createdAt: '2026-07-11T18:10:38.350Z', completedDates: ["2026-07-14", "2026-07-28", "2026-08-14"] },
+            { id: 'd1fc545f-f5d4-4773-a9f2-c7cb6c5c7266', title: 'ભાવ નાખો.', repeat: 'daily', active: true, createdAt: '2026-08-18T04:01:27.720Z', completedDates: ["2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-29", "2026-08-30", "2026-08-31"] },
+        ];
 
         // Payment: UPI IDs for checkout QR (up to 4, first is default)
         const FACTORY_UPI_IDS = [
@@ -3780,7 +3825,7 @@
             "G SOYDORA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: false },
             "S BANGLE": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
             "S BRACELET A": { pWeight: 3.66, bWeight: 140, extraBag: 0, hidden: false },
-            "S BRACELET B": { pWeight: 3.66, bWeight: 140, extraBag: 0, hidden: false },
+            "S BRACELET B": { pWeight: 3.66, bWeight: 271, extraBag: 0, hidden: false },
             "S BRACELET C": { pWeight: 3.66, bWeight: 239, extraBag: 0, hidden: false },
             "S BRACELET D": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
             "S BRACELET E": { pWeight: 3.66, bWeight: 270, extraBag: 0, hidden: false },
@@ -3801,12 +3846,13 @@
             "S PAYAL 6_5": { pWeight: 5.85, bWeight: 259, extraBag: 0, hidden: false },
             "S PAYAL 7": { pWeight: 5.85, bWeight: 264, extraBag: 0, hidden: false },
             "S PAYAL 7_5": { pWeight: 5.85, bWeight: 258, extraBag: 0, hidden: false },
-            "S PAYAL 8_8_5_9": { pWeight: 5.85, bWeight: 0, extraBag: 24, hidden: false },
+            "S PAYAL 8_8_5_9": { pWeight: 11.55, bWeight: 0, extraBag: 24, hidden: false },
+            "S RAKHI": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
             "S PAYAL A": { pWeight: 11.55, bWeight: 377, extraBag: 0, hidden: false },
             "S PAYAL B": { pWeight: 11.55, bWeight: 348, extraBag: 0, hidden: false },
             "S PAYAL C": { pWeight: 11.55, bWeight: 422, extraBag: 0, hidden: false },
             "S PAYAL D": { pWeight: 11.55, bWeight: 366, extraBag: 0, hidden: false },
-            "S PAYAL E": { pWeight: 11.55, bWeight: 0, extraBag: 0, hidden: false },
+            "S PAYAL E": { pWeight: 11.55, bWeight: 0, extraBag: 0, hidden: true },
             "S PAYAL F": { pWeight: 11.55, bWeight: 0, extraBag: 8, hidden: false },
             "S PAYAL FANCY": { pWeight: 11.55, bWeight: 0, extraBag: 8, hidden: false },
             "S PAYAL G": { pWeight: 11.55, bWeight: 374, extraBag: 0, hidden: false },
@@ -3819,19 +3865,34 @@
         const FACTORY_PROFILES = [
             { id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 },
             {
-                id: 'prof_1', name: '1',
-                gold:   { wastage: 2,  perGram: 0,  percent: 2,  perPc: 50  },
-                silver: { wastage: 5,  perGram: 20, percent: 5,  perPc: 50  }
+                id: 'prof_1', name: 'V1',
+                gold:   { wastage: 0, perGram: 0,  percent: 0, perPc: 0   },
+                silver: { wastage: 3, perGram: 20, percent: 0, perPc: 50  }
             },
             {
-                id: 'prof_2', name: '2',
-                gold:   { wastage: 3,  perGram: 0,  percent: 3,  perPc: 100 },
-                silver: { wastage: 7,  perGram: 30, percent: 7,  perPc: 70  }
+                id: 'prof_2961516d-58e5-48bd-ba3c-dde9dfcead66', name: 'V1.1',
+                gold:   { wastage: 2, perGram: 0,  percent: 0, perPc: 100 },
+                silver: { wastage: 3, perGram: 20, percent: 0, perPc: 50  }
             },
             {
-                id: 'prof_3', name: '3',
-                gold:   { wastage: 5,  perGram: 0,  percent: 5,  perPc: 150 },
-                silver: { wastage: 10, perGram: 40, percent: 10, perPc: 100 }
+                id: 'prof_61d5c204-14ba-45b6-bc1f-493ad902376b', name: 'V2',
+                gold:   { wastage: 0, perGram: 0,  percent: 0, perPc: 0   },
+                silver: { wastage: 5, perGram: 40, percent: 0, perPc: 100 }
+            },
+            {
+                id: 'prof_8edeec66-f1b9-4790-82a3-66cf3b9f360a', name: 'V2.1',
+                gold:   { wastage: 4, perGram: 0,  percent: 0, perPc: 200 },
+                silver: { wastage: 5, perGram: 40, percent: 0, perPc: 100 }
+            },
+            {
+                id: 'prof_ad5c4429-e241-4f50-a960-f749a2746262', name: 'V3',
+                gold:   { wastage: 0, perGram: 0,  percent: 0, perPc: 0   },
+                silver: { wastage: 7, perGram: 60, percent: 0, perPc: 200 }
+            },
+            {
+                id: 'prof_3683e339-fc77-4b13-99fe-f3917130575f', name: 'V3.1',
+                gold:   { wastage: 6, perGram: 0,  percent: 0, perPc: 300 },
+                silver: { wastage: 7, perGram: 60, percent: 0, perPc: 200 }
             }
         ];
 
@@ -3930,6 +3991,16 @@
                 if (window._writeAllowed) {
                     window.dbSafeUpdate({ 'jewelryData/config/packagingWeights': packagingWeights });
                 }
+            }
+            // More-menu visibility prefs — only re-seed when truly empty (e.g.
+            // fresh install or right after Clear All Data), never overwrite a
+            // real (possibly all-visible) choice the shop owner has saved.
+            if (!menuPrefs || Object.keys(menuPrefs).length === 0) {
+                menuPrefs = JSON.parse(JSON.stringify(FACTORY_MENU_PREFS));
+                if (window._writeAllowed) {
+                    window.dbSafeUpdate({ 'jewelryData/config/menuPrefs': menuPrefs });
+                }
+                if (typeof applyMenuPrefs === 'function') applyMenuPrefs();
             }
         }
         // ============================================================
@@ -4395,6 +4466,8 @@
             makingProfiles = cloudData.makingProfiles || [];
             // Menu visibility prefs — synced like other config so the same
             // hidden/shown More-menu state follows across devices/profiles.
+            // (Falls back to FACTORY_MENU_PREFS inside applyFactoryDefaults()
+            // below if this comes back empty, e.g. after Clear All Data.)
             menuPrefs  = cloudData.menuPrefs || {};
             applyMenuPrefs();
             // UPI IDs — sync from cloud, keep localStorage as write-through cache for offline.
@@ -4900,7 +4973,7 @@
                 return;
             }
             showCustomConfirm(
-                'This will first download a backup (rates, products, presets, profiles, invoice history, settings), then permanently delete EVERYTHING from the cloud — rates, products, invoices, ledger, presets, profiles.<br><br><strong>⚠️ The backup does NOT include Cash Ledger entries. Ledger data will be lost forever and cannot be recovered.</strong><br><br>Make sure the backup download completes before continuing. This cannot be undone. Proceed?',
+                'This will first download a backup, then permanently delete Bill History, Invoice History, Cash Ledger entries, and Products from the cloud.<br><br>Rates, presets, profiles, reminders, and all other settings are NOT touched by this.<br><br><strong>⚠️ The backup does NOT include Cash Ledger entries. Ledger data will be lost forever and cannot be recovered.</strong><br><br>Make sure the backup download completes before continuing. This cannot be undone. Proceed?',
                 'Confirm Reset',
                 () => {
                     downloadBackup();
@@ -4911,34 +4984,35 @@
                             showCustomAlert('Firebase not ready. Try again in a moment.');
                             return;
                         }
-                        // Must use remove() — not update(null) — to fully delete parent nodes in Firebase RTDB
+                        // Must use remove() — not update(null) — to fully delete parent nodes in Firebase RTDB.
+                        // Deliberately narrow: only transaction-history-style nodes plus
+                        // products. Everything else (config/settings, profiles/presets,
+                        // reminders) is config the shop owner wants to survive a reset —
+                        // see chat history for why this was narrowed down from a full-node wipe.
                         const nodesToRemove = [
-                            'jewelryData/config',
-                            'jewelryData/products',
                             'jewelryData/billHistory',
                             'jewelryData/invoiceHistory',
-                            'jewelryData/profiles',
                             'jewelryData/ledgerEntries',
-                            'jewelryData/reminders'
+                            'jewelryData/products'
                         ];
                         Promise.all(nodesToRemove.map(path =>
                             window.dbRemove(window.dbRef(window.firebaseDB, path))
                         ))
                         .then(() => {
-                            // Reset all in-memory state immediately so nothing leaks back
+                            // Reset only the in-memory state that was actually cleared —
+                            // everything else (rates, presets, profiles, menuPrefs,
+                            // packagingWeights, upiIds, invoice settings, reminders, etc.)
+                            // was never touched in Firebase, so leave it as-is in memory too.
                             ledgerEntries  = [];
-                            reminders      = [];
                             billHistory    = [];
                             invoiceHistory = [];
-                            loosePresets   = [];
-                            makingProfiles = [];
                             productData    = {};
-                            packagingWeights = {};
-                            presetStock    = {};
-                            rates          = {};
-                            taxRate        = 3;
-                            localStorage.clear();
-                            showCustomAlert('App reset to defaults. Reloading...');
+                            // Only clear the local-storage caches that mirror the nodes
+                            // above — not localStorage.clear(), which would also wipe
+                            // cached UPI IDs, bill prefix, checkout format, reminders, etc.
+                            localStorage.removeItem('suhagLedger');
+                            localStorage.removeItem('suhagInvoiceHistory');
+                            showCustomAlert('Bill history, invoice history, ledger, and products cleared. Reloading...');
                             setTimeout(() => location.reload(), 1500);
                         })
                         .catch((error) => {
@@ -11482,11 +11556,22 @@
         // read from or write to billHistory/ledgerEntries, and deleting/clearing any one
         // of ledger, bills, or invoices never touches the other two.
         function _invAutoSaveFromCheckout(cartItems, netPayable, paymentMode, paymentSplit) {
+            // Gate deliberately mirrors _recordSaleLedgerEntry's own bail-out
+            // condition (receipt <= 0) instead of re-deriving "is this real"
+            // from a separate per-row taxable-value computation. Those two
+            // checks used to be independent and could disagree — e.g. a rate
+            // lookup returning 0 for one item's stamp made the invoice-row
+            // math see "nothing to invoice" while cart.finalPrice (what the
+            // ledger uses) was still a real positive number, so the ledger
+            // entry got written with no matching invoice and no error shown.
+            // Keeping BOTH gated on the same netPayable value makes that
+            // class of silent mismatch structurally impossible: whenever the
+            // ledger logs a sale, this will now also attempt to save one.
+            if (!(netPayable > 0) || !cartItems || !cartItems.length) return true; // nothing collected — correctly nothing to invoice (e.g. old-gold-only refund)
             try {
                 const _fmt = invGetCheckoutFormat();
-                if (!_invHasSavableContent(_invRowsFromCartItems(cartItems, _fmt))) return; // nothing real to invoice (e.g. old-gold-only refund)
-
                 const rows = _invRowsFromCartItems(cartItems, _fmt);
+
                 const sub = rows.reduce((s, r) => s + invTaxableVal(r), 0);
                 // finalAmt = gross after discount only (OLD GOLD NOT deducted here).
                 // invComputeTotals back-calculates taxable from this gross figure.
@@ -11530,8 +11615,14 @@
                 invoiceHistory.unshift(record);
                 _saveInvoiceLocal();
                 _saveInvoiceRecord(record);
+                return true;
             } catch (e) {
+                // Previously this was swallowed with only a console.error — the sale
+                // still got logged to the ledger by the caller with no visible sign
+                // the invoice half had failed. Now the caller is told, so it can
+                // warn the shop owner instead of showing a normal success toast.
                 console.error('[Invoice] auto-save from checkout failed', e);
+                return false;
             }
         }
 
@@ -11728,7 +11819,9 @@
         function _invBuildPrintHtmlFromCart(cartItems, netPayable, paymentMode, paymentSplit) {
             const fmt = invGetCheckoutFormat();
             const rows = _invRowsFromCartItems(cartItems, fmt);
-            if (!_invHasSavableContent(rows)) return null;
+            // Gate matches _invAutoSaveFromCheckout's — see the comment there for
+            // why this is based on netPayable rather than a separate per-row check.
+            if (!(netPayable > 0) || !cartItems || !cartItems.length) return null;
 
             const sub = rows.reduce((s, r) => s + invTaxableVal(r), 0);
             // Restore old gold so invComputeTotals gets the gross (pre-OG) amount.
@@ -12073,12 +12166,13 @@
             const hadInvoice = !!invoiceRecordOverride || _invHasSavableContent(_invRowsFromCartItems(cart));
 
             // --- Save to Invoice (Track B) — the sole record of this sale ---
+            let invoiceSaveOk = true;
             if (invoiceRecordOverride) {
                 invoiceHistory.unshift(invoiceRecordOverride);
                 _saveInvoiceLocal();
                 _saveInvoiceRecord(invoiceRecordOverride);
             } else {
-                _invAutoSaveFromCheckout(
+                invoiceSaveOk = _invAutoSaveFromCheckout(
                     cart, netPayable,
                     mode, mode === 'partial' ? payment : null
                 );
@@ -12109,7 +12203,14 @@
             closeModal('cart-modal');
 
             const syncBadge = navigator.onLine ? '☁️ Saved to cloud.' : '📦 Saved locally — will sync when online.';
-            showCustomAlert(hadInvoice ? 'Completed✅!' : 'Sale recorded!');
+            if (netPayable > 0 && !invoiceSaveOk) {
+                // Ledger entry above WAS written (money was collected), but the
+                // invoice failed to save — surface this loudly instead of a
+                // normal success toast, so it's never mistaken for "all good".
+                showCustomAlert('⚠️ Ledger entry saved, but the INVOICE could not be created (check console for details). Please open Invoice History and add this bill manually if needed.');
+            } else {
+                showCustomAlert(hadInvoice ? 'Completed✅!' : 'Sale recorded!');
+            }
         }
 
         // Preview invoice from checkout WITHOUT saving — shows in a modal
@@ -12508,7 +12609,17 @@
             const remindersRef = window.dbRef(window.firebaseDB, 'jewelryData/reminders');
             window.dbOnValue(remindersRef, (snapshot) => {
                 const raw = _objToArray(snapshot.val());
-                reminders = raw;
+                if (raw.length === 0) {
+                    // Empty cloud node (fresh install, or right after Clear All
+                    // Data) — reseed from the factory snapshot instead of
+                    // leaving the shop with no reminders at all.
+                    reminders = JSON.parse(JSON.stringify(FACTORY_REMINDERS));
+                    if (window._writeAllowed) {
+                        reminders.forEach(r => _saveReminderRecord(r));
+                    }
+                } else {
+                    reminders = raw;
+                }
                 _saveRemindersLocal();
                 if (document.getElementById('reminders') && document.getElementById('reminders').style.display !== 'none') {
                     renderReminders();
