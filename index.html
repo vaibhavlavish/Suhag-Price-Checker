@@ -1522,32 +1522,7 @@
             align-items: flex-end; justify-content: center;
         }
         #reminder-modal.show { display: flex; }
-        #hedge-log-modal {
-            display: none; position: fixed; inset: 0;
-            background: rgba(0,0,0,0.55); z-index: 1150;
-            align-items: flex-end; justify-content: center;
-        }
-        #hedge-log-modal.show { display: flex; }
-        #hedge-log-panel {
-            background: white; border-radius: 20px 20px 0 0;
-            width: 100%; max-width: 480px;
-            padding: 22px 20px 30px;
-            box-shadow: 0 -8px 32px rgba(0,0,0,0.15);
-            max-height: 88vh; overflow-y: auto;
-        }
-        #manual-owed-modal {
-            display: none; position: fixed; inset: 0;
-            background: rgba(0,0,0,0.55); z-index: 1150;
-            align-items: flex-end; justify-content: center;
-        }
-        #manual-owed-modal.show { display: flex; }
-        #manual-owed-panel {
-            background: white; border-radius: 20px 20px 0 0;
-            width: 100%; max-width: 480px;
-            padding: 22px 20px 30px;
-            box-shadow: 0 -8px 32px rgba(0,0,0,0.15);
-            max-height: 88vh; overflow-y: auto;
-        }
+
         #reminder-panel {
             background: white; border-radius: 20px 20px 0 0;
             width: 100%; max-width: 480px;
@@ -18207,73 +18182,6 @@
                 <button onclick="invQuickRange('all','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:white; color:var(--text); cursor:pointer; box-shadow:none; margin:0;">All Time</button>
             </div>
             <button onclick="invRunExport()" style="width:100%; background:var(--green); color:white; border:none; border-radius:12px; padding:14px; font-size:16px; font-weight:800; cursor:pointer;">📊 Export Excel</button>
-        </div>
-    </div>
-
-    <div id="hedge-log-modal">
-        <div id="hedge-log-panel">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                <h3 id="hedge-log-title" style="margin:0; font-size:18px; color:#1a1a1a;">Log Hedge Purchase</h3>
-                <button onclick="closeHedgeLogModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
-            </div>
-
-            <input type="hidden" id="hedge-log-plan-id" value="">
-            <input type="hidden" id="hedge-log-entry-id" value="">
-            <p class="note" id="hedge-log-plan-note" style="display:none; margin-bottom:14px;"></p>
-
-            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">METAL</label>
-            <select id="hedge-log-metal" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:14px; box-sizing:border-box;">
-                <option value="Gold">Gold</option>
-                <option value="Silver">Silver</option>
-            </select>
-
-            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">GRAMS PURCHASED</label>
-            <input type="number" id="hedge-log-grams" placeholder="e.g. 12.5" step="0.01" min="0"
-                   style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:14px; box-sizing:border-box;">
-
-            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">RATE PAID (₹/gram)</label>
-            <input type="number" id="hedge-log-rate" placeholder="e.g. 6250 — leave blank for a barter/melt exchange" step="0.01" min="0"
-                   style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:14px; box-sizing:border-box;">
-
-            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">NOTE (OPTIONAL)</label>
-            <input type="text" id="hedge-log-note" placeholder="e.g. Melt exchange, Cash purchase…"
-                   style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:16px; box-sizing:border-box;">
-
-            <button onclick="saveHedgeLogEntry()" id="hedge-log-save-btn"
-                style="width:100%; padding:14px; background:var(--gold); color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">
-                ✓ Save Purchase
-            </button>
-        </div>
-    </div>
-
-    <div id="manual-owed-modal">
-        <div id="manual-owed-panel">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                <h3 id="manual-owed-title" style="margin:0; font-size:18px; color:#1a1a1a;">Add Owed Entry</h3>
-                <button onclick="closeManualOwedModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
-            </div>
-
-            <input type="hidden" id="manual-owed-entry-id" value="">
-            <p class="note" style="margin-bottom:14px;">A durable record of grams owed that doesn't depend on invoice history — useful as a backstop if that data is ever cleared. Dated to today, and only counts if that's on or after "Count sales since" above.</p>
-
-            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">METAL</label>
-            <select id="manual-owed-metal" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:14px; box-sizing:border-box;">
-                <option value="Gold">Gold</option>
-                <option value="Silver">Silver</option>
-            </select>
-
-            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">GRAMS OWED</label>
-            <input type="number" id="manual-owed-grams" placeholder="e.g. 12.5" step="0.01" min="0"
-                   style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:14px; box-sizing:border-box;">
-
-            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">NOTE (OPTIONAL)</label>
-            <input type="text" id="manual-owed-note" placeholder="e.g. Backfilled after data reset"
-                   style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:16px; box-sizing:border-box;">
-
-            <button onclick="saveManualOwedEntry()" id="manual-owed-save-btn"
-                style="width:100%; padding:14px; background:var(--gold); color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">
-                ✓ Save
-            </button>
         </div>
     </div>
 
