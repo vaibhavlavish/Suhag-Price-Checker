@@ -12200,7 +12200,7 @@
             closeModal('cart-modal');
 
             const syncBadge = navigator.onLine ? '☁️ Saved to cloud.' : '📦 Saved locally — will sync when online.';
-            if (netPayable > 0 && !invoiceSaveOk) {
+            if (hadInvoice && !invoiceSaveOk) {
                 // Ledger entry above WAS written (money was collected), but the
                 // invoice failed to save — surface this loudly instead of a
                 // normal success toast, so it's never mistaken for "all good".
