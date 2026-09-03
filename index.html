@@ -11556,22 +11556,18 @@
         // read from or write to billHistory/ledgerEntries, and deleting/clearing any one
         // of ledger, bills, or invoices never touches the other two.
         function _invAutoSaveFromCheckout(cartItems, netPayable, paymentMode, paymentSplit) {
-            // Gate deliberately mirrors _recordSaleLedgerEntry's own bail-out
-            // condition (receipt <= 0) instead of re-deriving "is this real"
-            // from a separate per-row taxable-value computation. Those two
-            // checks used to be independent and could disagree — e.g. a rate
-            // lookup returning 0 for one item's stamp made the invoice-row
-            // math see "nothing to invoice" while cart.finalPrice (what the
-            // ledger uses) was still a real positive number, so the ledger
-            // entry got written with no matching invoice and no error shown.
-            // Keeping BOTH gated on the same netPayable value makes that
-            // class of silent mismatch structurally impossible: whenever the
-            // ledger logs a sale, this will now also attempt to save one.
-            if (!(netPayable > 0) || !cartItems || !cartItems.length) return true; // nothing collected — correctly nothing to invoice (e.g. old-gold-only refund)
+            if (!cartItems || !cartItems.length) return true; // empty cart — correctly nothing to invoice
+            const _fmt = invGetCheckoutFormat();
+            const rows = _invRowsFromCartItems(cartItems, _fmt);
+            // Gate on whether there's real invoiceable content (item/repair rows),
+            // NOT on netPayable. netPayable only decides what's PAID — old-jewellery
+            // trade-ins routinely make it negative (or zero) on a completely
+            // legitimate sale when the old-gold value equals or exceeds the item
+            // total, and that must never be read as "nothing to invoice". Using
+            // _invHasSavableContent (same check the manual invoice tab uses) keeps
+            // this decision independent of the old-gold arithmetic entirely.
+            if (!_invHasSavableContent(rows)) return true; // nothing collected — correctly nothing to invoice (e.g. old-gold-only refund)
             try {
-                const _fmt = invGetCheckoutFormat();
-                const rows = _invRowsFromCartItems(cartItems, _fmt);
-
                 const sub = rows.reduce((s, r) => s + invTaxableVal(r), 0);
                 // finalAmt = gross after discount only (OLD GOLD NOT deducted here).
                 // invComputeTotals back-calculates taxable from this gross figure.
@@ -11819,9 +11815,10 @@
         function _invBuildPrintHtmlFromCart(cartItems, netPayable, paymentMode, paymentSplit) {
             const fmt = invGetCheckoutFormat();
             const rows = _invRowsFromCartItems(cartItems, fmt);
-            // Gate matches _invAutoSaveFromCheckout's — see the comment there for
-            // why this is based on netPayable rather than a separate per-row check.
-            if (!(netPayable > 0) || !cartItems || !cartItems.length) return null;
+            // Gate matches _invAutoSaveFromCheckout's — see the comment there.
+            // Based on real row content, not netPayable, so an old-gold trade-in
+            // that outweighs the item total doesn't get read as "nothing to print".
+            if (!cartItems || !cartItems.length || !_invHasSavableContent(rows)) return null;
 
             const sub = rows.reduce((s, r) => s + invTaxableVal(r), 0);
             // Restore old gold so invComputeTotals gets the gross (pre-OG) amount.
