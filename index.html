@@ -1771,6 +1771,9 @@
             <button onclick="downloadBackup()" class="backup" data-menu-key="backup">
                 <span class="menu-icon" style="background:#e3f2fd;">💾</span> Download Backup
             </button>
+            <button onclick="openDateRangeBackupModal()" class="backup" data-menu-key="backup-date-range">
+                <span class="menu-icon" style="background:#e3f2fd;">📅</span> Backup by Date Range
+            </button>
             <button onclick="triggerRestore()" class="restore" data-menu-key="restore">
                 <span class="menu-icon" style="background:#fff3e0;">📥</span> Restore Backup
             </button>
@@ -3132,6 +3135,56 @@
         }
 
         // ══════════════════════════════════════════════════════════════════
+        // DATE-RANGE BACKUP
+        // ══════════════════════════════════════════════════════════════════
+        // Same payload as the regular full backup (_buildBackupData), except
+        // invoiceHistory is filtered down to the chosen date range. Nothing
+        // else is date-filtered — rates/products/profiles/settings etc. are
+        // current-state config, not a dated transaction log, so a date range
+        // doesn't mean anything for them and they're always included in full.
+        // ledgerEntries and billHistory stay excluded here too, same as the
+        // regular backup — see the note above _buildBackupData().
+        function openDateRangeBackupModal() {
+            closeOptions();
+            const today = new Date();
+            const toStr = invFmtDate(today);
+            const fe = document.getElementById('inv-bak-from'), te = document.getElementById('inv-bak-to');
+            if (fe && !fe.value) fe.value = toStr;
+            if (te && !te.value) te.value = toStr;
+            document.getElementById('date-range-backup-modal').style.display = 'flex';
+        }
+        function closeDateRangeBackupModal() {
+            document.getElementById('date-range-backup-modal').style.display = 'none';
+        }
+        function downloadBackupByDateRange() {
+            const fromVal = document.getElementById('inv-bak-from').value;
+            const toVal = document.getElementById('inv-bak-to').value;
+            if (!fromVal || !toVal) { showCustomAlert('Pick a date range.'); return; }
+
+            const fromD = new Date(fromVal + 'T00:00:00');
+            const toD = new Date(toVal + 'T23:59:59');
+            if (fromD > toD) { showCustomAlert('"From" date must be before "To" date.'); return; }
+
+            const data = _buildBackupData();
+            data.invoiceHistory = (invoiceHistory || []).filter(inv => {
+                const t = new Date(inv.timestamp);
+                return t >= fromD && t <= toD;
+            });
+            data.backupRange = { from: fromVal, to: toVal };
+
+            const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "suhag_backup_" + fromVal + "_to_" + toVal + ".json";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            closeDateRangeBackupModal();
+        }
+
+        // ══════════════════════════════════════════════════════════════════
         // AUTO BACKUP TO GOOGLE DRIVE FOLDER (via File System Access API)
         // ══════════════════════════════════════════════════════════════════
         // How this works: the shop PC already has Google Drive Desktop
@@ -3683,6 +3736,7 @@
         const FACTORY_MENU_PREFS = {
             "auto-backup": true,
             "backup": false,
+            "backup-date-range": false,
             "bulk-check": false,
             "clear-all-data": false,
             "clear-cart": false,
@@ -5150,6 +5204,7 @@
             { key: 'reprint-last',   label: 'Reprint Last Invoice', icon: '🖨️', action: () => reprintLastInvoice() },
             { key: 'print-server',   label: 'Print Server',       icon: '🖨️', action: () => openPrintServerModal() },
             { key: 'backup',         label: 'Download Backup',    icon: '💾', action: () => downloadBackup() },
+            { key: 'backup-date-range', label: 'Backup by Date Range', icon: '📅', action: () => openDateRangeBackupModal() },
             { key: 'restore',        label: 'Restore Backup',     icon: '📥', action: () => triggerRestore() },
             { key: 'auto-backup',    label: 'Auto Backup (Drive)', icon: '☁️', action: () => openAutoBackupSettings() },
             { key: 'sign-out',       label: 'Sign Out',           icon: '🔓', action: () => window.authSignOut(window.firebaseAuth) },
@@ -18214,6 +18269,34 @@
                 <button onclick="invQuickRange('all','rep')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:white; color:var(--text); cursor:pointer; box-shadow:none; margin:0;">All Time</button>
             </div>
             <button onclick="invRunExport()" style="width:100%; background:var(--green); color:white; border:none; border-radius:12px; padding:14px; font-size:16px; font-weight:800; cursor:pointer;">📊 Export Excel</button>
+        </div>
+    </div>
+
+    <div id="date-range-backup-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:1150; align-items:flex-end; justify-content:center;">
+        <div style="background:white; border-radius:20px 20px 0 0; width:100%; max-width:480px; padding:22px 20px 30px; box-shadow:0 -8px 32px rgba(0,0,0,.15); max-height:88vh; overflow-y:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0; font-size:18px; color:#1a1a1a;">Backup by Date Range</h3>
+                <button onclick="closeDateRangeBackupModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
+            </div>
+            <p style="margin:0 0 14px; font-size:12.5px; color:#888; line-height:1.5;">Invoice History is limited to this range. Rates, products, profiles, and other settings are always included in full.</p>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+                <div>
+                    <label style="font-size:11px; display:block; margin-bottom:3px; color:#888;">From</label>
+                    <input type="date" id="inv-bak-from" style="margin:0; width:100%; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; box-sizing:border-box;">
+                </div>
+                <div>
+                    <label style="font-size:11px; display:block; margin-bottom:3px; color:#888;">To</label>
+                    <input type="date" id="inv-bak-to" style="margin:0; width:100%; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; box-sizing:border-box;">
+                </div>
+            </div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;">
+                <button onclick="invQuickRange('today','bak')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:white; color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Today</button>
+                <button onclick="invQuickRange('week','bak')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:white; color:var(--text); cursor:pointer; box-shadow:none; margin:0;">This Week</button>
+                <button onclick="invQuickRange('month','bak')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:white; color:var(--text); cursor:pointer; box-shadow:none; margin:0;">This Month</button>
+                <button onclick="invQuickRange('lastmonth','bak')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:white; color:var(--text); cursor:pointer; box-shadow:none; margin:0;">Last Month</button>
+                <button onclick="invQuickRange('all','bak')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:white; color:var(--text); cursor:pointer; box-shadow:none; margin:0;">All Time</button>
+            </div>
+            <button onclick="downloadBackupByDateRange()" style="width:100%; background:var(--green); color:white; border:none; border-radius:12px; padding:14px; font-size:16px; font-weight:800; cursor:pointer;">💾 Download Backup</button>
         </div>
     </div>
 
