@@ -11531,7 +11531,7 @@
         // read from or write to billHistory/ledgerEntries, and deleting/clearing any one
         // of ledger, bills, or invoices never touches the other two.
         function _invAutoSaveFromCheckout(cartItems, netPayable, paymentMode, paymentSplit) {
-            if (!cartItems || !cartItems.length) return true; // empty cart — correctly nothing to invoice
+            if (!cartItems || !cartItems.length) return { ok: true, invoiceId: null }; // empty cart — correctly nothing to invoice
             const _fmt = invGetCheckoutFormat();
             const rows = _invRowsFromCartItems(cartItems, _fmt);
             // Gate on whether there's real invoiceable content (item/repair rows),
@@ -11541,7 +11541,7 @@
             // total, and that must never be read as "nothing to invoice". Using
             // _invHasSavableContent (same check the manual invoice tab uses) keeps
             // this decision independent of the old-gold arithmetic entirely.
-            if (!_invHasSavableContent(rows)) return true; // nothing collected — correctly nothing to invoice (e.g. old-gold-only refund)
+            if (!_invHasSavableContent(rows)) return { ok: true, invoiceId: null }; // nothing collected — correctly nothing to invoice (e.g. old-gold-only refund)
             try {
                 const sub = rows.reduce((s, r) => s + invTaxableVal(r), 0);
                 // finalAmt = gross after discount only (OLD GOLD NOT deducted here).
@@ -11586,14 +11586,14 @@
                 invoiceHistory.unshift(record);
                 _saveInvoiceLocal();
                 _saveInvoiceRecord(record);
-                return true;
+                return { ok: true, invoiceId: record.id };
             } catch (e) {
                 // Previously this was swallowed with only a console.error — the sale
                 // still got logged to the ledger by the caller with no visible sign
                 // the invoice half had failed. Now the caller is told, so it can
                 // warn the shop owner instead of showing a normal success toast.
                 console.error('[Invoice] auto-save from checkout failed', e);
-                return false;
+                return { ok: false, invoiceId: null };
             }
         }
 
@@ -12088,8 +12088,12 @@
             if (netAfterOG < 0) {
                 // Refund scenario — old jewellery value exceeds the item total.
                 const amt = Math.round(Math.abs(netAfterOG));
-                const _dup = ledgerEntries.some(e => e.type === 'out' && Math.abs(e.amount - amt) < 1 && Math.abs(new Date(e.timestamp).getTime() - _now) < 10000);
-                if (_dup) { console.warn('[Guard] Duplicate refund ledger entry blocked within 10s window'); return; }
+                const ef = extraFields || {};
+                const uniqueKey = ef.invoiceId || ef.installmentPaymentId || null;
+                const _dup = uniqueKey
+                    ? ledgerEntries.some(e => e.type === 'out' && (e.invoiceId === uniqueKey || e.installmentPaymentId === uniqueKey))
+                    : ledgerEntries.some(e => e.type === 'out' && Math.abs(e.amount - amt) < 1 && Math.abs(new Date(e.timestamp).getTime() - _now) < 10000);
+                if (_dup) { console.warn('[Guard] Duplicate refund ledger entry blocked', uniqueKey ? '(same id: ' + uniqueKey + ')' : '(within 10s window)'); return; }
                 const entry = {
                     id: crypto.randomUUID(), type: 'out', amount: amt, cashPortion: amt,
                     note: 'Refund to customer (old jewellery > item price)',
@@ -12115,8 +12119,22 @@
             else { note = 'Sale'; }
 
             const amt = Math.round(receipt);
-            const _dup = ledgerEntries.some(e => e.type === 'sale' && Math.abs(e.amount - amt) < 1 && Math.abs(new Date(e.timestamp).getTime() - _now) < 10000);
-            if (_dup) { console.warn('[Guard] Duplicate sale ledger entry blocked within 10s window'); return; }
+            const ef = extraFields || {};
+            // Same Track B bill number can legitimately repeat across different sales
+            // (by design — see _invNextBillNo), and two unrelated sales can easily
+            // share the same rounded amount within a few seconds of each other (e.g.
+            // one bill split into a separate cash invoice and a separate UPI invoice).
+            // Matching on amount+time alone false-positived on exactly that case and
+            // silently dropped the second, legitimate sale's ledger entry. Whenever a
+            // real unique id is available (every checkout/invoice/installment call
+            // site now passes one), dedupe strictly against that instead — it can
+            // never collide between two different sales. Only fall back to the old
+            // fuzzy amount+time heuristic when no id was passed in at all.
+            const uniqueKey = ef.invoiceId || ef.installmentPaymentId || null;
+            const _dup = uniqueKey
+                ? ledgerEntries.some(e => e.type === 'sale' && (e.invoiceId === uniqueKey || e.installmentPaymentId === uniqueKey))
+                : ledgerEntries.some(e => e.type === 'sale' && Math.abs(e.amount - amt) < 1 && Math.abs(new Date(e.timestamp).getTime() - _now) < 10000);
+            if (_dup) { console.warn('[Guard] Duplicate sale ledger entry blocked', uniqueKey ? '(same id: ' + uniqueKey + ')' : '(within 10s window)'); return; }
 
             const entry = {
                 id: crypto.randomUUID(), type: 'sale', amount: amt, cashPortion: Math.round(cashPortion),
@@ -12139,19 +12157,29 @@
 
             // --- Save to Invoice (Track B) — the sole record of this sale ---
             let invoiceSaveOk = true;
+            let _savedInvoiceId = null;
             if (invoiceRecordOverride) {
                 invoiceHistory.unshift(invoiceRecordOverride);
                 _saveInvoiceLocal();
                 _saveInvoiceRecord(invoiceRecordOverride);
+                _savedInvoiceId = invoiceRecordOverride.id;
             } else {
-                invoiceSaveOk = _invAutoSaveFromCheckout(
+                const _saveResult = _invAutoSaveFromCheckout(
                     cart, netPayable,
                     mode, mode === 'partial' ? payment : null
                 );
+                invoiceSaveOk = _saveResult.ok;
+                _savedInvoiceId = _saveResult.invoiceId;
             }
 
             // --- Record in ledger — single unified sale-entry write ---
-            _recordSaleLedgerEntry(netPayable, Math.max(0, netPayable), mode, payment, 'checkout');
+            // invoiceId lets the ledger's own duplicate-guard key off something
+            // that's actually unique per sale, instead of amount+time — which
+            // false-positives whenever two different sales share the same rounded
+            // amount within a few seconds of each other (e.g. a bill split into a
+            // separate cash invoice and a separate UPI invoice, same Track B bill
+            // number by design). See _recordSaleLedgerEntry.
+            _recordSaleLedgerEntry(netPayable, Math.max(0, netPayable), mode, payment, 'checkout', { invoiceId: _savedInvoiceId });
 
             // --- Deduct tracked loose-preset stock (e.g. Nosepin) for this sale ---
             // Only decrements presets that are actively tracked (someone has used
@@ -15959,7 +15987,7 @@
             const ogTotal = (rec.ogItems || []).reduce((s,i) => s + (i.value || 0), 0);
             const netAfterOG = ((rec.totals && rec.totals.rounded) || 0) - ogTotal;
             const receipt = (rec.totals && rec.totals.receipt) || 0;
-            _recordSaleLedgerEntry(netAfterOG, receipt, rec.paymentMethod, rec.paymentDetails, 'invoice');
+            _recordSaleLedgerEntry(netAfterOG, receipt, rec.paymentMethod, rec.paymentDetails, 'invoice', { invoiceId: rec.id });
         }
 
         function _invDoActualPrint() {
