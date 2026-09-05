@@ -15119,7 +15119,11 @@
             // (e.g. manually-typed rows with no linked product).
             if (type === 'wastage') return (r.nlWt || 0) * (r.pureRate || r.rate || 0) * (val / 100);
             if (type === 'per_g')   return val * (r.nlWt || 0);
-            if (type === 'per_pc')  return val * (r.pc || 1);
+            // Loose items' "₹ Fixed (Pc)" making is a flat lump sum for the whole
+            // line (see calculateLoosePrice — making = makingValue, never multiplied
+            // by weight or piece count), so it must stay flat here too regardless of
+            // r.pc. Only non-loose rows (per-piece stock making) actually scale with pc.
+            if (type === 'per_pc')  return r.isLoose ? val : val * (r.pc || 1);
             return metal * (val / 100);
         }
 
@@ -15520,7 +15524,7 @@
                         if (typeMap[item.makingType]) {
                             return {
                                 desc: looseDesc,
-                                hsn: '7113', pc: 1,
+                                hsn: '7113', pc: item.pieceCount || 1,
                                 grWt: parseFloat((item.weight || 0).toFixed(3)),
                                 nlWt: parseFloat((item.weight || 0).toFixed(3)),
                                 rate: parseFloat((item.rate || 0).toFixed(2)),
@@ -15536,7 +15540,7 @@
                         const makingAmt = Math.max(0, (item.subtotal || 0) - metalVal);
                         return {
                             desc: looseDesc,
-                            hsn: '7113', pc: 1,
+                            hsn: '7113', pc: item.pieceCount || 1,
                             grWt: parseFloat((item.weight || 0).toFixed(3)),
                             nlWt: parseFloat((item.weight || 0).toFixed(3)),
                             rate: parseFloat((item.rate || 0).toFixed(2)),
@@ -15554,7 +15558,7 @@
                     const legacySubtotal = (item.finalPrice || 0) / (1 + legacyTaxFrac);
                     return {
                         desc: looseDesc,
-                        hsn: '7113', pc: 1,
+                        hsn: '7113', pc: item.pieceCount || 1,
                         grWt: parseFloat((item.weight || 0).toFixed(3)),
                         nlWt: parseFloat((item.weight || 0).toFixed(3)),
                         rate: 0,
