@@ -11838,7 +11838,7 @@
                 + (showHsn ? '<th style="width:9%;">HSN</th>' : '') + '<th style="width:6%;">Pc.</th>'
                 + '<th style="width:10%;">Gr.Wt</th><th style="width:10%;">Nt.Wt</th>';
             let colSpan = showHsn ? 5 : 4;
-            if (showRate)   { headCols += '<th style="width:11%;">Rate</th>';   colSpan++; }
+            if (showRate)   { headCols += '<th style="width:11%;text-align:right;">Rate</th>';   colSpan++; }
             if (showMaking) { headCols += '<th style="width:13%;text-align:right;">Making</th>'; colSpan++; }
             headCols += `<th style="width:${100 - (50 + (showHsn?9:0) + (showRate?11:0) + (showMaking?13:0))}%;">${fp.valueColLabel}</th>`;
 
@@ -15790,7 +15790,7 @@
                 + (showHsn ? '<th style="width:9%;">HSN</th>' : '') + '<th style="width:6%;">Pc.</th>'
                 + '<th style="width:10%;">Gr.Wt</th><th style="width:10%;">Nt.Wt</th>';
             let colSpan = showHsn ? 5 : 4;
-            if (showRate)   { headCols += '<th style="width:11%;">Rate</th>';   colSpan++; }
+            if (showRate)   { headCols += '<th style="width:11%;text-align:right;">Rate</th>';   colSpan++; }
             if (showMaking) { headCols += '<th style="width:13%;text-align:right;">Making</th>'; colSpan++; }
             headCols += `<th style="width:${100 - (50 + (showHsn?9:0) + (showRate?11:0) + (showMaking?13:0))}%;">${fp.valueColLabel}</th>`;
 
