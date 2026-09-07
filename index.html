@@ -13100,23 +13100,41 @@
             // called immediately after push(). This function is kept for compatibility.
         }
 
-        function ledgerCashTotal() {
-            return ledgerEntries.reduce((sum, e) => {
-                if (e.type === 'sale') {
-                    if (e.cashPortion !== undefined) {
-                        return sum + e.cashPortion;
-                    }
-                    // Legacy fallback: if note says UPI or Card, cash portion is 0
-                    const note = (e.note || '').toLowerCase();
-                    if (note.includes('upi') || note.includes('card')) {
-                        return sum;
-                    }
-                    return sum + (e.amount || 0);
+        // Cash effect of a single ledger entry (how much it moves "cash in shop").
+        function _ledgerEntryCashDelta(e) {
+            if (e.type === 'sale') {
+                if (e.cashPortion !== undefined) {
+                    return e.cashPortion;
                 }
-                if (e.type === 'in')  return sum + (e.amount || 0);
-                if (e.type === 'out' || e.type === 'expense') return sum - (e.amount || 0);
-                return sum;
-            }, 0);
+                // Legacy fallback: if note says UPI or Card, cash portion is 0
+                const note = (e.note || '').toLowerCase();
+                if (note.includes('upi') || note.includes('card')) {
+                    return 0;
+                }
+                return e.amount || 0;
+            }
+            if (e.type === 'in')  return e.amount || 0;
+            if (e.type === 'out' || e.type === 'expense') return -(e.amount || 0);
+            return 0;
+        }
+
+        function ledgerCashTotal() {
+            return ledgerEntries.reduce((sum, e) => sum + _ledgerEntryCashDelta(e), 0);
+        }
+
+        // Running "cash in shop" balance as of the END of each calendar day,
+        // computed over the FULL ledger history (not just whatever subset is
+        // being displayed in a filtered tab), so it always matches the top banner.
+        function _ledgerClosingBalancesByDate() {
+            const chronological = [...ledgerEntries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            const map = {};
+            let running = 0;
+            chronological.forEach(e => {
+                running += _ledgerEntryCashDelta(e);
+                const key = new Date(e.timestamp).toLocaleDateString('en-IN', {day:'2-digit', month:'short', year:'numeric'});
+                map[key] = running; // last write for a date = balance at end of that date
+            });
+            return map;
         }
 
         function renderLedger() {
@@ -13163,6 +13181,10 @@
                 groups[key].push(e);
             });
 
+            // Closing "cash in shop" balance as of the end of each date, based on
+            // the FULL ledger (so it matches the top banner even in filtered tabs).
+            const closingBalances = _ledgerClosingBalancesByDate();
+
             let html = '';
             Object.entries(groups).forEach(([date, items]) => {
                 // Day total
@@ -13170,7 +13192,11 @@
                     if (e.type === 'sale' || e.type === 'in') return s + e.amount;
                     return s - e.amount;
                 }, 0);
-                html += `<div class="ledger-day-header">${date} <span style="float:right; color:${dayNet>=0?'#2e7d32':'#c62828'};">${dayNet>=0?'+':'-'}₹${_fmt(Math.abs(dayNet))}</span></div>`;
+                const closing = closingBalances[date];
+                const closingHtml = closing !== undefined
+                    ? `<span style="text-transform:none; font-weight:600; color:#555; margin-left:8px;">· Closing: ₹${_fmt(Math.abs(closing))}${closing < 0 ? ' (deficit)' : ''}</span>`
+                    : '';
+                html += `<div class="ledger-day-header">${date}${closingHtml} <span style="float:right; color:${dayNet>=0?'#2e7d32':'#c62828'};">${dayNet>=0?'+':'-'}₹${_fmt(Math.abs(dayNet))}</span></div>`;
                 items.forEach(e => {
                     const isPos = e.type === 'sale' || e.type === 'in';
                     const icons = { sale:'🛒', in:'💵', out:'📤', expense:'🧾' };
