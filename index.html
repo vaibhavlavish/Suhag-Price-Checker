@@ -12184,7 +12184,7 @@
                 if (_dup) { console.warn('[Guard] Duplicate refund ledger entry blocked', uniqueKey ? '(same id: ' + uniqueKey + ')' : '(within 10s window)'); return; }
                 const entry = {
                     id: crypto.randomUUID(), type: 'out', amount: amt, cashPortion: amt,
-                    note: 'Refund to customer (old jewellery > item price)',
+                    note: 'Refund to customer',
                     timestamp: new Date().toISOString(), source, ...(extraFields || {})
                 };
                 ledgerEntries.push(entry); _saveLedgerLocal(); _saveLedgerRecord(entry); renderLedger();
