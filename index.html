@@ -10574,6 +10574,39 @@
                     barcodeInput.focus();
                 }
             });
+
+            // --- Keyboard shortcuts: Alt+L (Ledger), Alt+C/E/A inside Ledger, Space to dismiss an alert ---
+            document.addEventListener('keydown', function(event) {
+                // Space clicks OK on a single-button alert (not a Cancel/OK confirm dialog)
+                if (event.code === 'Space' && customModal.style.display === 'flex' && modalActions.children.length === 1) {
+                    event.preventDefault();
+                    closeCustomModal();
+                    return;
+                }
+
+                if (!event.altKey) return;
+                const key = event.key.toLowerCase();
+
+                if (key === 'l') {
+                    event.preventDefault();
+                    showSection('ledger');
+                    return;
+                }
+
+                if (document.getElementById('ledger').style.display !== 'none') {
+                    if (key === 'c') {
+                        event.preventDefault();
+                        openLedgerEntryModal('in');
+                    } else if (key === 'e') {
+                        event.preventDefault();
+                        openLedgerEntryModal('expense');
+                    } else if (key === 'a') {
+                        event.preventDefault();
+                        openLedgerAddPaymentChoice();
+                    }
+                }
+            });
+
             // --- "Enter" key listener ---
             barcodeInput.addEventListener('keydown', function(event) {
                 if (event.key === 'Enter') {
