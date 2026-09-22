@@ -658,6 +658,9 @@
             padding-bottom: 12px;
             letter-spacing: -0.3px;
         }
+        #preset-content {
+            max-width: 520px;
+        }
         .form-accordion {
             border: 1px solid #e0e0e0;
             border-radius: 10px;
@@ -1158,7 +1161,7 @@
         }
         #preset-list {
             margin-top: 10px;
-            max-height: 200px;
+            max-height: 55vh;
             overflow-y: auto;
         }
         .preset-row {
@@ -10071,7 +10074,7 @@
                     cartHtml += `
                         <div class="cart-item">
                             <div class="cart-item-details" ${clickAction} ${item.type === 'loose' || item.type === 'repair' ? 'style="cursor: default;"' : ''}>
-                                <div class="cart-item-title">${item.itemName}</div>
+                                <div class="cart-item-title">${item.presetName || item.itemName}</div>
                                 <div class="cart-item-barcode">${details}</div>
                             </div>
                             <span class="cart-item-price">₹${item.finalPrice.toFixed(2)}</span>
