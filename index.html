@@ -17047,7 +17047,10 @@
             // Vou No. lives INSIDE Voucher Type (e.g. "OP 2" and "PUR 2" are different
             // groups even though both have vou no. "2") — so nest Voucher Type as the
             // outer group and Vou No. as sub-groups underneath it, rather than a flat
-            // list keyed only on vou no.
+            // list keyed only on vou no. Within a Vou No. bucket, items are further
+            // bucketed by item name — using a Map to preserve first-seen order — so
+            // every sale of the same item (e.g. "G EARRING") lines up together,
+            // regardless of which bill it was sold on, for easy lookup.
             const types = {};
             let totalBarcodes = 0;
             invs.forEach(inv => {
@@ -17058,8 +17061,12 @@
                     const voucherType = (prod.voucherType || '').toString().trim() || '—';
                     const vouchNo = (prod.vouchNo || '').toString().trim() || '—';
                     if (!types[voucherType]) types[voucherType] = {};
-                    if (!types[voucherType][vouchNo]) types[voucherType][vouchNo] = [];
-                    types[voucherType][vouchNo].push({ barcode: bc, itemName: (prod.itemName || '').toString().trim(), billNo: inv.billNo });
+                    if (!types[voucherType][vouchNo]) types[voucherType][vouchNo] = new Map();
+                    const itemNameRaw = (prod.itemName || '').toString().trim();
+                    const nameKey = itemNameRaw.toUpperCase() || '—';
+                    const byName = types[voucherType][vouchNo];
+                    if (!byName.has(nameKey)) byName.set(nameKey, []);
+                    byName.get(nameKey).push({ barcode: bc, itemName: itemNameRaw, billNo: inv.billNo });
                     totalBarcodes++;
                 });
             });
@@ -17068,7 +17075,13 @@
                 voucherType,
                 vouchNoGroups: Object.keys(types[voucherType])
                     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
-                    .map(vouchNo => ({ vouchNo, barcodes: types[voucherType][vouchNo] }))
+                    .map(vouchNo => ({
+                        vouchNo,
+                        barcodes: Array.from(types[voucherType][vouchNo].entries())
+                            .sort((a, b) => a[0].localeCompare(b[0]))
+                            .map(([, items]) => items.sort((x, y) => String(x.billNo || '').localeCompare(String(y.billNo || ''), undefined, { numeric: true })))
+                            .flat()
+                    }))
             }));
 
             summaryEl.textContent = totalBarcodes + ' barcode(s) across ' + typeArr.length + ' voucher type(s) — Track ' + currentInvTrack;
