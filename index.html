@@ -6984,6 +6984,14 @@
             // Initial update of product info display (Name/Barcode)
             updateMainDisplayInfo();
             if (_productUsesMrp(d)) {
+                // MRP products have no making charge of their own. This branch
+                // never touched currentMakingType/Input, so whatever the PREVIOUS
+                // scanned item left there (e.g. 'wastage' 8) stayed behind and
+                // got frozen onto this item's cart entry by addToCart() — which
+                // the invoice then applied to a zero-weight/zero-rate row,
+                // turning the MRP price into ₹0.00.
+                currentMakingType = '';
+                currentMakingInput = 0;
                 let total = d.mrp + otherCharge;
                 currentTaxAmount = total * (taxRate / 100);
                 final = total + currentTaxAmount;
@@ -15750,7 +15758,15 @@
                 const nw = (item.weightOverride != null) ? item.weightOverride : (parseFloat(d.netWeight) || 0);
                 const gw = (item.grossWeightOverride != null) ? item.grossWeightOverride : (parseFloat(d.grossWeight) || nw);
                 let mk;
-                if (item.makingOverride) {
+                if (_productUsesMrp(d)) {
+                    // MRP-priced product (MRP > 0, no stamp): the whole price is
+                    // MRP + other charge, exactly what the main screen/cart priced.
+                    // Always invoice it that way, ignoring any frozen making
+                    // override — an MRP item has no making to override, and a stale
+                    // one carried over from a previously scanned item used to zero
+                    // this row out (metal value is 0 here, so only the MRP counts).
+                    mk = { makingType: 'mrp', makingPct: (d.mrp || 0) + (d.otherCharge || 0) };
+                } else if (item.makingOverride) {
                     const ov = item.makingOverride;
                     const typeMap = { 'wastage':'wastage', 'per g':'per_g', '%':'%', 'per pc':'per_pc', 'MRP':'mrp' };
                     mk = { makingType: typeMap[ov.type] || '%', makingPct: ov.input || 0 };
