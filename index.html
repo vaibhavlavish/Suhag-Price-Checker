@@ -3107,7 +3107,7 @@
             return {
                 rates: rates,
                 taxRate: taxRate,
-                products: productData,
+                products: {}, // stock deliberately excluded from ALL backups; key kept because restore/standalone reject files without it
                 looseDefaults: looseDefaultsCloud,
                 baseCalcDefaults: baseCalcDefaults,
                 presets: loosePresets, // Include presets in backup
@@ -3153,6 +3153,14 @@
         // doesn't mean anything for them and they're always included in full.
         // ledgerEntries and billHistory stay excluded here too, same as the
         // regular backup — see the note above _buildBackupData().
+        // Date-range backups are invoice archives — stock (products, presetStock)
+        // is dropped. The KEYS are kept as empty objects on purpose: restore
+        // (and the standalone viewer) reject files where `products` is missing.
+        function _stripStockFromRangeBackup(data) {
+            data.products = {};
+            data.presetStock = {};
+            return data;
+        }
         function openDateRangeBackupModal() {
             closeOptions();
             const today = new Date();
@@ -3174,7 +3182,7 @@
             const toD = new Date(toVal + 'T23:59:59');
             if (fromD > toD) { showCustomAlert('"From" date must be before "To" date.'); return; }
 
-            const data = _buildBackupData();
+            const data = _stripStockFromRangeBackup(_buildBackupData());
             data.invoiceHistory = (invoiceHistory || []).filter(inv => {
                 const t = new Date(inv.timestamp);
                 return t >= fromD && t <= toD;
@@ -3192,6 +3200,97 @@
             URL.revokeObjectURL(url);
             closeDateRangeBackupModal();
         }
+
+        // ══════════════════════════════════════════════════════════════════
+        // DELETE INVOICES BY DATE RANGE
+        // ══════════════════════════════════════════════════════════════════
+        // Uses the same From/To inputs and the same timestamp filter as
+        // downloadBackupByDateRange(), so the file that gets downloaded and the
+        // set of invoices that get deleted are always identical. Flow: PIN ->
+        // download the range backup -> explicit confirm (after the file has been
+        // offered for download) -> single multi-path Firebase delete.
+        // Deletes ALL invoice records in range (Track A, Track B, drafts).
+        // Ledger, billHistory, products, presets and settings are NOT touched.
+        // Bill numbering guard: the next bill number is derived from the highest
+        // remaining Track A bill (floored by invStartNumber). If the delete would
+        // remove the highest-numbered Track A bill (e.g. a backdated invoice),
+        // invStartNumber is raised in the same write so numbers are never reused.
+        function deleteInvoicesByDateRange() {
+            if (!checkPin()) return;
+            if (!navigator.onLine) { showCustomAlert('Cannot delete while offline. Please reconnect and try again.'); return; }
+            if (!window.firebaseDB || !window._writeAllowed || !window.dbSafeUpdate) { showCustomAlert('Firebase not ready. Try again in a moment.'); return; }
+
+            const fromVal = document.getElementById('inv-bak-from').value;
+            const toVal = document.getElementById('inv-bak-to').value;
+            if (!fromVal || !toVal) { showCustomAlert('Pick a date range.'); return; }
+            const fromD = new Date(fromVal + 'T00:00:00');
+            const toD = new Date(toVal + 'T23:59:59');
+            if (fromD > toD) { showCustomAlert('"From" date must be before "To" date.'); return; }
+
+            const inRange = inv => { const t = new Date(inv.timestamp); return t >= fromD && t <= toD; };
+            const matching = (invoiceHistory || []).filter(inRange);
+            if (!matching.length) { showCustomAlert('No invoices found in this range.'); return; }
+            if (matching.some(inv => !inv.id)) { showCustomAlert('Some invoices in this range have no ID and cannot be deleted safely. Nothing was deleted.'); return; }
+
+            // Bill-number guard (Track A, non-draft — same rule as _invHighestInTrack)
+            const prefix = invoiceSettings.invPrefix || 'SJ-';
+            const numOf = i => (i.track === 'A' && !i.draft && i.billNo && i.billNo.startsWith(prefix)) ? parseInt(i.billNo.slice(prefix.length), 10) : NaN;
+            const matchIds = new Set(matching.map(i => i.id));
+            let maxBefore = 0, maxAfter = 0;
+            (invoiceHistory || []).forEach(i => {
+                const n = numOf(i);
+                if (isNaN(n)) return;
+                if (n > maxBefore) maxBefore = n;
+                if (!matchIds.has(i.id) && n > maxAfter) maxAfter = n;
+            });
+            const curStart = parseInt(invoiceSettings.invStartNumber, 10) || 1;
+            const newStart = (maxAfter < maxBefore && (curStart - 1) < maxBefore) ? (maxBefore + 1) : null;
+
+            // 1) Backup file for exactly this range (same payload as the range backup)
+            const data = _stripStockFromRangeBackup(_buildBackupData());
+            data.invoiceHistory = matching;
+            data.backupRange = { from: fromVal, to: toVal };
+            const fileName = "suhag_backup_" + fromVal + "_to_" + toVal + ".json";
+            const blob = new Blob([JSON.stringify(data, null, 2)], {type: "application/json"});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = fileName;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            closeDateRangeBackupModal();
+
+            // 2) Confirm only after the download has been offered
+            const nA = matching.filter(i => i.track === 'A' && !i.draft).length;
+            const nDraft = matching.filter(i => i.draft).length;
+            const nOther = matching.length - nA - nDraft;
+            const guardNote = newStart ? `<br><br>Next bill number will be kept at <strong>${prefix}${newStart}</strong> so no number is reused.` : '';
+            showCustomConfirm(
+                `Backup <strong>${fileName}</strong> was just downloaded. Check it saved, then confirm.<br><br>` +
+                `Delete <strong>${matching.length}</strong> invoice(s) from <strong>${fromVal}</strong> to <strong>${toVal}</strong> ` +
+                `(${nA} Track A, ${nOther} other, ${nDraft} draft)?` + guardNote +
+                `<br><br>Ledger, products and settings are NOT touched. This cannot be undone.`,
+                'Confirm Delete Range',
+                () => {
+                    const update = {};
+                    matching.forEach(inv => { update[`jewelryData/invoiceHistory/${inv.id}`] = null; });
+                    if (newStart) update['jewelryData/config/invBillStartNumber'] = newStart;
+                    window.dbSafeUpdate(update)
+                        .then(() => {
+                            invoiceHistory = invoiceHistory.filter(i => !matchIds.has(i.id));
+                            _saveInvoiceLocal();
+                            if (newStart) {
+                                invoiceSettings.invStartNumber = newStart;
+                                localStorage.setItem('invBillStartNumber', String(newStart));
+                            }
+                            const scr = document.getElementById('invoice-screen');
+                            if (scr && scr.style.display !== 'none' && typeof invRenderHistory === 'function') invRenderHistory();
+                            showCustomAlert(`Deleted ${matching.length} invoice(s) from ${fromVal} to ${toVal}.`);
+                        })
+                        .catch(err => showCustomAlert('Delete failed: ' + err.message + '. Nothing was changed.'));
+                }
+            );
+        }
+        window.deleteInvoicesByDateRange = deleteInvoicesByDateRange;
 
         // ══════════════════════════════════════════════════════════════════
         // AUTO BACKUP TO GOOGLE DRIVE FOLDER (via File System Access API)
@@ -5012,7 +5111,7 @@
                 return;
             }
             showCustomConfirm(
-                'This will first download a backup, then permanently delete Bill History, Invoice History, Cash Ledger entries, and Products from the cloud.<br><br>Rates, presets, profiles, reminders, and all other settings are NOT touched by this.<br><br><strong>⚠️ The backup does NOT include Cash Ledger entries. Ledger data will be lost forever and cannot be recovered.</strong><br><br>Make sure the backup download completes before continuing. This cannot be undone. Proceed?',
+                'This will first download a backup, then permanently delete Bill History, Invoice History, Cash Ledger entries, and Products from the cloud.<br><br><strong>⚠️ The backup does NOT include Products (stock). Re-upload your product list afterwards.</strong><br><br>Rates, presets, profiles, reminders, and all other settings are NOT touched by this.<br><br><strong>⚠️ The backup does NOT include Cash Ledger entries. Ledger data will be lost forever and cannot be recovered.</strong><br><br>Make sure the backup download completes before continuing. This cannot be undone. Proceed?',
                 'Confirm Reset',
                 () => {
                     downloadBackup();
@@ -18416,7 +18515,7 @@
                 <h3 style="margin:0; font-size:18px; color:#1a1a1a;">Backup by Date Range</h3>
                 <button onclick="closeDateRangeBackupModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
             </div>
-            <p style="margin:0 0 14px; font-size:12.5px; color:#888; line-height:1.5;">Invoice History is limited to this range. Rates, products, profiles, and other settings are always included in full.</p>
+            <p style="margin:0 0 14px; font-size:12.5px; color:#888; line-height:1.5;">Invoice History is limited to this range. Stock (products) is not included. Rates, profiles, and other settings are included in full.</p>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
                 <div>
                     <label style="font-size:11px; display:block; margin-bottom:3px; color:#888;">From</label>
@@ -18435,6 +18534,8 @@
                 <button onclick="invQuickRange('all','bak')" style="flex:1; padding:7px; font-size:12px; font-weight:700; border:1.5px solid var(--border); border-radius:8px; background:white; color:var(--text); cursor:pointer; box-shadow:none; margin:0;">All Time</button>
             </div>
             <button onclick="downloadBackupByDateRange()" style="width:100%; background:var(--green); color:white; border:none; border-radius:12px; padding:14px; font-size:16px; font-weight:800; cursor:pointer;">💾 Download Backup</button>
+            <button onclick="deleteInvoicesByDateRange()" style="width:100%; background:#fff; color:#d32f2f; border:1.5px solid #d32f2f; border-radius:12px; padding:12px; font-size:14px; font-weight:800; cursor:pointer; margin-top:10px;">🗑️ Backup &amp; Delete Invoices in This Range</button>
+            <p style="margin:8px 0 0; font-size:11.5px; color:#888; line-height:1.5;">Downloads the backup for this range first, then asks you to confirm before deleting. Only invoices are deleted; ledger, products and settings are untouched.</p>
         </div>
     </div>
 
