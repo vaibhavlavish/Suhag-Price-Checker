@@ -14890,6 +14890,8 @@
                 invRows[i].grWt = parseFloat(gw.toFixed(3));
                 invRows[i].nlWt = parseFloat(nw.toFixed(3));
                 invRows[i].rate = parseFloat(rv.toFixed(2));
+                // Wastage is charged on the pure 24K rate, not the karat rate (same as the cart path)
+                invRows[i].pureRate = parseFloat((getPureRate(metal) || 0).toFixed(2));
                 invRows[i].makingType = mk.makingType;
                 invRows[i].makingPct = parseFloat((mk.makingPct || 0).toFixed(2));
 
