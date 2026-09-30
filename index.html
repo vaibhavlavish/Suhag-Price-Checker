@@ -11972,12 +11972,14 @@
             const ROW_FONT = 'font-size:9px;';
 
             let itemsHtml = '';
+            let tvTotal = 0;
             rows.forEach(r => {
                 // Invoice 2 folds GST into the Value column, so the printed amount
                 // per row must be GST-inclusive (taxable value × (1 + tax rate)).
                 // MRP-type rows hold a real pre-tax taxable value (see invTaxableVal),
                 // so they're taxed the same as every other row — no exemption here.
                 const tv = (fmt === 'invoice2' && !r.taxInclusive) ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r);
+                tvTotal += tv;
                 itemsHtml += `<tr>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}">${invDescWithStamp(r)}</td>
                   ${showHsn ? `<td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invEscH(String(r.hsn))}</td>` : ''}
@@ -12123,7 +12125,13 @@
                 </div>`:''}
                 <div class="foot-right">
                   <table>
-                    ${(() => { const lessAmt = disc - rndOff; return `<tr><td style="padding:${ROWPAD};${ROW_FONT}font-style:italic;color:#000;">Less</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;">${lessAmt>0?'-₹'+lessAmt.toFixed(2):(lessAmt<0?'+₹'+Math.abs(lessAmt).toFixed(2):'—')}</td></tr>`; })()}
+                    ${(() => {
+                      // See the matching comment in invGenerate — Format 2's item rows
+                      // print a GST-inclusive Value (tvTotal), while disc/rndOff are
+                      // pre-tax. Less must use tvTotal so the printed numbers add up.
+                      const lessAmt = fmt === 'invoice2' ? (tvTotal - rounded) : (disc - rndOff);
+                      return `<tr><td style="padding:${ROWPAD};${ROW_FONT}font-style:italic;color:#000;">Less</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;">${lessAmt>0?'-₹'+lessAmt.toFixed(2):(lessAmt<0?'+₹'+Math.abs(lessAmt).toFixed(2):'—')}</td></tr>`;
+                    })()}
                     <tr><td style="padding:${ROWPAD};${ROW_FONT}color:#000;${HB}">${fp.grossRowLabel}</td><td style="padding:${ROWPAD};${ROW_FONT}color:#000;text-align:right;font-weight:600;${HB}">${(fmt==='invoice2'?rounded:(sub-disc)).toFixed(2)}</td></tr>
                     ${fp.taxRowsHtml.replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                     ${ogRowsC.replace(/padding:3px 6px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
@@ -15955,12 +15963,14 @@
             const ROW_FONT = 'font-size:9px;';
 
             let itemsHtml = '';
+            let tvTotal = 0;
             invRows.forEach(r => {
                 // Invoice 2 folds GST into the Value column, so the printed amount
                 // per row must be GST-inclusive (taxable value × (1 + tax rate)).
                 // MRP-type rows hold a real pre-tax taxable value (see invTaxableVal),
                 // so they're taxed the same as every other row — no exemption here.
                 const tv = (fmt === 'invoice2' && !r.taxInclusive) ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r);
+                tvTotal += tv;
                 itemsHtml += `<tr>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}">${invDescWithStamp(r)}</td>
                   ${showHsn ? `<td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}text-align:center;">${invEscH(String(r.hsn))}</td>` : ''}
@@ -16091,7 +16101,20 @@
                 </div>`:''}
                 <div class="foot-right">
                   <table>
-                    ${(() => { const lessAmt = disc - rndOff; return `<tr><td style="padding:${ROWPAD};${ROW_FONT}font-style:italic;color:#000;">Less</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;">${lessAmt>0?'-₹'+lessAmt.toFixed(2):(lessAmt<0?'+₹'+Math.abs(lessAmt).toFixed(2):'—')}</td></tr>`; })()}
+                    ${(() => {
+                      // Format 2's item rows print a GST-inclusive Value (tv, summed into
+                      // tvTotal above); disc/rndOff, by contrast, are pre-tax figures from
+                      // invComputeTotals. Subtracting the pre-tax disc from the tax-inclusive
+                      // item total never reconciled (off by the GST portion of the discount —
+                      // e.g. items showing ₹7332.66, Less ₹31.71, but the Value line below
+                      // showing ₹7300.00, a ₹0.95 gap a customer could add up themselves).
+                      // For Format 2, Less must instead be the exact gap between the printed
+                      // item total and the rounded Value line, so the two always add up on
+                      // the page. Format 1 has its own separate Taxable Value/GST rows that
+                      // already reconcile correctly and is left as before.
+                      const lessAmt = fmt === 'invoice2' ? (tvTotal - rounded) : (disc - rndOff);
+                      return `<tr><td style="padding:${ROWPAD};${ROW_FONT}font-style:italic;color:#000;">Less</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;">${lessAmt>0?'-₹'+lessAmt.toFixed(2):(lessAmt<0?'+₹'+Math.abs(lessAmt).toFixed(2):'—')}</td></tr>`;
+                    })()}
                     <tr><td style="padding:${ROWPAD};${ROW_FONT}${HB}">${fp.grossRowLabel}</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;font-weight:600;${HB}">${(fmt==='invoice2'?rounded:(sub-disc)).toFixed(2)}</td></tr>
                     ${fp.taxRowsHtml.replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                     ${ogRowsM.replace(/padding:3px 6px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
