@@ -4567,6 +4567,12 @@
             } else {
                 invoiceSettings.invStartNumber = parseInt(localStorage.getItem('invBillStartNumber'), 10) || invoiceSettings.invStartNumber || 1;
             }
+            // List Barcode "Last marked" date — cloud-synced so every device shows the same date
+            // (localStorage kept only as offline fallback; read by invRenderLastVisitLine).
+            if (cloudData.lastBarcodeListMarked) {
+                localStorage.setItem('suhagLastBarcodeListVisit', cloudData.lastBarcodeListMarked);
+                if (typeof invRenderLastVisitLine === 'function') invRenderLastVisitLine();
+            }
             // Checkout track + checkout print format — universal, cloud-synced
             // (5-tap toggles write here; other open devices pick this up live
             // via this same onValue snapshot). localStorage stays in sync as
@@ -4842,6 +4848,7 @@
                 savingsReminderTemplate: config.savingsReminderTemplate || '',
                 invBillPrefix: config.invBillPrefix || null,
                 invBillStartNumber: config.invBillStartNumber || null,
+                lastBarcodeListMarked: config.lastBarcodeListMarked || null,
                 checkoutTrack: config.checkoutTrack || null,
                 checkoutFormat: config.checkoutFormat || null,
                 productDataImportedAt: config.productDataImportedAt || 0,
@@ -17125,7 +17132,7 @@
         // offline barcode software," and that date stays displayed next to
         // the button until pressed again. Doesn't touch the From/To fields
         // or the list itself at all — purely a personal reminder of where you
-        // left off, per device (localStorage), not synced data.
+        // left off. Cloud-synced across devices (config/lastBarcodeListMarked), localStorage is the offline fallback.
         function invRenderLastVisitLine() {
             const el = document.getElementById('inv-bcl-last-visit');
             if (!el) return;
@@ -17137,6 +17144,7 @@
             const d = new Date();
             const today = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
             localStorage.setItem('suhagLastBarcodeListVisit', today);
+            if (window._writeAllowed && window.dbSafeUpdate) window.dbSafeUpdate({ 'jewelryData/config/lastBarcodeListMarked': today });
             invRenderLastVisitLine();
         }
 
