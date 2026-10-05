@@ -7488,43 +7488,13 @@
 
             let makingStr = '0';
             if (makingType === '%') makingStr = `${makingValue}%`;
-            else if (makingType === 'wastage') makingStr = `${makingValue}% (W)`;
+            else if (makingType === 'wastage') makingStr = `₹${making.toFixed(2)}/pc`;
             else if (makingType === 'per_g') makingStr = `₹${makingValue.toFixed(2)}/g`;
             else if (makingType === 'per_pc') makingStr = `₹${makingValue.toFixed(2)}/pc`;
 
             let breakdownHtml = `<div style="text-align: left; font-size: 15px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #eee; margin-top: 10px;">`;
 
-            if (makingType === 'wastage') {
-                const pureRate = getPureRate(d.metal);
-                const makingPerGram = pureRate * (makingValue / 100);
-                const totalRatePerGram = rate + makingPerGram;
-                breakdownHtml += `
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                        <span style="color: #555;">Pure rate:-</span>
-                        <strong>${pureRate.toFixed(2)}</strong>
-                    </div>
-                    <div style="border-top: 1px dashed #ccc; margin-bottom: 8px;"></div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                        <span style="color: #555;">Making<br><span style="font-size:12px;">(${pureRate.toFixed(2)}*${makingValue}%(w))</span></span>
-                        <strong>₹${makingPerGram.toFixed(2)}</strong>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px; padding-left: 8px;">
-                        <span style="color: #555;">+</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
-                        <span style="color: #555;">Metal rate</span>
-                        <strong>₹${rate.toFixed(2)}</strong>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 6px; border-top: 1px dashed #ccc; padding-top: 6px;">
-                        <span style="color: #555;"></span>
-                        <strong>₹${totalRatePerGram.toFixed(2)}</strong>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-                        <span style="color: #555;">Weight</span>
-                        <strong>${d.weight.toFixed(2)} gm</strong>
-                    </div>
-                `;
-            } else if (makingType === 'per_g') {
+            if (makingType === 'per_g') {
                 const totalRatePerGram = rate + makingValue;
                 breakdownHtml += `
                     <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
