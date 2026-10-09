@@ -10274,6 +10274,7 @@
         let _cdStaged = { aadhaar: null, person: null };
         let _cdNewFromPicker = false;
         let _cdPickerLedger = false; // picker opened from Ledger → Add Payment
+        let _cdPickerTarget = 'cart'; // who the picker is selecting for: 'cart' | 'invoice' (manual invoice screen)
         let _cdEntryMode = 'payment';
         let _cdEntryPayMode = 'cash';
         let _cdSaving = false;
@@ -10317,6 +10318,7 @@
             if (_cdIsShown('creditor-picker-modal')) renderCreditorPicker();
             _renderCartCreditorBtn();
             _renderPayCreditorLine();
+            _renderInvCreditorUi();
         }
 
         function openCreditScreen() { renderCreditList(); }
@@ -10529,6 +10531,7 @@
                 await window.dbRemove(_cdRef('creditorPhotos/' + id));
                 await window.dbRemove(_cdRef('creditors/' + id));
                 if (cartCreditorId === id) _setCartCreditor(null);
+                if (invCreditorId === id) _setInvCreditor(null);
                 closeCreditorDetail();
             } catch (e) {
                 console.error(e);
@@ -10621,7 +10624,7 @@
             if (_cdNewFromPicker && !existing) {
                 _cdNewFromPicker = false;
                 _cdHide('creditor-picker-modal');
-                _setCartCreditor(id, rec);
+                if (_cdPickerTarget === 'invoice') _setInvCreditor(id, rec); else _setCartCreditor(id, rec);
             }
             if (failed.length) showCustomAlert('Saved, but ' + failed.join(' & ') + ' failed to upload — open the creditor and tap Edit to add it again.');
         }
@@ -10635,8 +10638,9 @@
             renderCreditorPicker();
             _cdShow('creditor-picker-modal');
         }
-        function openCreditorPicker() {
+        function openCreditorPicker(target) {
             _cdPickerLedger = false;
+            _cdPickerTarget = (target === 'invoice') ? 'invoice' : 'cart';
             document.getElementById('creditor-picker-title').textContent = '🧾 Select Creditor';
             document.getElementById('creditor-picker-new-btn').style.display = '';
             document.getElementById('creditor-picker-search').value = '';
@@ -10652,12 +10656,13 @@
                 .filter(c => !_cdPickerLedger || _creditBalance(c.id) >= 1)
                 .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
             let html = '';
-            if (cartCreditorId && !_cdPickerLedger) {
-                html += `<button onclick="_setCartCreditor(null); _cdHide('creditor-picker-modal');" style="width:100%; text-align:left; padding:12px 14px; background:#fff3e0; border:1.5px solid #ffcc80; border-radius:12px; color:#e65100; font-weight:700; font-size:14px; margin:0; box-shadow:none;">✕ Remove selected creditor</button>`;
+            const _selCid = _cdPickerTarget === 'invoice' ? invCreditorId : cartCreditorId;
+            if (_selCid && !_cdPickerLedger) {
+                html += `<button onclick="${_cdPickerTarget === 'invoice' ? '_setInvCreditor(null)' : '_setCartCreditor(null)'}; _cdHide('creditor-picker-modal');" style="width:100%; text-align:left; padding:12px 14px; background:#fff3e0; border:1.5px solid #ffcc80; border-radius:12px; color:#e65100; font-weight:700; font-size:14px; margin:0; box-shadow:none;">✕ Remove selected creditor</button>`;
             }
             html += rows.map(c => {
                 const bal = _creditBalance(c.id);
-                return `<button onclick="pickCreditor('${c.id}')" style="width:100%; text-align:left; padding:12px 14px; background:${c.id === cartCreditorId ? '#e8f5e9' : '#f5f5f5'}; border:1.5px solid ${c.id === cartCreditorId ? '#a5d6a7' : '#e0e0e0'}; border-radius:12px; font-family:'Inter',sans-serif; cursor:pointer; margin:0; box-shadow:none; display:flex; justify-content:space-between; gap:10px; align-items:center;">
+                return `<button onclick="pickCreditor('${c.id}')" style="width:100%; text-align:left; padding:12px 14px; background:${c.id === _selCid ? '#e8f5e9' : '#f5f5f5'}; border:1.5px solid ${c.id === _selCid ? '#a5d6a7' : '#e0e0e0'}; border-radius:12px; font-family:'Inter',sans-serif; cursor:pointer; margin:0; box-shadow:none; display:flex; justify-content:space-between; gap:10px; align-items:center;">
                     <span style="min-width:0;"><span style="display:block; font-size:15px; font-weight:700; color:#1a1a1a;">${escHtml(c.name)}</span><span style="display:block; font-size:12px; color:#888; margin-top:2px;">${escHtml(c.mobile || 'No mobile')}</span></span>
                     <span style="font-size:13px; font-weight:800; color:${bal >= 1 ? '#c62828' : '#2e7d32'}; flex-shrink:0;">${bal >= 1 ? _cdFmt(bal) + ' due' : (bal < 0 ? _cdFmt(-bal) + ' adv' : 'Clear')}</span>
                 </button>`;
@@ -10673,7 +10678,7 @@
                 openCreditorEntry('payment');
                 return;
             }
-            _setCartCreditor(id);
+            if (_cdPickerTarget === 'invoice') _setInvCreditor(id); else _setCartCreditor(id);
             _cdHide('creditor-picker-modal');
         }
         function newCreditorFromPicker() {
@@ -10740,7 +10745,7 @@
         }
 
         // Called from _finalizeCheckoutSave — books the credit portion of a sale to the creditor.
-        function _recordCreditSale(creditorId, amount, invoiceId) {
+        function _recordCreditSale(creditorId, amount, invoiceId, src) {
             const inv = invoiceId ? invoiceHistory.find(r => r.id === invoiceId) : null;
             const txn = {
                 id: crypto.randomUUID(), creditorId, type: 'sale', amount: Math.round(amount),
@@ -10748,7 +10753,7 @@
                 invoiceId: invoiceId || null,
                 billNo: (inv && inv.billNo != null) ? inv.billNo : null,
                 note: inv ? ('Bill #' + inv.billNo) : 'Sale on credit',
-                src: 'cart'
+                src: src || 'cart'
             };
             window.dbSet(_cdRef('creditTxns/' + txn.id), txn).catch(e => {
                 console.error('[Credit] could not save credit entry', e);
@@ -15171,6 +15176,7 @@
         let invOgItems = []; // invoice-screen own old-jewellery entries [{desc,value,id}]
         let invPrintHtml = '';
         let currentInvTrack = 'A'; // 'A' or 'B'
+        let invCreditorId = null; // creditor account linked to the manual invoice being built (Credit feature)
         let invEditingId = null; // set by invReloadBill() when editing an existing invoice; save paths reuse this id instead of minting a new record
         let invTrackBUnlocked = false;
 
@@ -16417,6 +16423,7 @@
                 document.getElementById('inv-cust-name').value = cartCustomer.name || '';
                 document.getElementById('inv-cust-mob').value = cartCustomer.mobile || '';
                 document.getElementById('inv-cust-addr').value = cartCustomer.address || '';
+                if (cartCreditorId) { invCreditorId = cartCreditorId; _renderInvCreditorUi(); }
             }
             // Final Amount field shows what the customer actually pays — net, AFTER old
             // jewellery. _invFinalAmtGross() adds OG back on read so invComputeTotals still
@@ -16478,6 +16485,10 @@
         // ─── GENERATE & PRINT ───
         function invGenerate(skipPreviewModal, _confirmedMismatch) {
             if (!_invHasSavableContent(invRows)) { invToast('Add at least one item with a description and amount first'); return; }
+            if (invCurrentCreditAmt() > 0 && !invCreditorId) {
+                showCustomAlert('Select a creditor first (tap "select creditor" next to Credit, or use the Creditor button at the top).');
+                return false;
+            }
 
             // This shop never intends to leave an invoice outstanding —
             // so any gap between the bill amount and what's actually
@@ -16494,7 +16505,7 @@
                 const _ogTotal = invOgItems.reduce((s, i) => s + (i.value || 0), 0);
                 const _netAfterOG = Math.max(0, (_t.rounded || 0) - _ogTotal);
                 const _receipt = parseFloat(document.getElementById('inv-receipt').value) || 0;
-                const _remaining = _netAfterOG - _receipt;
+                const _remaining = _netAfterOG - _receipt - invCurrentCreditAmt(); // credit is deliberately left unpaid
                 if (Math.abs(_remaining) >= 1) {
                     const msg = _remaining > 0
                         ? `Amount received is ₹${_remaining.toFixed(2)} short of the bill total. Save anyway?`
@@ -16743,7 +16754,8 @@
                 ogItems: invOgItems.map(r => ({...r})),
                 totals: { sub, disc, taxable, sgst, cgst, igst, rounded, rndOff, receipt, outstanding },
                 receipt, draft: false,
-                paymentMethod, paymentDetails
+                paymentMethod, paymentDetails,
+                ...(invCurrentCreditAmt() > 0 && invCreditorId ? { creditorId: invCreditorId, creditAmount: invCurrentCreditAmt() } : {})
             };
             window._invPendingIsEdit = _pendIsEdit;
             if (_pendIsEdit) window._invPendingRecord.editedAt = new Date().toISOString();
@@ -16813,6 +16825,7 @@
                     // Only log a ledger entry for brand-new invoices — an edit would
                     // otherwise double-count the sale in the cash ledger.
                     if (!isEdit) _invLedgerFromRecord(rec);
+                    _invCreditFromRecord(rec, isEdit);
                     invRenderHistory();
                     invReset(); // clear the form so the next invoice starts fresh
                     // Bulk print: if there are more queued invoices, move straight on to
@@ -16878,6 +16891,7 @@
                 _saveInvoiceRecord(rec);
             }
             if (!isEdit) _invLedgerFromRecord(rec);
+            _invCreditFromRecord(rec, isEdit);
             invRenderHistory();
 
             queuePrintJob(invPrintHtml, 'Invoice ' + rec.billNo);
@@ -16959,6 +16973,10 @@
 
         function invSaveDraft() {
             if (!_invHasSavableContent(invRows)) { invToast('Add at least one item with a description and amount first'); return; }
+            if (invCurrentCreditAmt() > 0 && !invCreditorId) {
+                showCustomAlert('Select a creditor first (tap "select creditor" next to Credit, or use the Creditor button at the top).');
+                return;
+            }
             const billNo = document.getElementById('inv-bill-no').value.trim() || _invNextBillNo(currentInvTrack);
             const custName = document.getElementById('inv-cust-name').value.trim() || '—';
             const custMob = document.getElementById('inv-cust-mob').value.trim();
@@ -17002,7 +17020,8 @@
                 ogItems: invOgItems.map(r => ({...r})),
                 totals: { sub, disc, taxable, sgst, cgst, igst, rounded, rndOff, receipt, outstanding },
                 receipt, draft: false,
-                paymentMethod, paymentDetails
+                paymentMethod, paymentDetails,
+                ...(invCurrentCreditAmt() > 0 && invCreditorId ? { creditorId: invCreditorId, creditAmount: invCurrentCreditAmt() } : {})
             };
             if (isEdit) record.editedAt = new Date().toISOString();
 
@@ -17016,6 +17035,7 @@
             // Only log a ledger entry for brand-new invoices — an edit would otherwise
             // double-count the sale (and possibly the payment) in the cash ledger.
             if (!isEdit) _invLedgerFromRecord(record);
+            _invCreditFromRecord(record, isEdit);
             invToast(isEdit ? '✅ Invoice updated — ' + billNo : '✅ Invoice saved — ' + billNo);
             invReset();
         }
@@ -17104,16 +17124,93 @@
             if (document.getElementById('inv-pay-cash-amt')) document.getElementById('inv-pay-cash-amt').value = '';
             if (document.getElementById('inv-pay-upi-amt')) document.getElementById('inv-pay-upi-amt').value = '';
             if (document.getElementById('inv-pay-card-amt')) document.getElementById('inv-pay-card-amt').value = '';
+            if (document.getElementById('inv-pay-credit-amt')) document.getElementById('inv-pay-credit-amt').value = '';
+            invCreditorId = null;
+            _renderInvCreditorUi();
             invRenderOg();
             invSetTodayDate();
             invAutoBillNo();
             invAddRow();
             invRecalc();
         }
+        // ─── INVOICE CREDIT (manual invoice → creditor account) ───
+        // Same model as cart checkout: the Credit amount is the part of the bill left
+        // unpaid on a creditor's account. It is excluded from Receipt (so the invoice
+        // prints it as Outstanding and the Cash Ledger only logs money actually
+        // collected) and is booked to the creditor when the invoice is saved.
+        function _invNetAfterOG() {
+            const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
+            const t = invComputeTotals(sub, _invFinalAmtGross(), undefined, invExemptSub(invRows));
+            const ogTotal = invOgItems.reduce((s, i) => s + (i.value || 0), 0);
+            return Math.max(0, (t.rounded || 0) - ogTotal);
+        }
+        // Credit amount currently entered — only counts in Partial mode.
+        function invCurrentCreditAmt() {
+            if (window._invPaymentMethod !== 'partial') return 0;
+            const c = parseFloat((document.getElementById('inv-pay-credit-amt') || {}).value) || 0;
+            return c > 0 ? Math.round(c) : 0;
+        }
+        function _setInvCreditor(id, recFallback) {
+            const c = id ? (creditors.find(x => x.id === id) || recFallback || null) : null;
+            invCreditorId = c ? c.id : null;
+            if (c) {
+                const n = document.getElementById('inv-cust-name'), m = document.getElementById('inv-cust-mob'), a = document.getElementById('inv-cust-addr');
+                if (n) n.value = c.name || '';
+                if (m) m.value = c.mobile || '';
+                if (a) a.value = c.address || '';
+            }
+            _renderInvCreditorUi();
+        }
+        function _renderInvCreditorUi() {
+            const c = invCreditorId ? creditors.find(x => x.id === invCreditorId) : null;
+            const b = document.getElementById('inv-creditor-btn');
+            if (b) {
+                if (c) { b.textContent = '🧾 ' + c.name; b.style.background = '#2e7d32'; b.style.color = '#fff'; b.style.borderColor = '#2e7d32'; }
+                else { b.textContent = '🧾 Creditor'; b.style.background = '#fff'; b.style.color = '#c62828'; b.style.borderColor = '#c62828'; }
+            }
+            const s = document.getElementById('inv-pay-credit-who');
+            if (s) {
+                if (c) { s.textContent = '→ ' + c.name; s.style.color = '#2e7d32'; }
+                else { s.textContent = '(tap to select creditor)'; s.style.color = '#c62828'; }
+            }
+        }
+        // "Rest" button: puts whatever is still unpaid on credit.
+        function invCreditFillRemaining() {
+            if (!invCreditorId) { openCreditorPicker('invoice'); return; }
+            const net = _invNetAfterOG();
+            const cash = parseFloat(document.getElementById('inv-pay-cash-amt').value) || 0;
+            const upi  = parseFloat(document.getElementById('inv-pay-upi-amt').value)  || 0;
+            const card = parseFloat(document.getElementById('inv-pay-card-amt').value) || 0;
+            document.getElementById('inv-pay-credit-amt').value = Math.max(0, net - cash - upi - card) || '';
+            invSyncPartial('credit-rest');
+        }
+        // Books (or, on edit, re-syncs) the credit part of a saved invoice on the creditor's account.
+        function _invCreditFromRecord(rec, isEdit) {
+            const amt = Math.round(rec.creditAmount || 0);
+            const cid = rec.creditorId || null;
+            if (!isEdit) {
+                if (amt > 0 && cid) _recordCreditSale(cid, amt, rec.id, 'invoice');
+                return;
+            }
+            // Editing an existing invoice: keep the creditor's books in step with it.
+            const existing = creditTxns.filter(t => t.invoiceId === rec.id && t.type === 'sale');
+            const ex = existing[0] || null;
+            if (ex && amt > 0 && cid === ex.creditorId) {
+                if (Math.round(ex.amount) !== amt || ex.billNo !== rec.billNo) {
+                    window.dbUpdate(_cdRef('creditTxns/' + ex.id), { amount: amt, billNo: rec.billNo, note: 'Bill #' + rec.billNo })
+                        .catch(e => { console.error('[Credit] could not update credit entry', e); showCustomAlert('⚠️ Invoice saved, but its credit entry could not be updated. Please fix it in Credit.'); });
+                }
+                return;
+            }
+            existing.forEach(t => window.dbRemove(_cdRef('creditTxns/' + t.id)).catch(e => console.error('[Credit] could not remove credit entry', e)));
+            if (amt > 0 && cid) _recordCreditSale(cid, amt, rec.id, 'invoice');
+        }
+
         // Invoice payment mode functions
         function invSelectPayMode(mode) {
             window._invPaymentMethod = mode;
             window._invPaymentDetails = {};
+            { const _cr = document.getElementById('inv-pay-credit-amt'); if (_cr) _cr.value = ''; } // credit only applies in Partial
             document.querySelectorAll('.inv-pay-btn').forEach(b => b.classList.remove('selected'));
             const btn = document.getElementById('inv-pay-' + mode);
             if (btn) btn.classList.add('selected');
@@ -17137,19 +17234,26 @@
             }
         }
 
-        function invSyncPartial() {
-            const cash = parseFloat(document.getElementById('inv-pay-cash-amt')?.value) || 0;
+        function invSyncPartial(changed) {
+            let cash = parseFloat(document.getElementById('inv-pay-cash-amt')?.value) || 0;
             const upi = parseFloat(document.getElementById('inv-pay-upi-amt')?.value) || 0;
             const card = parseFloat(document.getElementById('inv-pay-card-amt')?.value) || 0;
-            const sum = cash + upi + card;
-            document.getElementById('inv-receipt').value = sum > 0 ? sum.toFixed(0) : '';
-            window._invPaymentDetails = { cash, upi, card };
-            const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
-            const finalAmt = _invFinalAmtGross();
-            const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows));
-            const ogTotal = invOgItems.reduce((s,i) => s + (i.value||0), 0);
-            const net = Math.max(0, (t.rounded || 0) - ogTotal);
-            const remaining = net - sum;
+            const credit = parseFloat(document.getElementById('inv-pay-credit-amt')?.value) || 0;
+            const net = _invNetAfterOG();
+            // Cash is pre-filled with the full amount, so when an amount is typed into
+            // Credit, take it out of Cash automatically (same as cart checkout).
+            if (changed === 'credit') {
+                const excess = (cash + upi + card + credit) - net;
+                if (excess > 0 && cash > 0) {
+                    cash = Math.max(0, cash - excess);
+                    document.getElementById('inv-pay-cash-amt').value = cash || '';
+                }
+            }
+            // Receipt = money actually received; the credit part stays outstanding.
+            const paid = cash + upi + card;
+            document.getElementById('inv-receipt').value = paid > 0 ? paid.toFixed(0) : '';
+            window._invPaymentDetails = { cash, upi, card, credit };
+            const remaining = net - paid - credit;
             const statusEl = document.getElementById('inv-partial-status');
             if (!statusEl) return;
             if (Math.abs(remaining) < 1) {
@@ -17796,7 +17900,11 @@
                 if (document.getElementById('inv-pay-cash-amt')) document.getElementById('inv-pay-cash-amt').value = pd.cash || '';
                 if (document.getElementById('inv-pay-upi-amt')) document.getElementById('inv-pay-upi-amt').value = pd.upi || '';
                 if (document.getElementById('inv-pay-card-amt')) document.getElementById('inv-pay-card-amt').value = pd.card || '';
+                if (document.getElementById('inv-pay-credit-amt')) document.getElementById('inv-pay-credit-amt').value = pd.credit || '';
             }
+            // Restore the linked creditor too, so re-saving keeps the credit entry in step.
+            invCreditorId = inv.creditorId || null;
+            _renderInvCreditorUi();
             // Restore the ORIGINAL invoice date onto the printed-date field — otherwise
             // it keeps whatever date was last left in the box (usually today's), and a
             // reprint/edit would silently print today's date instead of the invoice's
@@ -19240,7 +19348,10 @@
         <div id="inv-pane-new">
 
             <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
-                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Customer</div>
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px;">
+                    <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">Customer</div>
+                    <button type="button" id="inv-creditor-btn" onclick="openCreditorPicker('invoice')" style="width:auto; margin:0; padding:5px 11px; font-size:12px; font-weight:700; border-radius:8px; border:1.5px solid #c62828; background:#fff; color:#c62828; box-shadow:none; max-width:58%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🧾 Creditor</button>
+                </div>
                 <div style="display:flex; flex-direction:column; gap:7px;">
                     <input type="text" id="inv-cust-name" placeholder="Customer Name" style="margin:0;">
                     <input type="tel" id="inv-cust-mob" placeholder="Mobile (optional)" style="margin:0;">
@@ -19315,6 +19426,10 @@
                                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">Cash (₹)</label><input type="number" id="inv-pay-cash-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial()" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
                                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">UPI (₹)</label><input type="number" id="inv-pay-upi-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial()" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
                                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">Card (₹)</label><input type="number" id="inv-pay-card-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial()" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
+                            </div>
+                            <div style="display:flex; align-items:flex-end; gap:6px; margin-top:6px;">
+                                <div style="flex:1;"><label style="font-size:10px; display:block; margin-bottom:2px;">Credit (₹) <span id="inv-pay-credit-who" onclick="openCreditorPicker('invoice')" style="font-weight:700; text-decoration:underline; cursor:pointer; color:#c62828;">(tap to select creditor)</span></label><input type="number" id="inv-pay-credit-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial('credit')" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
+                                <button type="button" onclick="invCreditFillRemaining()" title="Put the unpaid remainder on credit" style="flex-shrink:0; height:33px; padding:0 12px; background:#ffebee; border:1.5px solid #ef9a9a; border-radius:8px; font-size:12px; font-weight:800; color:#c62828; cursor:pointer; margin:0; width:auto; box-shadow:none;">Rest</button>
                             </div>
                             <div id="inv-partial-status" style="font-size:11px;font-weight:600;margin-top:4px;"></div>
                         </div>
