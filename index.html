@@ -1765,6 +1765,9 @@
             <button onclick="showSection('savings-screen')" data-menu-key="savings">
                 <span class="menu-icon" style="background:#FFF3E0;">💰</span> Savings Scheme
             </button>
+            <button onclick="showSection('credit-screen')" data-menu-key="credit">
+                <span class="menu-icon" style="background:#FFEBEE;">🧾</span> Credit
+            </button>
             <button onclick="openPrintServerModal()" data-menu-key="print-server">
                 <span class="menu-icon" style="background:#E0F2F1;">🖨️</span> Print Server
             </button>
@@ -2172,7 +2175,10 @@
 
             <!-- Customer Details (carried through to checkout + invoice) -->
             <div id="cart-customer-panel" style="background:#f5f5f5; border-radius:12px; padding:12px; margin-bottom:10px; border:1.5px solid #e0e0e0;">
-                <div style="font-size:11px; font-weight:700; letter-spacing:.06em; color:#888; text-transform:uppercase; margin-bottom:8px;">Customer (optional)</div>
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
+                    <div style="font-size:11px; font-weight:700; letter-spacing:.06em; color:#888; text-transform:uppercase;">Customer (optional)</div>
+                    <button id="cart-creditor-btn" onclick="openCreditorPicker()" style="width:auto; margin:0; padding:5px 11px; font-size:12px; font-weight:700; border-radius:8px; border:1.5px solid #c62828; background:#fff; color:#c62828; box-shadow:none; max-width:58%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🧾 Creditor</button>
+                </div>
                 <div style="display:flex; flex-direction:column; gap:7px;">
                     <input type="text" id="cart-cust-name" placeholder="Customer Name" oninput="syncCartCustomer()" style="margin:0;">
                     <input type="tel" id="cart-cust-mob" placeholder="Mobile" oninput="syncCartCustomer()" style="margin:0;">
@@ -4245,6 +4251,7 @@
         let cartAdjustmentAuto = true;
         // NEW: Customer details attached to the active cart (for direct invoice generation at checkout)
         let cartCustomer = { name: '', mobile: '', address: '' };
+        let cartCreditorId = null; // creditor account linked to the current cart (Credit feature)
 
         // ═══ INSTALLMENT PLANS ═══
         // PLACEHOLDER — update this once the customer-facing installment
@@ -5196,6 +5203,7 @@
             document.getElementById('invoice-screen').style.display = 'none';
             document.getElementById('installments-screen').style.display = 'none';
             document.getElementById('savings-screen').style.display = 'none';
+            document.getElementById('credit-screen').style.display = 'none';
             document.getElementById('reminders').style.display = 'none';
             const brandHeaderEl = document.getElementById('brand-header');
             if (brandHeaderEl) brandHeaderEl.style.display = 'none';
@@ -5222,7 +5230,7 @@
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen' || section === 'savings-screen') ? 'flex' : 'block';
+                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen' || section === 'savings-screen' || section === 'credit-screen') ? 'flex' : 'block';
             }
 
             if (section === 'installments-screen') {
@@ -5231,6 +5239,10 @@
 
             if (section === 'savings-screen') {
                 openSavingsScreen();
+            }
+
+            if (section === 'credit-screen') {
+                openCreditScreen();
             }
 
             if (section === 'ledger') {
@@ -5305,6 +5317,7 @@
             { key: 'invoice',        label: 'Invoice',            icon: '🧾', action: () => showSection('invoice-screen') },
             { key: 'installments',   label: 'Installment Plans',  icon: '📆', action: () => showSection('installments-screen') },
             { key: 'savings',        label: 'Savings Scheme',     icon: '💰', action: () => showSection('savings-screen') },
+            { key: 'credit',         label: 'Credit',             icon: '🧾', action: () => showSection('credit-screen') },
             { key: 'update-rates',   label: 'Update Rates',       icon: '💰', action: () => showSection('update-rates') },
             { key: 'excel-upload',   label: 'Upload Excel',       icon: '📂', action: () => showSection('excel-upload') },
             { key: 'stock-view',     label: 'Stock View',         icon: '📦', action: () => showStockSection() },
@@ -10095,6 +10108,7 @@
             if (cnEl) cnEl.value = cartCustomer.name || '';
             if (cmEl) cmEl.value = cartCustomer.mobile || '';
             if (caEl) caEl.value = cartCustomer.address || '';
+            _renderCartCreditorBtn();
 
             const modal = document.getElementById('cart-modal');
             const cartItemsDiv = document.getElementById('cart-items-container');
@@ -10238,6 +10252,7 @@
                 cartAdjustment = 0;
                 _resetAdjustFields();
                 cartCustomer = { name: '', mobile: '', address: '' };
+                _clearCartCreditorState();
                 localStorage.setItem('suhagPriceCheckerCartCustomer', JSON.stringify(cartCustomer));
                 localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
                 updateCartIcon();
@@ -10245,6 +10260,503 @@
                 showCustomAlert('Cart cleared.');
             });
         }
+        // ═══════════════════════════════════════════════════════════
+        // CREDIT — creditor accounts (customers who buy on credit)
+        // Firebase: creditors/{id}, creditTxns/{id}, creditorPhotos/{id}
+        // Balance = sum(sale txns) − sum(payment txns)
+        // ═══════════════════════════════════════════════════════════
+        let creditors = [];
+        let creditTxns = [];
+        let _creditorPhotos = {};
+        let _creditSyncStarted = false, _creditSyncRetries = 0;
+        let _cdDetailId = null;
+        let _cdFormId = null;
+        let _cdStaged = { aadhaar: null, person: null };
+        let _cdNewFromPicker = false;
+        let _cdPickerLedger = false; // picker opened from Ledger → Add Payment
+        let _cdEntryMode = 'payment';
+        let _cdEntryPayMode = 'cash';
+        let _cdSaving = false;
+        const CART_CREDITOR_KEY = 'suhagPriceCheckerCartCreditor';
+        const CREDIT_REMINDER_TEMPLATE = 'Dear {name},\n\nthis is a payment reminder from suhag jewellers\npending amount = ₹ {amount}\n\nKindly clear your dues at the earliest. Thank you 🙏';
+
+        function _cdIsShown(id) {
+            const el = document.getElementById(id);
+            return !!el && el.style.display !== 'none' && el.style.display !== '';
+        }
+        function _cdShow(id, display) { document.getElementById(id).style.display = display || 'flex'; }
+        function _cdHide(id) { document.getElementById(id).style.display = 'none'; }
+        function _cdFmt(n) { return '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 }); }
+        function _cdRef(path) { return window.dbRef(window.firebaseDB, path); }
+
+        function _creditBalance(id) {
+            let b = 0;
+            creditTxns.forEach(t => {
+                if (t.creditorId !== id) return;
+                b += (t.type === 'payment' ? -1 : 1) * (t.amount || 0);
+            });
+            return b;
+        }
+
+        function startCreditSync() {
+            if (_creditSyncStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB) {
+                if (_creditSyncRetries++ < 20) setTimeout(startCreditSync, 500);
+                return;
+            }
+            _creditSyncStarted = true;
+            const sub = (path, fn) => window.dbOnValue(_cdRef(path), s => fn(s.val() || {}), err => console.error('[Credit] read error', path, err));
+            sub('creditors',      v => { creditors = Object.values(v); _cdRefresh(); });
+            sub('creditTxns',     v => { creditTxns = Object.values(v); _cdRefresh(); });
+            sub('creditorPhotos', v => { _creditorPhotos = v; _cdRefresh(); });
+        }
+
+        function _cdRefresh() {
+            if (_cdIsShown('credit-screen')) renderCreditList();
+            if (_cdDetailId && _cdIsShown('creditor-detail-modal')) renderCreditorDetail();
+            if (_cdIsShown('creditor-picker-modal')) renderCreditorPicker();
+            _renderCartCreditorBtn();
+            _renderPayCreditorLine();
+        }
+
+        function openCreditScreen() { renderCreditList(); }
+
+        function renderCreditList() {
+            const listEl = document.getElementById('credit-list');
+            const sumEl = document.getElementById('credit-summary');
+            if (!listEl) return;
+            const q = (document.getElementById('credit-search')?.value || '').trim().toLowerCase();
+            const all = creditors.map(c => ({ c, bal: _creditBalance(c.id) }));
+            const totalDue = all.reduce((s, r) => s + Math.max(0, r.bal), 0);
+            const dueCount = all.filter(r => r.bal >= 1).length;
+            if (sumEl) {
+                sumEl.innerHTML = `
+                    <div style="flex:1;"><div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">Total Pending</div>
+                    <div style="font-size:22px; font-weight:800; color:${totalDue > 0 ? '#c62828' : '#2e7d32'};">${_cdFmt(totalDue)}</div></div>
+                    <div style="text-align:right;"><div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">Creditors</div>
+                    <div style="font-size:22px; font-weight:800; color:var(--text);">${dueCount}<span style="font-size:13px; font-weight:600; color:var(--text2);"> / ${creditors.length}</span></div></div>`;
+            }
+            const rows = all
+                .filter(r => !q || (r.c.name || '').toLowerCase().includes(q) || (r.c.mobile || '').includes(q))
+                .sort((a, b) => (b.bal - a.bal) || (a.c.name || '').localeCompare(b.c.name || ''));
+            if (!rows.length) {
+                listEl.innerHTML = `<p class="note" style="font-size:13px; color:var(--text2); text-align:center; padding:24px 0;">${creditors.length ? 'No match.' : 'No creditor accounts yet. Tap ➕ New to add one.'}</p>`;
+                return;
+            }
+            listEl.innerHTML = rows.map(({ c, bal }) => `
+                <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:10px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
+                    <div onclick="openCreditorDetail('${c.id}')" style="cursor:pointer; display:flex; justify-content:space-between; gap:10px;">
+                        <div style="min-width:0;">
+                            <div style="font-size:15px; font-weight:800; color:var(--text);">${escHtml(c.name)}</div>
+                            ${c.mobile ? `<div style="font-size:12.5px; color:var(--text2); margin-top:2px;">📞 ${escHtml(c.mobile)}</div>` : ''}
+                            ${c.address ? `<div style="font-size:12px; color:var(--text2); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">📍 ${escHtml(c.address)}</div>` : ''}
+                        </div>
+                        <div style="text-align:right; flex-shrink:0;">
+                            <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">${bal < 0 ? 'Advance' : 'Pending'}</div>
+                            <div style="font-size:18px; font-weight:800; color:${bal >= 1 ? '#c62828' : '#2e7d32'};">${_cdFmt(Math.abs(bal))}</div>
+                        </div>
+                    </div>
+                    <div style="display:flex; gap:8px; margin-top:10px;">
+                        <button onclick="sendCreditReminder('${c.id}')" style="flex:1; background:#25D366; color:#fff; font-weight:700; padding:9px 4px; border-radius:8px; border:none; font-size:12px; margin:0; box-shadow:none;">💬 Remind</button>
+                        <button onclick="openCreditorDetail('${c.id}')" style="flex:1; background:#f0f0f0; color:#333; font-weight:700; padding:9px 4px; border-radius:8px; border:none; font-size:12px; margin:0; box-shadow:none;">📒 Open</button>
+                    </div>
+                </div>`).join('');
+        }
+
+        // ── WhatsApp reminder ──────────────────────────────────────
+        function sendCreditReminder(id) {
+            const c = creditors.find(x => x.id === id);
+            if (!c) return;
+            if (!c.mobile) { showCustomAlert('No mobile number on file for ' + escHtml(c.name) + '.'); return; }
+            const bal = _creditBalance(id);
+            if (bal < 1) { showCustomAlert('Nothing pending for ' + escHtml(c.name) + '.'); return; }
+            const message = CREDIT_REMINDER_TEMPLATE
+                .split('{name}').join(c.name)
+                .split('{amount}').join(Math.round(bal).toLocaleString('en-IN'));
+            let mobile = String(c.mobile).replace(/\D/g, '');
+            if (mobile.length === 11 && mobile[0] === '0') mobile = mobile.slice(1);
+            if (mobile.length === 10) mobile = '91' + mobile; // assume India when no country code
+            window.open(`https://wa.me/${mobile}?text=${encodeURIComponent(message)}`, '_blank');
+        }
+
+        // ── Creditor detail ────────────────────────────────────────
+        function openCreditorDetail(id) {
+            _cdDetailId = id;
+            renderCreditorDetail();
+            _cdShow('creditor-detail-modal');
+        }
+        function closeCreditorDetail() { _cdDetailId = null; _cdHide('creditor-detail-modal'); }
+
+        function renderCreditorDetail() {
+            const c = creditors.find(x => x.id === _cdDetailId);
+            const body = document.getElementById('creditor-detail-body');
+            if (!c) { closeCreditorDetail(); return; }
+            const bal = _creditBalance(c.id);
+            const ph = _creditorPhotos[c.id] || {};
+            const photoCell = (entry, label) => (entry && entry.url)
+                ? `<div style="flex:1; text-align:center;"><img src="${escHtml(entry.url)}" onclick="window.open(this.src,'_blank')" style="width:100%; height:110px; object-fit:cover; border-radius:10px; border:1.5px solid var(--border); cursor:pointer;"><div style="font-size:11px; color:var(--text2); margin-top:3px;">${label}</div></div>`
+                : `<div style="flex:1; height:110px; border:1.5px dashed var(--border); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:11.5px; color:var(--text2); text-align:center;">No ${label}</div>`;
+            const aad = String(c.aadhaarNo || '').replace(/\D/g, '');
+            const aadFmt = aad ? aad.replace(/(\d{4})(?=\d)/g, '$1 ') : '';
+            const txns = creditTxns.filter(t => t.creditorId === c.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            const txnHtml = txns.length ? txns.map(t => {
+                const isPay = t.type === 'payment';
+                const d = new Date(t.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+                const label = isPay ? ('Payment received' + (t.method ? ' (' + escHtml(String(t.method).toUpperCase()) + ')' : '')) : 'Credit';
+                return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid var(--border);">
+                    <div style="min-width:0;"><div style="font-size:13px; font-weight:700; color:var(--text);">${label}</div>
+                    <div style="font-size:11.5px; color:var(--text2);">${d}${t.note ? ' · ' + escHtml(t.note) : ''}</div></div>
+                    <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+                        <span style="font-size:14px; font-weight:800; color:${isPay ? '#2e7d32' : '#c62828'};">${isPay ? '−' : '+'}${_cdFmt(t.amount)}</span>
+                        <button onclick="deleteCreditTxn('${t.id}')" style="background:none; border:none; color:#bbb; font-size:14px; padding:2px 4px; margin:0; width:auto; box-shadow:none;">🗑</button>
+                    </div></div>`;
+            }).join('') : `<p class="note" style="font-size:12.5px; color:var(--text2); margin:8px 0;">No entries yet.</p>`;
+
+            body.innerHTML = `
+                <div style="font-size:13px; color:var(--text); line-height:1.6; margin-bottom:10px;">
+                    ${c.mobile ? `<div>📞 ${escHtml(c.mobile)}</div>` : ''}
+                    ${c.address ? `<div>📍 ${escHtml(c.address)}</div>` : ''}
+                    ${aadFmt ? `<div>🪪 Aadhaar: ${escHtml(aadFmt)}</div>` : ''}
+                </div>
+                <div style="display:flex; gap:10px; margin-bottom:12px;">${photoCell(ph.aadhaar, 'Aadhaar photo')}${photoCell(ph.person, 'Customer photo')}</div>
+                <div style="background:${bal >= 1 ? '#ffebee' : '#e8f5e9'}; border-radius:12px; padding:12px 14px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+                    <span style="font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#555;">${bal < 0 ? 'Advance' : 'Pending'}</span>
+                    <span style="font-size:24px; font-weight:800; color:${bal >= 1 ? '#c62828' : '#2e7d32'};">${_cdFmt(Math.abs(bal))}</span>
+                </div>
+                <div style="display:flex; gap:8px; margin-bottom:8px;">
+                    <button onclick="openCreditorEntry('payment')" style="flex:1; background:#2e7d32; color:#fff; font-weight:700; padding:10px 4px; border-radius:10px; border:none; font-size:13px; margin:0;">💰 Receive</button>
+                    <button onclick="openCreditorEntry('sale')" style="flex:1; background:#c62828; color:#fff; font-weight:700; padding:10px 4px; border-radius:10px; border:none; font-size:13px; margin:0;">➕ Add Credit</button>
+                </div>
+                <div style="display:flex; gap:8px; margin-bottom:14px;">
+                    <button onclick="sendCreditReminder('${c.id}')" style="flex:1; background:#25D366; color:#fff; font-weight:700; padding:10px 4px; border-radius:10px; border:none; font-size:13px; margin:0;">💬 Remind</button>
+                    <button onclick="openCreditorForm('${c.id}')" style="flex:1; background:#f0f0f0; color:#333; font-weight:700; padding:10px 4px; border-radius:10px; border:none; font-size:13px; margin:0; box-shadow:none;">✏️ Edit</button>
+                </div>
+                <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:2px;">History</div>
+                ${txnHtml}
+                <button onclick="deleteCreditor('${c.id}')" style="width:100%; background:none; color:#c62828; border:1.5px solid #ef9a9a; font-weight:700; padding:9px; border-radius:10px; font-size:12.5px; margin:16px 0 0; box-shadow:none;">🗑 Delete Creditor</button>`;
+            document.getElementById('creditor-detail-title').textContent = c.name;
+        }
+
+        // ── Receive payment / add credit entry ─────────────────────
+        function openCreditorEntry(mode) {
+            const c = creditors.find(x => x.id === _cdDetailId);
+            if (!c) return;
+            _cdEntryMode = mode;
+            const bal = _creditBalance(c.id);
+            document.getElementById('creditor-entry-title').textContent = mode === 'payment' ? '💰 Receive Payment' : '➕ Add Credit';
+            document.getElementById('creditor-entry-sub').textContent = mode === 'payment'
+                ? 'Cash/UPI/Card received from ' + c.name + ' — also logged in the Cash Ledger.'
+                : 'Goods given on credit outside the cart (or an old balance). No cash ledger entry.';
+            document.getElementById('creditor-entry-amount').value = (mode === 'payment' && bal >= 1) ? Math.round(bal) : '';
+            document.getElementById('creditor-entry-note').value = '';
+            document.getElementById('creditor-entry-status').textContent = '';
+            document.getElementById('creditor-entry-paymodes').style.display = mode === 'payment' ? 'flex' : 'none';
+            _cdSetPayMode('cash');
+            _cdShow('creditor-entry-modal');
+        }
+        function _cdSetPayMode(m) {
+            _cdEntryPayMode = m;
+            ['cash', 'upi', 'card'].forEach(k => {
+                const b = document.getElementById('cd-pm-' + k);
+                if (!b) return;
+                const on = k === m;
+                b.style.background = on ? '#2e7d32' : '#f0f0f0';
+                b.style.color = on ? '#fff' : '#333';
+            });
+        }
+
+        async function saveCreditorEntry() {
+            if (_cdSaving) return;
+            const c = creditors.find(x => x.id === _cdDetailId);
+            if (!c) return;
+            const statusEl = document.getElementById('creditor-entry-status');
+            const amount = Math.round(parseFloat(document.getElementById('creditor-entry-amount').value) || 0);
+            const note = document.getElementById('creditor-entry-note').value.trim();
+            if (amount <= 0) { statusEl.textContent = 'Enter a valid amount.'; return; }
+            if (_cdEntryMode === 'payment') {
+                const bal = _creditBalance(c.id);
+                if (amount > bal + 0.5 && !confirm('₹' + amount + ' is more than the pending ' + _cdFmt(bal) + '. Save anyway (shows as advance)?')) return;
+            }
+            const txn = {
+                id: crypto.randomUUID(), creditorId: c.id,
+                type: _cdEntryMode === 'payment' ? 'payment' : 'sale',
+                amount, timestamp: new Date().toISOString(),
+                method: _cdEntryMode === 'payment' ? _cdEntryPayMode : null,
+                note: note || null, invoiceId: null, billNo: null, src: 'manual'
+            };
+            _cdSaving = true;
+            statusEl.textContent = 'Saving…';
+            try {
+                await window.dbSet(_cdRef('creditTxns/' + txn.id), txn);
+                if (txn.type === 'payment') {
+                    _recordSaleLedgerEntry(amount, amount, txn.method, null, 'credit', { creditPaymentId: txn.id, creditorId: c.id });
+                }
+                _cdHide('creditor-entry-modal');
+                showCustomAlert(txn.type === 'payment' ? 'Payment logged.' : 'Credit added.');
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not save — try again.';
+            }
+            _cdSaving = false;
+        }
+
+        async function deleteCreditTxn(txnId) {
+            const t = creditTxns.find(x => x.id === txnId);
+            if (!t) return;
+            if (!checkPin()) return;
+            const extra = t.type === 'payment' ? '\n\nThis payment was also logged in the Cash Ledger — delete that entry there too if it was a mistake.' : '';
+            if (!confirm('Delete this ' + (t.type === 'payment' ? 'payment' : 'credit') + ' entry of ' + _cdFmt(t.amount) + '?' + extra)) return;
+            try { await window.dbRemove(_cdRef('creditTxns/' + txnId)); }
+            catch (e) { console.error(e); showCustomAlert('Could not delete — try again.'); }
+        }
+
+        async function deleteCreditor(id) {
+            const c = creditors.find(x => x.id === id);
+            if (!c) return;
+            const bal = _creditBalance(id);
+            if (Math.abs(bal) >= 1) { showCustomAlert('Clear the balance first (' + _cdFmt(Math.abs(bal)) + ' ' + (bal < 0 ? 'advance' : 'pending') + ').'); return; }
+            if (!checkPin()) return;
+            if (!confirm('Delete ' + c.name + ' and all their credit history? This cannot be undone.')) return;
+            try {
+                for (const t of creditTxns.filter(x => x.creditorId === id)) await window.dbRemove(_cdRef('creditTxns/' + t.id));
+                const ph = _creditorPhotos[id] || {};
+                for (const slot of ['aadhaar', 'person']) {
+                    if (ph[slot] && ph[slot].storagePath) {
+                        try { await window.deleteObject(window.storageRef(window.firebaseStorage, ph[slot].storagePath)); }
+                        catch (e) { console.warn('[Credit] photo cleanup failed', e); }
+                    }
+                }
+                await window.dbRemove(_cdRef('creditorPhotos/' + id));
+                await window.dbRemove(_cdRef('creditors/' + id));
+                if (cartCreditorId === id) _setCartCreditor(null);
+                closeCreditorDetail();
+            } catch (e) {
+                console.error(e);
+                showCustomAlert('Could not delete — try again.');
+            }
+        }
+
+        // ── Create / edit creditor ─────────────────────────────────
+        function openCreditorForm(id) {
+            _cdFormId = id || null;
+            _cdStaged = { aadhaar: null, person: null };
+            const c = id ? creditors.find(x => x.id === id) : null;
+            document.getElementById('creditor-form-title').textContent = c ? '✏️ Edit Creditor' : '➕ New Creditor';
+            document.getElementById('cd-form-name').value = c ? (c.name || '') : '';
+            document.getElementById('cd-form-mobile').value = c ? (c.mobile || '') : '';
+            document.getElementById('cd-form-addr').value = c ? (c.address || '') : '';
+            document.getElementById('cd-form-aadhaar').value = c ? (c.aadhaarNo || '') : '';
+            document.getElementById('cd-form-status').textContent = '';
+            _cdRenderStaged();
+            _cdShow('creditor-form-modal');
+        }
+        function stageCreditorPhoto(slot, file) {
+            if (!file) return;
+            _cdStaged[slot] = file;
+            _cdRenderStaged();
+        }
+        function _cdRenderStaged() {
+            [['aadhaar', 'Aadhaar photo'], ['person', 'Customer photo']].forEach(([slot, label]) => {
+                const box = document.getElementById('cd-photo-box-' + slot);
+                if (!box) return;
+                const existing = _cdFormId ? ((_creditorPhotos[_cdFormId] || {})[slot]) : null;
+                const src = _cdStaged[slot] ? URL.createObjectURL(_cdStaged[slot]) : (existing && existing.url) || '';
+                box.innerHTML = src
+                    ? `<img src="${escHtml(src)}" style="width:100%; height:100%; object-fit:cover; border-radius:9px;">`
+                    : `<div style="text-align:center; font-size:12px; color:var(--text2);">📷<br>${label}</div>`;
+            });
+        }
+
+        async function _cdUploadPhoto(creditorId, slot, file) {
+            const old = (_creditorPhotos[creditorId] || {})[slot];
+            const compressed = await _compressImageFile(file, slot === 'aadhaar' ? 1600 : 1000, slot === 'aadhaar' ? 0.9 : 0.85, false);
+            const path = `creditorPhotos/${creditorId}/${slot}_${Date.now()}.jpg`;
+            const sref = window.storageRef(window.firebaseStorage, path);
+            await window.uploadBytes(sref, compressed);
+            const url = await window.getDownloadURL(sref);
+            await window.dbUpdate(_cdRef('creditorPhotos/' + creditorId), { [slot]: { storagePath: path, url } });
+            if (old && old.storagePath) {
+                try { await window.deleteObject(window.storageRef(window.firebaseStorage, old.storagePath)); }
+                catch (e) { console.warn('[Credit] old photo cleanup failed', e); }
+            }
+        }
+
+        async function saveCreditorForm() {
+            if (_cdSaving) return;
+            const statusEl = document.getElementById('cd-form-status');
+            const name = document.getElementById('cd-form-name').value.trim();
+            const mobile = document.getElementById('cd-form-mobile').value.trim();
+            const address = document.getElementById('cd-form-addr').value.trim();
+            const aadhaarNo = document.getElementById('cd-form-aadhaar').value.replace(/\D/g, '');
+            if (!name) { statusEl.textContent = 'Enter the name.'; return; }
+            if (mobile && mobile.replace(/\D/g, '').length < 10) { statusEl.textContent = 'Mobile number looks too short.'; return; }
+            if (aadhaarNo && aadhaarNo.length !== 12) { statusEl.textContent = 'Aadhaar number must be 12 digits (or leave blank).'; return; }
+            if (mobile) {
+                const dup = creditors.find(x => x.id !== _cdFormId && x.mobile && x.mobile.replace(/\D/g, '').slice(-10) === mobile.replace(/\D/g, '').slice(-10));
+                if (dup && !confirm('"' + dup.name + '" already has this mobile number. Save anyway?')) return;
+            }
+            const existing = _cdFormId ? creditors.find(x => x.id === _cdFormId) : null;
+            const id = _cdFormId || crypto.randomUUID();
+            const now = new Date().toISOString();
+            const rec = { id, name, mobile, address, aadhaarNo, createdAt: existing ? (existing.createdAt || now) : now, updatedAt: now };
+            _cdSaving = true;
+            statusEl.textContent = 'Saving…';
+            try {
+                await window.dbSet(_cdRef('creditors/' + id), rec);
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Could not save — try again.';
+                _cdSaving = false;
+                return;
+            }
+            const failed = [];
+            for (const slot of ['aadhaar', 'person']) {
+                if (!_cdStaged[slot]) continue;
+                statusEl.textContent = 'Uploading photo…';
+                try { await _cdUploadPhoto(id, slot, _cdStaged[slot]); }
+                catch (e) { console.error(e); failed.push(slot === 'aadhaar' ? 'Aadhaar photo' : 'Customer photo'); }
+            }
+            _cdSaving = false;
+            _cdHide('creditor-form-modal');
+            if (_cdNewFromPicker && !existing) {
+                _cdNewFromPicker = false;
+                _cdHide('creditor-picker-modal');
+                _setCartCreditor(id, rec);
+            }
+            if (failed.length) showCustomAlert('Saved, but ' + failed.join(' & ') + ' failed to upload — open the creditor and tap Edit to add it again.');
+        }
+
+        // ── Cart / checkout link ───────────────────────────────────
+        function openCreditorPickerForLedger() {
+            _cdPickerLedger = true;
+            document.getElementById('creditor-picker-title').textContent = '🧾 Payment From Creditor';
+            document.getElementById('creditor-picker-new-btn').style.display = 'none';
+            document.getElementById('creditor-picker-search').value = '';
+            renderCreditorPicker();
+            _cdShow('creditor-picker-modal');
+        }
+        function openCreditorPicker() {
+            _cdPickerLedger = false;
+            document.getElementById('creditor-picker-title').textContent = '🧾 Select Creditor';
+            document.getElementById('creditor-picker-new-btn').style.display = '';
+            document.getElementById('creditor-picker-search').value = '';
+            renderCreditorPicker();
+            _cdShow('creditor-picker-modal');
+        }
+        function renderCreditorPicker() {
+            const el = document.getElementById('creditor-picker-list');
+            if (!el) return;
+            const q = (document.getElementById('creditor-picker-search').value || '').trim().toLowerCase();
+            const rows = creditors
+                .filter(c => !q || (c.name || '').toLowerCase().includes(q) || (c.mobile || '').includes(q))
+                .filter(c => !_cdPickerLedger || _creditBalance(c.id) >= 1)
+                .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            let html = '';
+            if (cartCreditorId && !_cdPickerLedger) {
+                html += `<button onclick="_setCartCreditor(null); _cdHide('creditor-picker-modal');" style="width:100%; text-align:left; padding:12px 14px; background:#fff3e0; border:1.5px solid #ffcc80; border-radius:12px; color:#e65100; font-weight:700; font-size:14px; margin:0; box-shadow:none;">✕ Remove selected creditor</button>`;
+            }
+            html += rows.map(c => {
+                const bal = _creditBalance(c.id);
+                return `<button onclick="pickCreditor('${c.id}')" style="width:100%; text-align:left; padding:12px 14px; background:${c.id === cartCreditorId ? '#e8f5e9' : '#f5f5f5'}; border:1.5px solid ${c.id === cartCreditorId ? '#a5d6a7' : '#e0e0e0'}; border-radius:12px; font-family:'Inter',sans-serif; cursor:pointer; margin:0; box-shadow:none; display:flex; justify-content:space-between; gap:10px; align-items:center;">
+                    <span style="min-width:0;"><span style="display:block; font-size:15px; font-weight:700; color:#1a1a1a;">${escHtml(c.name)}</span><span style="display:block; font-size:12px; color:#888; margin-top:2px;">${escHtml(c.mobile || 'No mobile')}</span></span>
+                    <span style="font-size:13px; font-weight:800; color:${bal >= 1 ? '#c62828' : '#2e7d32'}; flex-shrink:0;">${bal >= 1 ? _cdFmt(bal) + ' due' : (bal < 0 ? _cdFmt(-bal) + ' adv' : 'Clear')}</span>
+                </button>`;
+            }).join('');
+            if (!rows.length) html += `<p class="note" style="font-size:13px; color:#888; text-align:center; padding:14px 0; margin:0;">${_cdPickerLedger ? 'No creditor has a pending balance.' : (creditors.length ? 'No match.' : 'No creditor accounts yet.')}</p>`;
+            el.innerHTML = html;
+        }
+        function pickCreditor(id) {
+            if (_cdPickerLedger) {
+                _cdPickerLedger = false;
+                _cdHide('creditor-picker-modal');
+                _cdDetailId = id;
+                openCreditorEntry('payment');
+                return;
+            }
+            _setCartCreditor(id);
+            _cdHide('creditor-picker-modal');
+        }
+        function newCreditorFromPicker() {
+            _cdNewFromPicker = true;
+            openCreditorForm(null);
+        }
+
+        // Selecting a creditor links the sale to them and fills the cart's customer fields.
+        function _setCartCreditor(id, recFallback) {
+            const c = id ? (creditors.find(x => x.id === id) || recFallback || null) : null;
+            cartCreditorId = c ? c.id : null;
+            try {
+                if (c) localStorage.setItem(CART_CREDITOR_KEY, c.id); else localStorage.removeItem(CART_CREDITOR_KEY);
+            } catch (e) {}
+            if (c) {
+                cartCustomer = { name: c.name || '', mobile: c.mobile || '', address: c.address || '' };
+                localStorage.setItem('suhagPriceCheckerCartCustomer', JSON.stringify(cartCustomer));
+                const cn = document.getElementById('cart-cust-name'), cm = document.getElementById('cart-cust-mob'), ca = document.getElementById('cart-cust-addr');
+                if (cn) cn.value = cartCustomer.name;
+                if (cm) cm.value = cartCustomer.mobile;
+                if (ca) ca.value = cartCustomer.address;
+            }
+            _renderCartCreditorBtn();
+            _renderPayCreditorLine();
+        }
+
+        function _clearCartCreditorState() {
+            cartCreditorId = null;
+            try { localStorage.removeItem(CART_CREDITOR_KEY); } catch (e) {}
+        }
+
+        function _renderCartCreditorBtn() {
+            const b = document.getElementById('cart-creditor-btn');
+            if (!b) return;
+            const c = cartCreditorId ? creditors.find(x => x.id === cartCreditorId) : null;
+            if (c) {
+                b.textContent = '🧾 ' + c.name;
+                b.style.background = '#2e7d32'; b.style.color = '#fff'; b.style.borderColor = '#2e7d32';
+            } else {
+                b.textContent = '🧾 Creditor';
+                b.style.background = '#fff'; b.style.color = '#c62828'; b.style.borderColor = '#c62828';
+            }
+        }
+
+        function _renderPayCreditorLine() {
+            const s = document.getElementById('pay-credit-who');
+            if (!s) return;
+            const c = cartCreditorId ? creditors.find(x => x.id === cartCreditorId) : null;
+            if (c) { s.textContent = '→ ' + c.name; s.style.color = '#2e7d32'; }
+            else { s.textContent = '(tap to select creditor)'; s.style.color = '#c62828'; }
+        }
+
+        // "Rest" button in the split-payment panel: puts whatever is still unpaid on credit.
+        function payCreditFillRemaining() {
+            if (!cartCreditorId) { openCreditorPicker(); return; }
+            let total = 0; cart.forEach(i => total += i.finalPrice);
+            let og = 0; oldGoldItems.forEach(i => og += i.value);
+            const net = Math.round(total - og - cartAdjustment);
+            const cash = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
+            const upi  = parseFloat(document.getElementById('pay-upi-amt').value)  || 0;
+            const card = parseFloat(document.getElementById('pay-card-amt').value) || 0;
+            document.getElementById('pay-credit-amt').value = Math.max(0, net - cash - upi - card) || '';
+            syncPartialPayment('credit-rest');
+        }
+
+        // Called from _finalizeCheckoutSave — books the credit portion of a sale to the creditor.
+        function _recordCreditSale(creditorId, amount, invoiceId) {
+            const inv = invoiceId ? invoiceHistory.find(r => r.id === invoiceId) : null;
+            const txn = {
+                id: crypto.randomUUID(), creditorId, type: 'sale', amount: Math.round(amount),
+                timestamp: new Date().toISOString(), method: null,
+                invoiceId: invoiceId || null,
+                billNo: (inv && inv.billNo != null) ? inv.billNo : null,
+                note: inv ? ('Bill #' + inv.billNo) : 'Sale on credit',
+                src: 'cart'
+            };
+            window.dbSet(_cdRef('creditTxns/' + txn.id), txn).catch(e => {
+                console.error('[Credit] could not save credit entry', e);
+                const c = creditors.find(x => x.id === creditorId);
+                showCustomAlert('⚠️ The sale was saved, but the credit entry of ' + _cdFmt(amount) + ' for ' + escHtml(c ? c.name : 'the creditor') + ' could not be saved. Open Credit → ' + escHtml(c ? c.name : 'creditor') + ' → Add Credit and enter it manually.');
+            });
+        }
+
         // --- END CART FUNCTIONS ---
 
         // --- OLD GOLD FUNCTIONS ---
@@ -10716,6 +11228,7 @@
                 console.error("Failed to load cart customer from localStorage", e);
                 cartCustomer = { name: '', mobile: '', address: '' };
             }
+            try { cartCreditorId = localStorage.getItem('suhagPriceCheckerCartCreditor') || null; } catch (e) { cartCreditorId = null; }
 
             // --- Load Old Gold from Local Storage ---
             try {
@@ -10737,6 +11250,7 @@
             syncData();
             startInstallmentsSync();
             startSavingsSync();
+            startCreditSync();
             initPrintServerIfEnabled();
             initBackupTriggerListenerIfEnabled();
             // Load ledger from cache immediately (Firebase will overwrite shortly)
@@ -11455,6 +11969,8 @@
             document.getElementById('pay-cash-amt').value  = '';
             document.getElementById('pay-upi-amt').value   = '';
             document.getElementById('pay-card-amt').value  = '';
+            document.getElementById('pay-credit-amt').value = '';
+            _renderPayCreditorLine();
             document.getElementById('pay-partial-status').textContent = '';
             document.querySelectorAll('.pay-mode-btn').forEach(b => b.classList.remove('selected'));
             window._selectedPayMode = '';
@@ -11502,6 +12018,8 @@
                 document.getElementById('pay-cash-amt').value = Math.max(0, net).toFixed(0);
                 document.getElementById('pay-upi-amt').value  = '';
                 document.getElementById('pay-card-amt').value = '';
+                document.getElementById('pay-credit-amt').value = '';
+                _renderPayCreditorLine();
                 syncPartialPayment('cash');
                 setTimeout(() => document.getElementById('pay-cash-amt').focus(), 50);
             }
@@ -11672,10 +12190,20 @@
             let total = 0; cart.forEach(i => total += i.finalPrice);
             let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
             const net = Math.round(total - oldGoldTotal - cartAdjustment);
-            const cash = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
+            let cash = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
             const upi  = parseFloat(document.getElementById('pay-upi-amt').value)  || 0;
             const card = parseFloat(document.getElementById('pay-card-amt').value) || 0;
-            const sum  = cash + upi + card;
+            const credit = parseFloat(document.getElementById('pay-credit-amt').value) || 0;
+            // Cash is pre-filled with the full amount, so when an amount is typed into
+            // Credit, take it out of Cash automatically instead of making the cashier do it.
+            if (changed === 'credit') {
+                const excess = (cash + upi + card + credit) - net;
+                if (excess > 0 && cash > 0) {
+                    cash = Math.max(0, cash - excess);
+                    document.getElementById('pay-cash-amt').value = cash || '';
+                }
+            }
+            const sum  = cash + upi + card + credit;
             const remaining = net - sum;
             const statusEl = document.getElementById('pay-partial-status');
             if (Math.abs(remaining) < 1) {
@@ -11719,8 +12247,10 @@
                 const t = invComputeTotals(sub, finalAmt, true, invExemptSub(rows)); // true = home state (SGST+CGST)
                 const { disc, taxable, sgst, cgst, igst, rounded, rndOff } = t;
                 // receipt = what customer actually pays = net after old gold, rounded
-                const receipt = Math.max(0, Math.round(netPayable));
-                const outstanding = 0; // checkout bills are paid in full at confirmation
+                // Credit portion (Credit feature) stays outstanding on the invoice.
+                const _crAmt = (paymentMode === 'partial' && paymentSplit && paymentSplit.credit > 0) ? Math.round(paymentSplit.credit) : 0;
+                const receipt = Math.max(0, Math.round(netPayable) - _crAmt);
+                const outstanding = _crAmt;
 
                 // Bill number continues whichever track checkout is currently filing
                 // under — see invGetCheckoutTrack(); Track B mirrors Track A's last bill
@@ -11747,7 +12277,8 @@
                     totals: { sub, disc, taxable, sgst, cgst, igst, rounded, rndOff, receipt, outstanding },
                     receipt, draft: false,
                     paymentMethod: paymentMode || 'none', paymentDetails,
-                    source: 'checkout'
+                    source: 'checkout',
+                    ...(_crAmt > 0 && cartCreditorId ? { creditorId: cartCreditorId, creditAmount: _crAmt } : {})
                 };
                 invoiceHistory.unshift(record);
                 _saveInvoiceLocal();
@@ -11969,8 +12500,10 @@
             const finalAmt = grossNetPayable > 0 ? grossNetPayable : 0;
             const t = invComputeTotals(sub, finalAmt, true, invExemptSub(rows)); // true = home state (SGST+CGST)
             const { disc, taxable, sgst, cgst, igst, rounded, rndOff, isHome, pct } = t;
-            const receipt = Math.max(0, Math.round(netPayable)); // actual amount paid (after OG)
-            const outstanding = 0;
+            // Credit portion (Credit feature) stays outstanding on the invoice.
+            const _crAmt = (paymentMode === 'partial' && paymentSplit && paymentSplit.credit > 0) ? Math.round(paymentSplit.credit) : 0;
+            const receipt = Math.max(0, Math.round(netPayable) - _crAmt); // actual amount paid (after OG and credit)
+            const outstanding = _crAmt;
 
             const custName = (cartCustomer && cartCustomer.name) || '—';
             const custMob = (cartCustomer && cartCustomer.mobile) || '';
@@ -12201,7 +12734,8 @@
                 totals: { sub, disc, taxable, sgst, cgst, igst, rounded, rndOff, receipt, outstanding },
                 receipt, draft: false,
                 paymentMethod, paymentDetails,
-                source: 'checkout'
+                source: 'checkout',
+                ...(_crAmt > 0 && cartCreditorId ? { creditorId: cartCreditorId, creditAmount: _crAmt } : {})
             };
 
             return { html, record };
@@ -12218,24 +12752,27 @@
                 const cash = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
                 const upi  = parseFloat(document.getElementById('pay-upi-amt').value)  || 0;
                 const card = parseFloat(document.getElementById('pay-card-amt').value) || 0;
-                if (cash < 0 || upi < 0 || card < 0) { showCustomAlert('Payment amounts cannot be negative.'); return null; }
-                if (cash + upi + card === 0) { showCustomAlert('Enter at least one amount.'); return null; }
+                const credit = parseFloat((document.getElementById('pay-credit-amt') || {}).value) || 0;
+                if (cash < 0 || upi < 0 || card < 0 || credit < 0) { showCustomAlert('Payment amounts cannot be negative.'); return null; }
+                if (cash + upi + card + credit === 0) { showCustomAlert('Enter at least one amount.'); return null; }
+                if (credit > 0 && !cartCreditorId) { showCustomAlert('Select a creditor first (tap "select creditor" next to Credit, or use the Creditor button in the cart).'); return null; }
 
                 // Validate that split amounts equal net payable (allow ±1 rounding)
                 let totalForValidation = 0; cart.forEach(i => totalForValidation += i.finalPrice);
                 let oldGoldForValidation = 0; oldGoldItems.forEach(i => oldGoldForValidation += i.value);
                 const netForValidation = Math.round(totalForValidation - oldGoldForValidation - cartAdjustment);
-                if (Math.abs(cash + upi + card - netForValidation) > 1) {
+                if (Math.abs(cash + upi + card + credit - netForValidation) > 1) {
                     showCustomAlert('Payment amounts don\'t add up to ₹' + netForValidation + '. Please balance the split before confirming.');
                     return null;
                 }
 
-                payment = { mode: 'partial', cash, upi, card };
+                payment = { mode: 'partial', cash, upi, card, credit };
                 cashPortion = cash;
                 const parts = [];
                 if (cash > 0) parts.push(`Cash ₹${cash.toFixed(0)}`);
                 if (upi  > 0) parts.push(`UPI ₹${upi.toFixed(0)}`);
                 if (card > 0) parts.push(`Card ₹${card.toFixed(0)}`);
+                if (credit > 0) parts.push(`Credit ₹${credit.toFixed(0)}`);
                 saleNote = 'Split — ' + parts.join(' + ');
             } else {
                 payment = { mode };
@@ -12263,9 +12800,9 @@
                 // Refund scenario — old jewellery value exceeds the item total.
                 const amt = Math.round(Math.abs(netAfterOG));
                 const ef = extraFields || {};
-                const uniqueKey = ef.invoiceId || ef.installmentPaymentId || null;
+                const uniqueKey = ef.invoiceId || ef.installmentPaymentId || ef.creditPaymentId || null;
                 const _dup = uniqueKey
-                    ? ledgerEntries.some(e => e.type === 'out' && (e.invoiceId === uniqueKey || e.installmentPaymentId === uniqueKey))
+                    ? ledgerEntries.some(e => e.type === 'out' && (e.invoiceId === uniqueKey || e.installmentPaymentId === uniqueKey || e.creditPaymentId === uniqueKey))
                     : ledgerEntries.some(e => e.type === 'out' && Math.abs(e.amount - amt) < 1 && Math.abs(new Date(e.timestamp).getTime() - _now) < 10000);
                 if (_dup) { console.warn('[Guard] Duplicate refund ledger entry blocked', uniqueKey ? '(same id: ' + uniqueKey + ')' : '(within 10s window)'); return; }
                 const entry = {
@@ -12304,9 +12841,9 @@
             // site now passes one), dedupe strictly against that instead — it can
             // never collide between two different sales. Only fall back to the old
             // fuzzy amount+time heuristic when no id was passed in at all.
-            const uniqueKey = ef.invoiceId || ef.installmentPaymentId || null;
+            const uniqueKey = ef.invoiceId || ef.installmentPaymentId || ef.creditPaymentId || null;
             const _dup = uniqueKey
-                ? ledgerEntries.some(e => e.type === 'sale' && (e.invoiceId === uniqueKey || e.installmentPaymentId === uniqueKey))
+                ? ledgerEntries.some(e => e.type === 'sale' && (e.invoiceId === uniqueKey || e.installmentPaymentId === uniqueKey || e.creditPaymentId === uniqueKey))
                 : ledgerEntries.some(e => e.type === 'sale' && Math.abs(e.amount - amt) < 1 && Math.abs(new Date(e.timestamp).getTime() - _now) < 10000);
             if (_dup) { console.warn('[Guard] Duplicate sale ledger entry blocked', uniqueKey ? '(same id: ' + uniqueKey + ')' : '(within 10s window)'); return; }
 
@@ -12353,7 +12890,12 @@
             // amount within a few seconds of each other (e.g. a bill split into a
             // separate cash invoice and a separate UPI invoice, same Track B bill
             // number by design). See _recordSaleLedgerEntry.
-            _recordSaleLedgerEntry(netPayable, Math.max(0, netPayable), mode, payment, 'checkout', { invoiceId: _savedInvoiceId });
+            // Credit portion is NOT cash collected — only the paid part goes to the ledger;
+            // the credit part is booked to the creditor and hits the ledger when they pay.
+            const _creditAmt = (mode === 'partial' && payment && payment.credit > 0) ? Math.round(payment.credit) : 0;
+            const _creditCid = _creditAmt > 0 ? cartCreditorId : null;
+            _recordSaleLedgerEntry(netPayable, Math.max(0, netPayable) - _creditAmt, mode, payment, 'checkout', { invoiceId: _savedInvoiceId });
+            if (_creditCid) _recordCreditSale(_creditCid, _creditAmt, _savedInvoiceId);
 
             // --- Deduct tracked loose-preset stock (e.g. Nosepin) for this sale ---
             // Only decrements presets that are actively tracked (someone has used
@@ -12372,6 +12914,7 @@
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
             localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
             localStorage.setItem('suhagPriceCheckerCartCustomer', JSON.stringify(cartCustomer));
+            _clearCartCreditorState();
             updateCartIcon();
             closeModal('payment-modal');
             closeModal('cart-modal');
@@ -12383,7 +12926,9 @@
                 // normal success toast, so it's never mistaken for "all good".
                 showCustomAlert('⚠️ Ledger entry saved, but the INVOICE could not be created (check console for details). Please open Invoice History and add this bill manually if needed.');
             } else {
-                showCustomAlert(hadInvoice ? 'Completed✅!' : 'Sale recorded!');
+                const _crObj = _creditCid ? creditors.find(x => x.id === _creditCid) : null;
+                const _crMsg = _creditCid ? '<br>' + _cdFmt(_creditAmt) + ' added to ' + escHtml(_crObj ? _crObj.name : 'creditor') + '\'s credit.' : '';
+                showCustomAlert((hadInvoice ? 'Completed✅!' : 'Sale recorded!') + _crMsg);
             }
         }
 
@@ -12533,6 +13078,7 @@
                 if (payment.cash > 0) parts.push('💵 ₹' + payment.cash.toFixed(0));
                 if (payment.upi  > 0) parts.push('📱 ₹' + payment.upi.toFixed(0));
                 if (payment.card > 0) parts.push('💳 ₹' + payment.card.toFixed(0));
+                if (payment.credit > 0) parts.push('🧾 ₹' + payment.credit.toFixed(0));
                 return parts.join(' + ');
             }
             return payment.mode;
@@ -13327,7 +13873,7 @@
                         <div class="ledger-entry-icon ${iconClass}">${icons[e.type]||'📝'}</div>
                         <div class="ledger-entry-body">
                             <div class="ledger-entry-title">${labels[e.type]||e.type}</div>
-                            <div class="ledger-entry-meta">${time}${e.source === 'checkout' ? ' · checkout' : e.source === 'invoice' ? ' · From Invoice' : e.source === 'installment' ? ' · From Installment Plan' : ' · Manual'}</div>
+                            <div class="ledger-entry-meta">${time}${e.source === 'checkout' ? ' · checkout' : e.source === 'invoice' ? ' · From Invoice' : e.source === 'installment' ? ' · From Installment Plan' : e.source === 'credit' ? ' · Credit Received' : ' · Manual'}</div>
                             ${e.note ? `<div class="ledger-entry-note">${e.note}</div>` : ''}
                         </div>
                         <div class="ledger-entry-amount ${isPos ? 'positive' : 'negative'}">${isPos?'+':'-'}₹${_fmt(e.amount)}</div>
@@ -14292,6 +14838,7 @@
             document.getElementById('ledger-payment-type-modal').style.display = 'none';
             if (type === 'installment') openLedgerInstallmentPicker();
             else if (type === 'savings') openLedgerSavingsPicker();
+            else if (type === 'creditor') openCreditorPickerForLedger();
         }
 
         // Mirrors openLedgerInstallmentPicker()/renderLedgerInstallmentPickerList()
@@ -17902,6 +18449,7 @@
             <div style="font-size:16px; font-weight:800; color:var(--text); margin-bottom:14px; text-align:center;">Add Payment For</div>
             <button onclick="_ledgerAddPaymentTypeChosen('installment')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:13px; border-radius:12px; font-size:14px; margin-bottom:10px;">📅 Installment Plan</button>
             <button onclick="_ledgerAddPaymentTypeChosen('savings')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:13px; border-radius:12px; font-size:14px;">💰 Saving Scheme</button>
+            <button onclick="_ledgerAddPaymentTypeChosen('creditor')" style="width:100%; background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:13px; border-radius:12px; font-size:14px; margin-top:10px;">🧾 Creditor</button>
             <button onclick="document.getElementById('ledger-payment-type-modal').style.display='none';" style="width:100%; background:none; border:none; color:var(--text2); font-size:12.5px; margin-top:10px; padding:6px; cursor:pointer; box-shadow:none;">Cancel</button>
         </div>
     </div>
@@ -18382,6 +18930,90 @@
             <div id="inst-reminders-body"></div>
         </div>
 
+    </div>
+
+    <!-- ══════════════════ CREDIT (CREDITOR ACCOUNTS) SCREEN ══════════════════ -->
+    <div id="credit-screen" style="display:none; flex:1; flex-direction:column; padding:14px; background:var(--bg); overflow-y:auto; -webkit-overflow-scrolling:touch; box-sizing:border-box; max-width:600px; margin:0 auto; width:100%; min-height:0;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+            <button onclick="showSection('main')" style="background:none; border:none; font-size:20px; color:var(--text2); cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">←</button>
+            <h2 style="margin:0; font-size:18px; font-weight:800; color:var(--text); flex:1;">🧾 Credit</h2>
+            <button onclick="_cdNewFromPicker=false; openCreditorForm(null)" style="width:auto; margin:0; padding:8px 14px; font-size:13px; font-weight:700; border-radius:10px;">➕ New</button>
+        </div>
+        <div id="credit-summary" style="display:flex; gap:12px; background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);"></div>
+        <input type="text" id="credit-search" placeholder="Search name or mobile" oninput="renderCreditList()" style="margin:0 0 12px;">
+        <div id="credit-list"></div>
+    </div>
+
+    <!-- Creditor detail -->
+    <div id="creditor-detail-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1400; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:420px; width:100%; max-height:90vh; overflow-y:auto; padding:18px; box-sizing:border-box;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h4 id="creditor-detail-title" style="margin:0; font-size:17px; font-weight:800;"></h4>
+                <button onclick="closeCreditorDetail()" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <div id="creditor-detail-body"></div>
+        </div>
+    </div>
+
+    <!-- Create / edit creditor -->
+    <div id="creditor-form-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:420px; width:100%; max-height:90vh; overflow-y:auto; padding:18px; box-sizing:border-box;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h4 id="creditor-form-title" style="margin:0; font-size:16px; font-weight:800;"></h4>
+                <button onclick="_cdNewFromPicker=false; _cdHide('creditor-form-modal')" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:7px;">
+                <input type="text" id="cd-form-name" placeholder="Name *" style="margin:0;">
+                <input type="tel" id="cd-form-mobile" placeholder="Mobile number" style="margin:0;">
+                <textarea id="cd-form-addr" placeholder="Address" rows="2" style="margin:0; padding:12px; border:1.5px solid var(--border); border-radius:var(--radius-sm); width:100%; font-size:15px; font-family:'Inter', sans-serif; box-sizing:border-box; resize:none;"></textarea>
+                <input type="text" id="cd-form-aadhaar" inputmode="numeric" maxlength="14" placeholder="Aadhaar number (optional)" style="margin:0;">
+            </div>
+            <div style="display:flex; gap:10px; margin-top:12px;">
+                <div style="flex:1;">
+                    <div id="cd-photo-box-aadhaar" onclick="document.getElementById('cd-photo-input-aadhaar').click()" style="height:110px; border:1.5px dashed var(--border); border-radius:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; overflow:hidden;"></div>
+                    <input type="file" accept="image/*" id="cd-photo-input-aadhaar" style="display:none;" onchange="stageCreditorPhoto('aadhaar', this.files[0]); this.value='';">
+                </div>
+                <div style="flex:1;">
+                    <div id="cd-photo-box-person" onclick="document.getElementById('cd-photo-input-person').click()" style="height:110px; border:1.5px dashed var(--border); border-radius:10px; display:flex; align-items:center; justify-content:center; cursor:pointer; overflow:hidden;"></div>
+                    <input type="file" accept="image/*" id="cd-photo-input-person" style="display:none;" onchange="stageCreditorPhoto('person', this.files[0]); this.value='';">
+                </div>
+            </div>
+            <div id="cd-form-status" style="font-size:12.5px; font-weight:700; color:#c62828; min-height:18px; margin-top:8px;"></div>
+            <button onclick="saveCreditorForm()" style="width:100%; margin:6px 0 0; padding:13px; font-size:15px; border-radius:12px;">Save</button>
+        </div>
+    </div>
+
+    <!-- Receive payment / add credit -->
+    <div id="creditor-entry-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; padding:18px; box-sizing:border-box;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <h4 id="creditor-entry-title" style="margin:0; font-size:16px; font-weight:800;"></h4>
+                <button onclick="_cdHide('creditor-entry-modal')" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
+            </div>
+            <div id="creditor-entry-sub" style="font-size:12px; color:#888; margin-bottom:10px;"></div>
+            <input type="number" id="creditor-entry-amount" placeholder="Amount (₹)" min="0" step="1" style="margin:0 0 8px;">
+            <div id="creditor-entry-paymodes" style="display:flex; gap:8px; margin-bottom:8px;">
+                <button id="cd-pm-cash" onclick="_cdSetPayMode('cash')" style="flex:1; margin:0; padding:9px 4px; font-size:13px; border-radius:10px; box-shadow:none;">💵 Cash</button>
+                <button id="cd-pm-upi" onclick="_cdSetPayMode('upi')" style="flex:1; margin:0; padding:9px 4px; font-size:13px; border-radius:10px; box-shadow:none;">📱 UPI</button>
+                <button id="cd-pm-card" onclick="_cdSetPayMode('card')" style="flex:1; margin:0; padding:9px 4px; font-size:13px; border-radius:10px; box-shadow:none;">💳 Card</button>
+            </div>
+            <input type="text" id="creditor-entry-note" placeholder="Note (optional)" style="margin:0 0 6px;">
+            <div id="creditor-entry-status" style="font-size:12.5px; font-weight:700; color:#c62828; min-height:18px;"></div>
+            <button onclick="saveCreditorEntry()" style="width:100%; margin:4px 0 0; padding:13px; font-size:15px; border-radius:12px;">Save</button>
+        </div>
+    </div>
+
+    <!-- Creditor picker (cart / payment) -->
+    <div id="creditor-picker-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1300; align-items:flex-end; justify-content:center;">
+        <div style="background:white; border-radius:20px 20px 0 0; width:100%; max-width:480px; padding:20px 18px 28px; box-shadow:0 -8px 32px rgba(0,0,0,0.15); max-height:85vh; overflow-y:auto; box-sizing:border-box;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h3 id="creditor-picker-title" style="margin:0; font-size:18px; color:#1a1a1a;">🧾 Select Creditor</h3>
+                <button onclick="_cdHide('creditor-picker-modal')" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; margin:0; box-shadow:none;">✕</button>
+            </div>
+            <input type="text" id="creditor-picker-search" placeholder="Search name or mobile" oninput="renderCreditorPicker()" style="margin:0 0 10px;">
+            <div id="creditor-picker-list" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
+            <button id="creditor-picker-new-btn" onclick="newCreditorFromPicker()" style="width:100%; margin:0; padding:12px; background:#f5f5f5; color:#333; border:1.5px dashed #bbb; border-radius:12px; font-size:14px; font-weight:700; box-shadow:none;">➕ New Creditor</button>
+        </div>
     </div>
 
     <!-- ══════════════════ SAVINGS SCHEME SCREEN ══════════════════ -->
@@ -19151,6 +19783,17 @@
                                    oninput="syncPartialPayment('card')"
                                    style="width:100%; padding:8px 10px; border:1.5px solid #e0e0e0; border-radius:8px; font-size:15px; font-weight:600; box-sizing:border-box;">
                         </div>
+                    </div>
+                    <div style="display:flex; align-items:flex-end; gap:10px;">
+                        <span style="font-size:18px; padding-bottom:8px;">🧾</span>
+                        <div style="flex:1;">
+                            <label style="font-size:11px; color:#888; display:block; margin-bottom:2px;">Credit (₹) <span id="pay-credit-who" onclick="openCreditorPicker()" style="font-weight:700; text-decoration:underline; cursor:pointer; color:#c62828;">(tap to select creditor)</span></label>
+                            <input type="number" id="pay-credit-amt" placeholder="0" min="0" step="1"
+                                   oninput="syncPartialPayment('credit')"
+                                   style="width:100%; padding:8px 10px; border:1.5px solid #e0e0e0; border-radius:8px; font-size:15px; font-weight:600; box-sizing:border-box; height:37px;">
+                        </div>
+                        <button type="button" onclick="payCreditFillRemaining()" title="Put the unpaid remainder on credit"
+                              style="flex-shrink:0; height:37px; padding:0 12px; background:#ffebee; border:1.5px solid #ef9a9a; border-radius:8px; font-size:12px; font-weight:800; color:#c62828; cursor:pointer; font-family:'Inter',sans-serif; box-sizing:border-box; margin:0; width:auto; box-shadow:none;">Rest</button>
                     </div>
                 </div>
                 <!-- Running total check -->
