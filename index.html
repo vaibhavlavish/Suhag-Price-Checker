@@ -4158,6 +4158,10 @@
         // localStorage is kept only as an offline-fallback cache, not the source of truth.
         let invCheckoutTrackSynced = localStorage.getItem('invCheckoutTrack') || 'B';
         let invCheckoutFormatSynced = localStorage.getItem('invCheckoutFormat') || 'invoice2';
+        // Current Rates list layout (display only): custom row order + hidden stamps.
+        // Cloud-synced like the checkout settings; localStorage is the offline fallback.
+        let ratesListLayout = (() => { try { return JSON.parse(localStorage.getItem('ratesListLayout')) || {}; } catch (e) { return {}; } })();
+        let _ratesListEditMode = false;
         let customFullPageBackground = null; // { storagePath, url } — a genuine full-A5-page background (e.g. with a centered watermark). Universal, Firebase-synced. (Replaced the older customHeaderImage/header-banner feature entirely — removed as redundant once this existed.)
         let printPhoneNumber = null; // editable via Print Settings — overlaid on the built-in fallback background image (which has a phone number baked into its pixels) so it can be updated without needing a new image export. Falls back to invoiceSettings.phone at the point of use until explicitly set. Universal, Firebase-synced.
         let _customFullPageBgDataUrl = null; // same local-cache pattern as before, IndexedDB-cached copy of the bytes.
@@ -4595,6 +4599,12 @@
                 localStorage.setItem('invCheckoutFormat', invCheckoutFormatSynced);
             } else {
                 invCheckoutFormatSynced = localStorage.getItem('invCheckoutFormat') || 'invoice2';
+            }
+            // Current Rates list layout (order + hidden stamps)
+            if (cloudData.ratesListLayout && typeof cloudData.ratesListLayout === 'object') {
+                const _toArr = v => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
+                ratesListLayout = { order: _toArr(cloudData.ratesListLayout.order), hidden: _toArr(cloudData.ratesListLayout.hidden) };
+                localStorage.setItem('ratesListLayout', JSON.stringify(ratesListLayout));
             }
             // packagingWeights (P.WEIGHT/B WEIGHT/EXTRA BAG + hide flags from Stock
             // Weight Calc) is edited locally with a debounce before it's written to
@@ -5181,6 +5191,7 @@
             document.getElementById(modalId).style.display = 'none';
             // If closing the cart, remove the green active styling from the button
             if (modalId === 'cart-modal') {
+                _cartFormatOverride = null; // temporary print-format switch ends with the cart
                 const btn = document.getElementById('cart-btn-nav');
                 if(btn) btn.classList.remove('active');
             }
@@ -6418,16 +6429,68 @@
         });
 
 
+        // ── Current Rates list: custom order + hide (display only) ──
+        // Hiding a stamp here only removes it from this list; the stamp and its rate
+        // stay fully usable for billing, stock and every dropdown.
+        function _rlOrderedRows() {
+            const all = [];
+            for (let metal in rates) for (let stamp in rates[metal]) all.push({ metal, stamp, key: metal + '|' + stamp, n: all.length });
+            const order = Array.isArray(ratesListLayout.order) ? ratesListLayout.order : [];
+            const pos = k => { const i = order.indexOf(k); return i < 0 ? 1e9 : i; };
+            return all.sort((x, y) => (pos(x.key) - pos(y.key)) || (x.n - y.n));
+        }
+        function _rlSave(order, hidden) {
+            ratesListLayout = { order, hidden };
+            localStorage.setItem('ratesListLayout', JSON.stringify(ratesListLayout));
+            window.dbSafeUpdate({ 'jewelryData/config/ratesListLayout': { order, hidden } });
+            renderRatesTable();
+        }
+        function toggleRatesListEdit() {
+            if (!_ratesListEditMode && !checkPin()) return;
+            _ratesListEditMode = !_ratesListEditMode;
+            renderRatesTable();
+        }
+        function rlMove(i, dir) {
+            const keys = _rlOrderedRows().map(r => r.key);
+            const j = i + dir;
+            if (j < 0 || j >= keys.length) return;
+            [keys[i], keys[j]] = [keys[j], keys[i]];
+            _rlSave(keys, ratesListLayout.hidden || []);
+        }
+        function rlToggleHide(i) {
+            const rows = _rlOrderedRows();
+            const key = rows[i] && rows[i].key;
+            if (!key) return;
+            const hidden = (ratesListLayout.hidden || []).slice();
+            const at = hidden.indexOf(key);
+            if (at >= 0) hidden.splice(at, 1); else hidden.push(key);
+            _rlSave(rows.map(r => r.key), hidden);
+        }
+
         function renderRatesTable() {
-            let html = '<h3 style="font-size:16px;margin:16px 0 8px;">Current Rates</h3><table>';
-            html += '<tr><th>Metal</th><th>Stamp</th><th>₹/g</th></tr>';
-            for (let metal in rates) {
-                for (let stamp in rates[metal]) {
-                    const m = metal.charAt(0).toUpperCase() + metal.slice(1);
-                    html += `<tr><td>${m}</td><td>${stamp}</td><td>${rates[metal][stamp].toFixed(2)}</td></tr>`;
+            const editing = _ratesListEditMode;
+            const hidden = new Set(ratesListLayout.hidden || []);
+            const rows = _rlOrderedRows();
+            const btn = 'width:auto; margin:0 2px; padding:3px 9px; font-size:13px; font-weight:700; border-radius:6px;';
+            let html = '<div style="display:flex; align-items:center; justify-content:space-between; margin:16px 0 8px;"><h3 style="font-size:16px; margin:0;">Current Rates</h3>' +
+                '<button onclick="toggleRatesListEdit()" style="width:auto; margin:0; padding:5px 12px; font-size:12px; font-weight:700; border-radius:8px;">' + (editing ? '✓ Done' : '✎ Edit list') + '</button></div><table>';
+            html += '<tr><th>Metal</th><th>Stamp</th><th>₹/g</th>' + (editing ? '<th></th>' : '') + '</tr>';
+            rows.forEach((r, i) => {
+                const isHidden = hidden.has(r.key);
+                if (isHidden && !editing) return;
+                const m = r.metal.charAt(0).toUpperCase() + r.metal.slice(1);
+                html += `<tr${isHidden ? ' style="opacity:.45;"' : ''}><td>${m}</td><td>${r.stamp}</td><td>${rates[r.metal][r.stamp].toFixed(2)}</td>`;
+                if (editing) {
+                    html += `<td style="white-space:nowrap;">` +
+                        `<button onclick="rlMove(${i},-1)" ${i === 0 ? 'disabled' : ''} style="${btn}">▲</button>` +
+                        `<button onclick="rlMove(${i},1)" ${i === rows.length - 1 ? 'disabled' : ''} style="${btn}">▼</button>` +
+                        `<button onclick="rlToggleHide(${i})" style="${btn}">${isHidden ? 'Show' : 'Hide'}</button></td>`;
                 }
-            }
-            html += '</table><p style="margin-top:12px;"><strong>Tax:</strong> ' + taxRate + '%</p>';
+                html += '</tr>';
+            });
+            html += '</table>';
+            if (editing) html += '<p style="font-size:12px; color:#666; margin-top:8px;">Hidden stamps are only removed from this list — they still work everywhere else.</p>';
+            html += '<p style="margin-top:12px;"><strong>Tax:</strong> ' + taxRate + '%</p>';
             document.getElementById('rates-table').innerHTML = html;
         }
 
@@ -10097,6 +10160,7 @@
         }
 
         function openCart() {
+            _cartFormatOverride = null; // every cart opening starts on the saved print format
             // Add active class to make button green
             const btn = document.getElementById('cart-btn-nav');
             if(btn) btn.classList.add('active');
@@ -12231,7 +12295,7 @@
         // of ledger, bills, or invoices never touches the other two.
         function _invAutoSaveFromCheckout(cartItems, netPayable, paymentMode, paymentSplit) {
             if (!cartItems || !cartItems.length) return { ok: true, invoiceId: null }; // empty cart — correctly nothing to invoice
-            const _fmt = invGetCheckoutFormat();
+            const _fmt = invGetCartPrintFormat();
             const rows = _invRowsFromCartItems(cartItems, _fmt);
             // Gate on whether there's real invoiceable content (item/repair rows),
             // NOT on netPayable. netPayable only decides what's PAID — old-jewellery
@@ -12367,6 +12431,14 @@
             return invCheckoutFormatSynced || 'invoice2';
         }
 
+        // Temporary, cart-only print format. The 5-tap gesture on "Net Payable" sets this
+        // for the invoice being built in the open cart; it never touches the saved
+        // checkout-format setting, and is cleared when the cart closes/reopens or the sale finishes.
+        let _cartFormatOverride = null;
+        function invGetCartPrintFormat() {
+            return _cartFormatOverride || invGetCheckoutFormat();
+        }
+
         // ══════════════════════════════════════════════════════════
         // CHECKOUT INVOICE TRACK — which track (A or B) checkout-generated invoices
         // are filed under. Defaults to Track B (the original behaviour). Switched via
@@ -12453,9 +12525,9 @@
             if (_netPayableTapCount >= 5) {
                 _netPayableTapCount = 0;
                 clearTimeout(_netPayableTapTimer);
-                const next = invGetCheckoutFormat() === 'invoice1' ? 'invoice2' : 'invoice1';
-                invSetCheckoutFormat(next);
-                invToast('🔀 Checkout format → ' + (INV_FORMAT_LABELS[next] || next));
+                const next = invGetCartPrintFormat() === 'invoice1' ? 'invoice2' : 'invoice1';
+                _cartFormatOverride = next; // this cart only — saved setting is left alone
+                invToast('🔀 This invoice only → ' + (INV_FORMAT_LABELS[next] || next));
             }
         }
 
@@ -12490,7 +12562,7 @@
         }
 
         function _invBuildPrintHtmlFromCart(cartItems, netPayable, paymentMode, paymentSplit) {
-            const fmt = invGetCheckoutFormat();
+            const fmt = invGetCartPrintFormat();
             const rows = _invRowsFromCartItems(cartItems, fmt);
             // Gate matches _invAutoSaveFromCheckout's — see the comment there.
             // Based on real row content, not netPayable, so an old-gold trade-in
@@ -12923,6 +12995,7 @@
             localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
             localStorage.setItem('suhagPriceCheckerCartCustomer', JSON.stringify(cartCustomer));
             _clearCartCreditorState();
+            _cartFormatOverride = null; // sale finished — next invoice uses the saved format again
             updateCartIcon();
             closeModal('payment-modal');
             closeModal('cart-modal');
