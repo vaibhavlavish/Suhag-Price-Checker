@@ -10225,7 +10225,7 @@
             // Generate Summary HTML
             let summaryHtml = `
                 <div style="display:flex; justify-content:space-between;">
-                    <span>Cart Total:</span><span>₹${cartTotal.toFixed(2)}</span>
+                    <span onclick="invHandleCartTotalTap()" class="inv-tap-trigger" style="cursor:pointer;">Cart Total:</span><span>₹${cartTotal.toFixed(2)}</span>
                 </div>
             `;
             if (oldGoldTotal > 0) {
@@ -12431,7 +12431,7 @@
             return invCheckoutFormatSynced || 'invoice2';
         }
 
-        // Temporary, cart-only print format. The 5-tap gesture on "Net Payable" sets this
+        // Temporary, cart-only print format. The 5-tap gesture on "Cart Total" sets this
         // for the invoice being built in the open cart; it never touches the saved
         // checkout-format setting, and is cleared when the cart closes/reopens or the sale finishes.
         let _cartFormatOverride = null;
@@ -12514,8 +12514,8 @@
         }
 
         // Quick hidden toggle on the cart's Net Payable label — 5 taps
-        // within 1.5s flips the checkout print format (invoice1 ↔
-        // invoice2) without leaving the cart for Settings. Same
+        // within 1.5s flips the saved checkout print format (invoice1 ↔
+        // invoice2) on ALL devices without leaving the cart for Settings. Same
         // tap-counting pattern as the existing Track A/B gesture.
         let _netPayableTapCount = 0, _netPayableTapTimer = null;
         function invHandleNetPayableTap() {
@@ -12525,9 +12525,26 @@
             if (_netPayableTapCount >= 5) {
                 _netPayableTapCount = 0;
                 clearTimeout(_netPayableTapTimer);
-                const next = invGetCartPrintFormat() === 'invoice1' ? 'invoice2' : 'invoice1';
-                _cartFormatOverride = next; // this cart only — saved setting is left alone
-                invToast('🔀 This invoice only → ' + (INV_FORMAT_LABELS[next] || next));
+                const next = invGetCheckoutFormat() === 'invoice1' ? 'invoice2' : 'invoice1';
+                invSetCheckoutFormat(next); // saved + cloud-synced → every device
+                _cartFormatOverride = null; // so the new saved format applies to this cart right away
+                invToast('🔀 Checkout format (all devices) → ' + (INV_FORMAT_LABELS[next] || next));
+            }
+        }
+
+        // Hidden 5-tap on the cart's "Cart Total" label: switch THIS invoice to
+        // Format 1 only. Nothing is saved — it ends when the cart closes/reopens
+        // or the sale finishes, and the saved format is left untouched.
+        let _cartTotalTapCount = 0, _cartTotalTapTimer = null;
+        function invHandleCartTotalTap() {
+            _cartTotalTapCount++;
+            clearTimeout(_cartTotalTapTimer);
+            _cartTotalTapTimer = setTimeout(() => { _cartTotalTapCount = 0; }, 1500);
+            if (_cartTotalTapCount >= 5) {
+                _cartTotalTapCount = 0;
+                clearTimeout(_cartTotalTapTimer);
+                _cartFormatOverride = 'invoice1';
+                invToast('🧾 This invoice only → ' + (INV_FORMAT_LABELS.invoice1 || 'Invoice 1'));
             }
         }
 
