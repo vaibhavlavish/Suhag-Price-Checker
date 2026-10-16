@@ -2050,6 +2050,7 @@
                         <option value="wastage">% (W)</option>
                         <option value="per_g">₹ Per Gram</option>
                         <option value="per_pc">₹ Fixed (Pc)</option>
+                        <option value="mrp">MRP (Direct) — fixed ₹ amount</option>
 
                     </select>
                 </div>
@@ -2111,6 +2112,7 @@
                 <option value="wastage">% (W) Wastage</option>
                 <option value="per_g">₹ Per Gram</option>
                 <option value="per_pc">₹ Fixed (Pc)</option>
+                <option value="mrp">MRP (Direct) — fixed ₹ amount</option>
             </select>
             <label for="preset-modal-making-value" style="font-size:12px; margin: 0 0 2px 0;">Making Value:</label>
             <input type="number" id="preset-modal-making-value" placeholder="e.g. 35" step="0.25" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%; box-sizing:border-box;">
@@ -6815,6 +6817,7 @@
             if(makingType === '%') makingDisplayStr = `${makingValue}%`;
             else if(makingType === 'wastage') makingDisplayStr = `${makingValue}% (Wastage)`;
             else if(makingType === 'per_g') makingDisplayStr = `₹${makingValue}/g`;
+            else if(makingType === 'mrp') makingDisplayStr = `MRP ₹${makingValue} (Direct)`;
             else makingDisplayStr = `₹${makingValue} (Fixed)`;
             document.getElementById('loose-making-display').textContent = `Making: ${makingDisplayStr}`;
 
@@ -6824,6 +6827,34 @@
             if (isNaN(weight) || weight <= 0) {
                 priceDisplay.textContent = '0.00';
                 currentLooseItem = null; // Clear item if invalid
+                return;
+            }
+
+            // MRP (Direct): the amount typed in the Making/MRP box IS the final price
+            // (GST-inclusive). Metal rate and weight play no part in the amount — the weight
+            // typed above is only carried along so it prints on the invoice.
+            if (makingType === 'mrp') {
+                const mrpAmt = (!isNaN(makingValue) && makingValue > 0) ? makingValue : 0;
+                if (mrpAmt <= 0) {
+                    priceDisplay.textContent = '0.00';
+                    currentLooseItem = null;
+                    return;
+                }
+                const _mrpName = document.getElementById('loose-print-name').value.trim();
+                priceDisplay.textContent = mrpAmt.toFixed(2);
+                currentLooseItem = {
+                    type: 'loose',
+                    id: crypto.randomUUID(),
+                    itemName: _mrpName || `Loose ${metal.charAt(0).toUpperCase() + metal.slice(1)} ${stamp}`,
+                    weight: weight,
+                    finalPrice: mrpAmt,
+                    metal: metal, stamp: stamp,
+                    rate: (rates[metal] && rates[metal][stamp]) || 0,
+                    makingType: 'mrp', makingValue: mrpAmt,
+                    subtotal: mrpAmt / (1 + taxRate / 100), taxRateApplied: taxRate,
+                    presetName: _mrpName ? null : (currentLoosePresetName || null),
+                    pieceCount: parseInt(document.getElementById('loose-piece-count').value, 10) || 1
+                };
                 return;
             }
 
@@ -7110,6 +7141,7 @@
                     if(preset.makingType === '%') makingDisplay = `${preset.makingValue}%`;
                     else if(preset.makingType === 'wastage') makingDisplay = `${preset.makingValue}% Wastage`;
                     else if(preset.makingType === 'per_g') makingDisplay = `₹${preset.makingValue}/g`;
+                    else if(preset.makingType === 'mrp') makingDisplay = `MRP ₹${preset.makingValue}`;
                     else makingDisplay = `₹${preset.makingValue} Fixed`;
 
                     row.innerHTML = `
@@ -7555,6 +7587,13 @@
                 return;
             }
             const d = currentLooseItem;
+            if (d.makingType === 'mrp') {
+                showCustomAlert(`<div style="text-align:left; font-size:15px; background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee; margin-top:10px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">Weight (printed only):</span><strong>${d.weight.toFixed(2)} gm</strong></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">MRP (Direct):</span><strong>₹${d.finalPrice.toFixed(2)}</strong></div>
+                    <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;"><span>Final Total:</span><span>₹${d.finalPrice.toFixed(2)}</span></div></div>`, 'Complete Price Breakdown');
+                return;
+            }
             const rate = d.rate;
             const metalVal = d.weight * rate;
             const makingType = d.makingType; // '%', 'wastage', 'per_g', 'per_pc'
@@ -7999,6 +8038,12 @@
 
             let rate, pureRate, weight, makingType, makingInput, otherCharge;
 
+            if (item.type === 'loose' && item.makingType === 'mrp') {
+                showCustomAlert(`<div style="text-align:left; font-size:15px; background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee; margin-top:10px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">MRP (Direct):</span><strong>₹${item.finalPrice.toFixed(2)}</strong></div>
+                    <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;"><span>Final Total:</span><span>₹${item.finalPrice.toFixed(2)}</span></div></div>`, 'Complete Price Breakdown');
+                return;
+            }
             if (item.type === 'loose') {
                 rate = (rates[item.metal] && rates[item.metal][item.stamp]) || 0;
                 pureRate = getPureRate(item.metal) || 0;
@@ -9271,6 +9316,7 @@
             }
 
             if (item.type === 'loose') {
+                if (item.makingType === 'mrp') return item.finalPrice; // fixed MRP — rates/weight never change it
                 if (!item.metal || !item.stamp) return item.finalPrice;
                 const rate = resolveRate(item.metal, item.stamp);
                 if (!rate) return item.finalPrice;
@@ -16395,6 +16441,25 @@
                     // silently produce a different number than what was actually charged. For
                     // wastage only, fall back to a flat ₹/pc charge sized to match the original
                     // stored subtotal exactly; every other making type is shown as picked.
+                    if (item.makingType === 'mrp') {
+                        // MRP (Direct): weight prints for reference, the amount is exactly what
+                        // was set. Back out GST so the invoice total reconciles to that amount
+                        // (same approach as the flat-amount "Jewellery" rows above).
+                        const _amt = parseFloat((item.finalPrice || 0).toFixed(2));
+                        const _tr = invoiceSettings.taxRate || 0;
+                        return {
+                            desc: looseDesc,
+                            hsn: '7113', pc: item.pieceCount || 1,
+                            grWt: parseFloat((item.weight || 0).toFixed(3)),
+                            nlWt: parseFloat((item.weight || 0).toFixed(3)),
+                            rate: 0,
+                            makingType: 'mrp',
+                            makingPct: Math.round((_amt / (1 + _tr / 100)) * 100) / 100,
+                            metal: item.metal || '',
+                            stamp: item.stamp || '',
+                            isLoose: true
+                        };
+                    }
                     if (item.rate !== undefined && item.subtotal !== undefined) {
                         const typeMap = { '%':'%', per_g:'per_g', per_pc:'per_pc' };
                         if (typeMap[item.makingType]) {
