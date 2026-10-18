@@ -11771,13 +11771,21 @@
         let camStableStart    = 0;
         let camConfirmedValue = '';
         let camProgressTimer  = null;
-        const CAM_STABLE_MS   = 1000; // must hold steady for 1 second
+        // Shake/blur-tolerant locking: a barcode is accepted after it has been READ a few
+        // times (hits don't need to be back-to-back), so a blurry or empty frame never
+        // wipes what was already recognised — it just pauses progress.
+        const CAM_HITS_NEEDED = 4;    // matching reads needed to lock
+        const CAM_MIN_MS      = 400;  // ...and at least this long since the first read
+        const CAM_SWITCH_HITS = 2;    // a DIFFERENT barcode must read this many times to replace the shown one
+        const CAM_STALE_MS    = 6000; // shown code is dropped only after this long with no matching read
+        let camHits = 0, camPendingValue = '', camPendingHits = 0, camLastHitAt = 0, camLocked = false;
 
         function openCamera(target) {
             cameraTarget      = target || 'barcode';
             camLastValue      = '';
             camStableStart    = 0;
             camConfirmedValue = '';
+            camHits = 0; camPendingValue = ''; camPendingHits = 0; camLastHitAt = 0; camLocked = false;
             _camResetUI();
             document.getElementById('camera-overlay').style.display = 'flex';
             document.getElementById('camera-status').textContent = 'Starting camera…';
@@ -11857,7 +11865,7 @@
             document.getElementById('cam-confirm-btn').style.display    = 'block';
             document.getElementById('cam-lock-overlay').style.display   = 'block';
             document.getElementById('scan-line').style.display          = 'none';
-            document.getElementById('camera-status').textContent        = 'Hold steady… confirming';
+            document.getElementById('camera-status').textContent        = 'Reading barcode…';
             // Turn brackets yellow while locking
             document.querySelectorAll('.cam-corner').forEach(el => {
                 el.style.borderColor = '#FFC107';
@@ -11989,51 +11997,75 @@
         }
 
         // ── Stability logic ────────────────────────────────────────
+        // Frames with nothing readable (shake, blur, glare) are simply ignored — they never
+        // clear the barcode already on screen or reset its progress. Progress is counted in
+        // successful reads, not in unbroken time.
+        function _camClearShown() {
+            camLastValue = ''; camStableStart = 0; camHits = 0;
+            camPendingValue = ''; camPendingHits = 0; camLastHitAt = 0;
+            _camResetUI();
+        }
+        function _camSetProgress() {
+            document.getElementById('cam-progress-bar').style.width =
+                Math.min(100, (camHits / CAM_HITS_NEEDED) * 100) + '%';
+        }
         function onRawDetection(value) {
-            if (!cameraActive) return;
+            if (!cameraActive || camLocked) return;
             const cleaned = value ? value.trim().toUpperCase() : null;
+            const now = Date.now();
 
             if (!cleaned) {
-                // Nothing in frame — reset if we were tracking something
-                if (camLastValue) {
-                    camLastValue   = '';
-                    camStableStart = 0;
-                    _camResetUI();
-                }
+                // Nothing readable this frame — keep whatever we have. Only give up on a
+                // shown barcode after a long stretch with no matching read at all.
+                if (camLastValue && now - camLastHitAt > CAM_STALE_MS) _camClearShown();
                 return;
             }
 
-            if (cleaned !== camLastValue) {
-                // New barcode appeared — start fresh tracking
-                camLastValue   = cleaned;
-                camStableStart = Date.now();
+            if (cleaned === camLastValue) {
+                // Same barcode again — count it (stray misreads in between are ignored)
+                camLastHitAt = now;
+                camPendingValue = ''; camPendingHits = 0;
+                camHits++;
+            } else if (!camLastValue) {
+                // First barcode seen — show it right away
+                camLastValue = cleaned; camStableStart = now; camLastHitAt = now; camHits = 1;
+                camPendingValue = ''; camPendingHits = 0;
                 _camResetUI();
                 _camShowDetected(cleaned);
-                clearInterval(camProgressTimer);
-                // Animate progress bar
-                camProgressTimer = setInterval(() => {
-                    if (!cameraActive) { clearInterval(camProgressTimer); return; }
-                    const elapsed  = Date.now() - camStableStart;
-                    const progress = Math.min(100, (elapsed / CAM_STABLE_MS) * 100);
-                    document.getElementById('cam-progress-bar').style.width = progress + '%';
-                    if (elapsed >= CAM_STABLE_MS) {
-                        clearInterval(camProgressTimer);
-                        _camConfirmUI();
-                        if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
-                        camConfirmedValue = cleaned;
-                        // Auto-confirm after brief pause to show ✓
-                        setTimeout(() => { if (cameraActive) applyBarcode(cleaned); }, 350);
-                    }
-                }, 50);
-                return;
+            } else {
+                // A different value than the one shown: only replace it once it reads
+                // reliably, so a single bad decode can't swap the shown barcode.
+                if (cleaned === camPendingValue) camPendingHits++;
+                else { camPendingValue = cleaned; camPendingHits = 1; }
+                if (camPendingHits >= CAM_SWITCH_HITS) {
+                    camLastValue = cleaned; camStableStart = now; camLastHitAt = now; camHits = 1;
+                    camPendingValue = ''; camPendingHits = 0;
+                    _camResetUI();
+                    _camShowDetected(cleaned);
+                } else {
+                    // Stale guard while we wait for the new value to confirm
+                    if (now - camLastHitAt > CAM_STALE_MS) _camClearShown();
+                    return;
+                }
             }
-            // Same barcode still visible — progress bar handles it
+
+            _camSetProgress();
+            if (camHits >= CAM_HITS_NEEDED && now - camStableStart >= CAM_MIN_MS) {
+                camLocked = true;
+                _camConfirmUI();
+                if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+                camConfirmedValue = camLastValue;
+                const v = camLastValue;
+                // Auto-confirm after brief pause to show ✓
+                setTimeout(() => { if (cameraActive) applyBarcode(v); }, 350);
+            }
         }
 
         // ── Manual confirm button ──────────────────────────────────
         function confirmBarcode() {
             const val = camLastValue || camConfirmedValue;
             if (!val) return;
+            camLocked = true;
             clearInterval(camProgressTimer);
             applyBarcode(val);
         }
