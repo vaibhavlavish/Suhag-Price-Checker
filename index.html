@@ -1737,6 +1737,9 @@
             <button onclick="showDeviceAccessSection()" data-menu-key="device-access">
                 <span class="menu-icon" style="background:#ffebee;">🔒</span> Device Access
             </button>
+            <button onclick="openCustomItemsModal()" data-menu-key="custom-items">
+                <span class="menu-icon" style="background:#f3e5f5;">🧩</span> Custom Items
+            </button>
             <button onclick="openUpiIdSetting(); closeOptions();" data-menu-key="upi-setting">
                 <span class="menu-icon" style="background:#e8f5e9;">📱</span> Set UPI IDs
             </button>
@@ -1835,7 +1838,7 @@
             <span id="reminder-bell-badge">0</span>
         </button>
         <img src="icon-192.png" alt="Suhag Jewellers" width="34" height="34" loading="eager" onerror="this.style.display='none'">
-        <span class="brand-text">
+        <span class="brand-text" onclick="_brandTap()" style="cursor:pointer; user-select:none; -webkit-user-select:none; touch-action:manipulation; -webkit-tap-highlight-color:transparent;">
             <span class="brand-line1">SUHAG</span>
             <span class="brand-line2">JEWELLERS</span>
         </span>
@@ -2252,6 +2255,56 @@
         </div>
     </div>
 
+    <div id="custom-items-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:400px; width:100%; max-height:88vh; display:flex; flex-direction:column; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <h4 style="margin:0; font-size:16px;">Custom Items</h4>
+                <button onclick="document.getElementById('custom-items-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
+            </div>
+            <p style="font-size:12px; color:#666; margin:0 0 10px 0;">Fixed-price items with no barcode (price includes tax). Double-tap the SUHAG JEWELLERS name on the main screen for a quick list. (Admin PIN required to add/edit/delete)</p>
+            <button onclick="openCustomItemForm()" style="background:#4CAF50; width:100%; margin:0 0 10px 0;">➕ Add Custom Item</button>
+            <div id="custom-items-list" style="overflow-y:auto; flex:1;"></div>
+        </div>
+    </div>
+
+    <div id="custom-item-form-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1550; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h4 id="custom-item-form-title" style="margin:0; font-size:15px;">Add Custom Item</h4>
+                <button onclick="document.getElementById('custom-item-form-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
+            </div>
+            <input type="hidden" id="custom-item-id">
+            <label for="custom-item-name">Item Name:</label>
+            <input type="text" id="custom-item-name" placeholder="e.g., Silver Coin 10g" maxlength="60">
+            <label for="custom-item-price">Price (tax included, ₹):</label>
+            <input type="number" id="custom-item-price" placeholder="e.g., 1500" step="0.01" min="0">
+            <button onclick="saveCustomItem()" style="width:100%; margin-top:8px;">Save</button>
+        </div>
+    </div>
+
+    <div id="custom-quick-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:1500; align-items:flex-end; justify-content:center;" onclick="if(event.target===this) closeCustomQuickList()">
+        <div style="background:white; border-radius:20px 20px 0 0; width:100%; max-width:520px; padding:18px 16px 28px; max-height:72vh; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div style="font-size:15px; font-weight:800;">Custom Items</div>
+                <button onclick="closeCustomQuickList()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; line-height:1; width:auto; margin:0; box-shadow:none;">&#x2715;</button>
+            </div>
+            <div id="custom-quick-list" style="overflow-y:auto; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+        </div>
+    </div>
+
+    <div id="hallmark-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h4 style="margin:0; font-size:15px;">Hallmark (H/M) Charges</h4>
+                <button onclick="document.getElementById('hallmark-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700;">✕</button>
+            </div>
+            <label for="hallmark-charge-input">H/M charge per piece (₹):</label>
+            <input type="number" id="hallmark-charge-input" placeholder="e.g., 45" step="0.01" min="0">
+            <div style="font-size:12px; color:#666; margin-top:6px;">Added to every item that has a HUID, after tax (not taxed). Set 0 to turn off.</div>
+            <button onclick="updateHallmarkCharge()" style="width:100%; margin-top:8px;">Update H/M Charge</button>
+        </div>
+    </div>
+
     <div id="adjust-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:3500; align-items:center; justify-content:center;">
         <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; padding:16px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -2439,6 +2492,7 @@
             <div style="display:flex; flex-direction:column; gap:10px;">
                 <button onclick="openUpdateRateModal()" style="background:#4CAF50; color:white; font-weight:700; width:100%; margin:0;">💰 Update Custom Rate</button>
                 <button onclick="openGlobalTaxModal()" style="background:#FF9800; color:white; font-weight:700; width:100%; margin:0;">📊 Global Tax</button>
+                <button onclick="openHallmarkModal()" style="background:#8D6E63; color:white; font-weight:700; width:100%; margin:0;">🔖 Hallmark Charges</button>
                 <button onclick="openManageStampsModal()" style="background:#607D8B; color:white; font-weight:700; width:100%; margin:0;">⚙ Manage Stamp</button>
             </div>
         </div>
@@ -3128,6 +3182,7 @@
                 invBillPrefix: invoiceSettings.invPrefix || 'SJ-',
                 invBillStartNumber: invoiceSettings.invStartNumber || 1,
                 invItemSettings: invItemSettings || {},       // keys are the original (decoded) item names
+                customItems: customItems || {},
                 invStampPrintToggle: invStampPrintToggle || {},
                 invTandC: invTandC || '',
                 packagingWeights: packagingWeights || {},
@@ -3721,6 +3776,7 @@
                                 invBillPrefix: jsonContent.invBillPrefix || null,
                                 invBillStartNumber: jsonContent.invBillStartNumber || null,
                                 invItemSettings: jsonContent.invItemSettings || {},
+                                customItems: jsonContent.customItems || {},
                                 invStampPrintToggle: jsonContent.invStampPrintToggle || {},
                                 invTandC: jsonContent.invTandC || '',
                                 packagingWeights: jsonContent.packagingWeights || {},
@@ -3762,6 +3818,7 @@
                                 restoreUpdate['jewelryData/config/invStampPrintToggle'] = encodedStampToggle;
                                 restoreUpdate['jewelryData/config/packagingWeights'] = dataToRestore.packagingWeights || {};
                                 restoreUpdate['jewelryData/config/presetStock']      = dataToRestore.presetStock || {};
+                                restoreUpdate['jewelryData/config/customItems']      = dataToRestore.customItems || {};
                                 restoreUpdate['jewelryData/products']                = dataToRestore.products || {};
                                 // Invoices
                                 (dataToRestore.invoiceHistory || []).forEach(inv => {
@@ -4153,6 +4210,10 @@
         // Data variables now initialized to empty/default, filled by Firebase
         let rates = JSON.parse(JSON.stringify(defaultRates));
         let taxRate = 3; // factory default — overwritten by Firebase on load
+        // Hallmark (H/M) charge — flat ₹ added to every piece that has a HUID. Added AFTER tax
+        // (never taxed). Cloud-synced at jewelryData/config/hallmarkCharge; localStorage = offline fallback.
+        let hallmarkCharge = (() => { const v = parseFloat(localStorage.getItem('hallmarkCharge')); return (isNaN(v) || v < 0) ? 0 : v; })();
+        function productHmCharge(d) { return (d && _invGetHuid(d)) ? (hallmarkCharge || 0) : 0; }
         let printWithLetterhead = false; // universal setting (moved from device-local localStorage) — factory default, overwritten by Firebase on load
         // Checkout track (A/B) and checkout print format — universal settings,
         // synced via Firebase like printWithLetterhead above. Toggled by the
@@ -4225,6 +4286,7 @@
 
         let currentProduct = null;
         let currentFinalPrice = 0;
+        let currentHmAmount = 0; // hallmark part of currentFinalPrice (0 when the scanned item has no HUID)
         let currentTaxAmount = 0;
         let currentMakingAmount = 0;
         let currentMakingType = '';
@@ -4562,6 +4624,8 @@
                 catch (e) { invItemSettings[k] = rawInvSettings[k]; }
             }
             invStampPrintToggle = cloudData.invStampPrintToggle || {};
+            customItems = cloudData.customItems || {};
+            if (document.getElementById('custom-items-modal') && document.getElementById('custom-items-modal').style.display === 'flex') renderCustomItemsList();
             invTandC = cloudData.invTandC || '';
             installmentReminderTemplate = cloudData.installmentReminderTemplate || '';
             installmentTandC = cloudData.installmentTandC || '';
@@ -4601,6 +4665,11 @@
                 localStorage.setItem('invCheckoutFormat', invCheckoutFormatSynced);
             } else {
                 invCheckoutFormatSynced = localStorage.getItem('invCheckoutFormat') || 'invoice2';
+            }
+            // Hallmark charge (cloud-synced setting)
+            if (typeof cloudData.hallmarkCharge === 'number' && cloudData.hallmarkCharge >= 0) {
+                hallmarkCharge = cloudData.hallmarkCharge;
+                localStorage.setItem('hallmarkCharge', String(hallmarkCharge));
             }
             // Current Rates list layout (order + hidden stamps)
             if (cloudData.ratesListLayout && typeof cloudData.ratesListLayout === 'object') {
@@ -4870,6 +4939,9 @@
                 lastBarcodeListMarked: config.lastBarcodeListMarked || null,
                 checkoutTrack: config.checkoutTrack || null,
                 checkoutFormat: config.checkoutFormat || null,
+                ratesListLayout: config.ratesListLayout || null,
+                customItems: config.customItems || {},
+                hallmarkCharge: (typeof config.hallmarkCharge === 'number') ? config.hallmarkCharge : null,
                 productDataImportedAt: config.productDataImportedAt || 0,
                 products:         val.products            || {},
                 // billHistory and profiles may be keyed objects (new) or arrays (old)
@@ -5337,6 +5409,7 @@
             { key: 'stock-calc',     label: 'Stock Weight Calc',  icon: '⚖️', action: () => showStockCalcSection() },
             { key: 'profiles',       label: 'Making Profiles',    icon: '⚙️', action: () => openProfileModal() },
             { key: 'device-access',  label: 'Device Access',      icon: '🔒', action: () => showDeviceAccessSection() },
+            { key: 'custom-items',   label: 'Custom Items',       icon: '🧩', action: () => openCustomItemsModal() },
             { key: 'upi-setting',    label: 'Set UPI IDs',        icon: '📱', action: () => openUpiIdSetting() },
             { key: 'ledger',         label: 'Cash Ledger',        icon: '💰', action: () => showSection('ledger') },
             { key: 'bulk-check',     label: 'Bulk Price Check',   icon: '📋', action: () => showSection('bulk-check') },
@@ -6110,7 +6183,7 @@
 
             if (_productUsesMrp(d)) {
                 const total = d.mrp + otherCharge;
-                final = total + total * (taxRate / 100);
+                final = total + total * (taxRate / 100) + productHmCharge(d);
                 return { final, makingType: 'MRP', makingInput: d.mrp };
             }
 
@@ -6164,7 +6237,7 @@
             }
 
             const total = metalVal + making + otherCharge;
-            final = total + total * (taxRate / 100);
+            final = total + total * (taxRate / 100) + productHmCharge(d);
             return { final, makingType, makingInput };
         }
 
@@ -6954,6 +7027,147 @@
             clearLooseScreen();
         }
 
+        // ═══ CUSTOM ITEMS ═══
+        // Barcode-less items with a fixed, TAX-INCLUDED price. Stored at
+        // jewelryData/config/customItems/{id} -> {id, name, price}. They behave like the flat
+        // "Jewellery" cart item on invoices (price backed out to taxable + GST), and their names
+        // also appear in Invoice Item Settings so HSN + print name can be set per item.
+        let customItems = {};
+        let currentCustomItem = null; // custom item currently shown on the Main screen
+        let _brandLastTap = 0;
+
+        function _ciEsc(t) { return String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+        function customItemList() {
+            return Object.values(customItems || {}).filter(x => x && x.name)
+                .sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        function _brandTap() {
+            const now = Date.now();
+            if (now - _brandLastTap < 400) { _brandLastTap = 0; openCustomQuickList(); }
+            else _brandLastTap = now;
+        }
+
+        function openCustomItemsModal() {
+            closeOptions();
+            renderCustomItemsList();
+            document.getElementById('custom-items-modal').style.display = 'flex';
+        }
+        function renderCustomItemsList() {
+            const el = document.getElementById('custom-items-list');
+            if (!el) return;
+            const list = customItemList();
+            if (!list.length) { el.innerHTML = '<div style="text-align:center; color:#888; font-size:13px; padding:20px 0;">No custom items yet.</div>'; return; }
+            el.innerHTML = list.map(it => `
+                <div style="display:flex; align-items:center; gap:8px; padding:10px; margin-bottom:8px; background:#f7f7f5; border:1px solid #e5e5e0; border-radius:10px;">
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-size:14px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${_ciEsc(it.name)}</div>
+                        <div style="font-size:12px; color:#555;">₹${Number(it.price).toFixed(2)}</div>
+                    </div>
+                    <button onclick="document.getElementById('custom-items-modal').style.display='none'; showCustomItemOnMain('${it.id}')" style="width:auto; margin:0; padding:6px 10px; font-size:12px; background:#4CAF50;">Use</button>
+                    <button onclick="openCustomItemForm('${it.id}')" style="width:auto; margin:0; padding:6px 10px; font-size:12px; background:#1976D2;">Edit</button>
+                    <button onclick="deleteCustomItem('${it.id}')" style="width:auto; margin:0; padding:6px 10px; font-size:12px; background:#c62828;">✕</button>
+                </div>`).join('');
+        }
+        function openCustomItemForm(id) {
+            if (!checkPin()) return;
+            const it = id ? customItems[id] : null;
+            document.getElementById('custom-item-form-title').textContent = it ? 'Edit Custom Item' : 'Add Custom Item';
+            document.getElementById('custom-item-id').value = it ? it.id : '';
+            document.getElementById('custom-item-name').value = it ? it.name : '';
+            document.getElementById('custom-item-price').value = it ? it.price : '';
+            document.getElementById('custom-item-form-modal').style.display = 'flex';
+        }
+        function saveCustomItem() {
+            const id = document.getElementById('custom-item-id').value;
+            const name = document.getElementById('custom-item-name').value.trim();
+            const price = Math.round(parseFloat(document.getElementById('custom-item-price').value) * 100) / 100;
+            if (!name) { showCustomAlert('Enter an item name.'); return; }
+            if (isNaN(price) || price <= 0) { showCustomAlert('Enter a valid price (tax included).'); return; }
+            const lower = name.toLowerCase();
+            if (customItemList().some(x => x.id !== id && x.name.toLowerCase() === lower)) {
+                showCustomAlert('A custom item with this name already exists.'); return;
+            }
+            // Item Settings (HSN / print name) are keyed by name — keep stock names and custom names apart
+            if (Object.values(productData).some(d => d && String(d.itemName || '').trim().toLowerCase() === lower)) {
+                showCustomAlert('That name is already used by a stock item. Please choose a different name.'); return;
+            }
+            const old = id ? customItems[id] : null;
+            const rec = { id: id || crypto.randomUUID(), name, price };
+            const update = { ['jewelryData/config/customItems/' + rec.id]: rec };
+            // Renamed: carry its HSN / print-name settings over to the new name
+            if (old && old.name !== name && invItemSettings[old.name]) {
+                const cfg = invItemSettings[old.name];
+                invItemSettings[name] = cfg;
+                delete invItemSettings[old.name];
+                update['jewelryData/config/invItemSettings/' + invFirebaseKey(name)] = cfg;
+                update['jewelryData/config/invItemSettings/' + invFirebaseKey(old.name)] = null;
+            }
+            customItems[rec.id] = rec;
+            window.dbSafeUpdate(update);
+            document.getElementById('custom-item-form-modal').style.display = 'none';
+            renderCustomItemsList();
+            if (currentCustomItem && currentCustomItem.id === rec.id) showCustomItemOnMain(rec.id);
+        }
+        function deleteCustomItem(id) {
+            if (!checkPin()) return;
+            const it = customItems[id];
+            if (!it) return;
+            showCustomConfirm(`Delete custom item "${it.name}"? Items already in the cart or on past invoices are not affected.`, 'Delete Custom Item', () => {
+                delete customItems[id];
+                window.dbSafeUpdate({ ['jewelryData/config/customItems/' + id]: null });
+                if (currentCustomItem && currentCustomItem.id === id) clearAll();
+                renderCustomItemsList();
+            });
+        }
+
+        function openCustomQuickList() {
+            const list = customItemList();
+            const el = document.getElementById('custom-quick-list');
+            el.innerHTML = list.length ? list.map(it => `
+                <button onclick="closeCustomQuickList(); showCustomItemOnMain('${it.id}')" style="background:#f7f7f5; color:#222; border:1.5px solid #e0e0da; border-radius:12px; padding:12px 8px; margin:0; text-align:center; box-shadow:none; width:100%;">
+                    <div style="font-size:13px; font-weight:700; line-height:1.25;">${_ciEsc(it.name)}</div>
+                    <div style="font-size:12px; color:#2e7d32; font-weight:700; margin-top:3px;">₹${Number(it.price).toFixed(2)}</div>
+                </button>`).join('')
+                : '<div style="grid-column:1/-1; text-align:center; color:#888; font-size:13px; padding:24px 0;">No custom items yet — add them from More → Custom Items.</div>';
+            document.getElementById('custom-quick-modal').style.display = 'flex';
+        }
+        function closeCustomQuickList() { document.getElementById('custom-quick-modal').style.display = 'none'; }
+
+        // Shows a custom item on the Main screen exactly like a scanned item: name + price,
+        // ready for Add to Cart / Checkout (no Alter / Details — the price is fixed).
+        function showCustomItemOnMain(id) {
+            const it = customItems[id];
+            if (!it) return;
+            clearAll(); // wipe whatever was on screen (also resets currentCustomItem)
+            currentProduct = null;
+            currentCustomItem = { id: it.id, name: it.name, price: it.price };
+            currentFinalPrice = it.price;
+            currentHmAmount = 0;
+            const code = document.getElementById('product-code');
+            code.textContent = `Custom Item: ${it.name}`;
+            code.style.fontWeight = 'normal';
+            const pd = document.getElementById('price-display');
+            pd.textContent = Number(it.price).toFixed(2);
+            pd.classList.add('show');
+            document.getElementById('add-to-cart-btn').style.display = 'block';
+            document.getElementById('quick-checkout-btn').style.display = 'block';
+            document.getElementById('clear-screen-btn').style.display = 'block';
+            document.getElementById('barcode').blur(); // don't pop the keyboard after picking from a list
+        }
+        function addCustomItemToCart() {
+            const c = currentCustomItem;
+            if (!c) return;
+            const live = customItems[c.id] || c; // pick up a price edited while it was on screen
+            const item = { type: 'custom', id: crypto.randomUUID(), customItemId: live.id, itemName: live.name, finalPrice: live.price };
+            cart.push(item);
+            _autoRoundCartAdjustment();
+            localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
+            updateCartIcon();
+            showCustomAlert(`${item.itemName} added to cart!`);
+            clearAll();
+        }
+
         function addRepairToCart() {
             const amount = parseFloat(document.getElementById('repair-amount').value);
             if (isNaN(amount) || amount <= 0) {
@@ -7173,6 +7387,7 @@
             document.getElementById('clear-screen-btn').style.display = 'none';
             // New logic to reset weight toggle on new scan
             showWeightOnMain = false;
+            currentHmAmount = 0;
             if (!currentBarcode) {
                  document.getElementById('product-code').textContent = '';
                  // Clear if no barcode
@@ -7189,6 +7404,8 @@
             const d = currentProduct;
             let final = 0, making = 0, otherCharge = d.otherCharge || 0;
             currentTaxAmount = 0;
+            const hmAmt = productHmCharge(d); // hallmark charge — added after tax, never taxed
+            currentHmAmount = hmAmt;
             // One-time weight adjustment (see the ℹ️ button next to N. Wt.
             // in showDetails()) takes priority over the stock weight —
             // never touches d/productData itself, just what this specific
@@ -7208,7 +7425,7 @@
                 currentMakingInput = 0;
                 let total = d.mrp + otherCharge;
                 currentTaxAmount = total * (taxRate / 100);
-                final = total + currentTaxAmount;
+                final = total + currentTaxAmount + hmAmt;
             } else {
                 const mKey = d.metal, stamp = d.stamp;
                 if (!mKey || !stamp || !rates[mKey] || rates[mKey][stamp] === undefined || rates[mKey][stamp] === 0) {
@@ -7291,7 +7508,7 @@
 
                 let total = metalVal + making + otherCharge;
                 currentTaxAmount = total * (taxRate / 100);
-                final = total + currentTaxAmount;
+                final = total + currentTaxAmount + hmAmt;
                 currentMakingAmount = making;
                 if (currentMakingType !== '') {
                     document.getElementById('alter-btn').style.display = 'block';
@@ -7335,6 +7552,7 @@
         }
 
         function lookupProduct(barcode, frozenMaking) {
+            currentCustomItem = null; // a scan replaces any custom item shown on screen
             makingOverride = frozenMaking || null;
             currentWeightOverride = null;
             currentGrossWeightOverride = null;
@@ -7435,11 +7653,14 @@
             const otherCharge = d.otherCharge || 0;
             const pureRate = getPureRate(mKey);
 
-            const subtotalNeeded = target / (1 + taxRate / 100);
+            // The typed amount is what the customer pays INCLUDING the H/M charge, which is
+            // never taxed — so take it off first, then back out the GST.
+            const hmA = productHmCharge(d);
+            const subtotalNeeded = (target - hmA) / (1 + taxRate / 100);
             const makingNeeded = subtotalNeeded - metalVal - otherCharge;
 
             if (makingNeeded < 0) {
-                const minPossible = (metalVal + otherCharge) * (1 + taxRate / 100);
+                const minPossible = (metalVal + otherCharge) * (1 + taxRate / 100) + hmA;
                 showCustomAlert(`That's too low — the minimum possible (₹0 making charge) is ₹${minPossible.toFixed(2)}.`);
                 return;
             }
@@ -7570,6 +7791,10 @@
                         <span style="color: #555;">Tax (${taxRate}%):</span>
                         <strong>₹${currentTaxAmount.toFixed(2)}</strong>
                     </div>
+                    ${currentHmAmount > 0 ? `<div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">H/M Charges:</span>
+                        <strong>₹${currentHmAmount.toFixed(2)}</strong>
+                    </div>` : ''}
                     <div style="display: flex; justify-content: space-between; border-top: 2px solid #333; padding-top: 12px; font-size: 18px; color: #4CAF50; font-weight: bold;">
                         <span>Final Total:</span>
                         <span>₹${currentFinalPrice.toFixed(2)}</span>
@@ -7790,6 +8015,7 @@
         }
 
         function addToCart() {
+            if (currentCustomItem) { addCustomItemToCart(); return; }
             if (!currentProduct || currentFinalPrice <= 0) {
                 showCustomAlert('Cannot add to cart. No valid product found or price is zero.');
                 return;
@@ -7807,6 +8033,7 @@
                 barcode: currentBarcode,
                 itemName: currentProduct.itemName || 'Unknown Item',
                 finalPrice: currentFinalPrice,
+                hmAmount: currentHmAmount || 0, // hallmark part of finalPrice (untaxed) — frozen at add-time
                 makingOverride: frozenMaking, // frozen effective making at add-time
                 weightOverride: currentWeightOverride, // frozen one-time net weight adjustment, if any — see openAlterDialog
                 grossWeightOverride: currentGrossWeightOverride // frozen one-time gross weight adjustment, if any — see openAlterDialog
@@ -8024,10 +8251,10 @@
         }
 
         function openInstallmentItemPriceDetail(item){
-            if (item.type === 'repair') {
+            if (item.type === 'repair' || item.type === 'custom') {
                 showCustomAlert(`<div style="text-align:left; font-size:15px; background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee; margin-top:10px;">
                     <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;">
-                        <span>Repair / Flat Charge:</span><span>₹${item.finalPrice.toFixed(2)}</span>
+                        <span>${item.type === 'custom' ? 'Custom Item (tax incl.):' : 'Repair / Flat Charge:'}</span><span>₹${item.finalPrice.toFixed(2)}</span>
                     </div></div>`, 'Complete Price Breakdown');
                 return;
             }
@@ -8107,8 +8334,9 @@
             // re-deriving it from the displayed per-gram breakdown — the
             // breakdown above is for transparency, not a second source of
             // truth that could drift from the real price.
-            const subtotal = item.finalPrice / (1 + taxRate / 100);
-            const taxAmount = item.finalPrice - subtotal;
+            const _hmI = item.hmAmount || 0; // untaxed H/M part of the price
+            const subtotal = (item.finalPrice - _hmI) / (1 + taxRate / 100);
+            const taxAmount = (item.finalPrice - _hmI) - subtotal;
 
             let html = `<div style="text-align: left; font-size: 15px; background: #f9f9f9; padding: 15px; border-radius: 8px; border: 1px solid #eee; margin-top: 10px;">`;
             html += tagRowHtml;
@@ -8130,6 +8358,10 @@
                         <span style="color: #555;">Tax (${taxRate}%):</span>
                         <strong>₹${taxAmount.toFixed(2)}</strong>
                     </div>
+                    ${_hmI > 0 ? `<div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <span style="color: #555;">H/M Charges:</span>
+                        <strong>₹${_hmI.toFixed(2)}</strong>
+                    </div>` : ''}
                     <div style="display: flex; justify-content: space-between; border-top: 2px solid #333; padding-top: 12px; font-size: 18px; color: #4CAF50; font-weight: bold;">
                         <span>Final Total:</span>
                         <span>₹${item.finalPrice.toFixed(2)}</span>
@@ -8376,7 +8608,7 @@
                 // (e.g. 18K), while hedge purchases are logged at the
                 // pure (24K) rate — getInstallmentItemMetalWeight is what
                 // actually converts raw weight to pure-equivalent grams.
-                if (type !== 'repair' && type !== 'loose' && (out.metal == null || out.weight == null)) {
+                if (type !== 'repair' && type !== 'loose' && type !== 'custom' && (out.metal == null || out.weight == null)) {
                     const d = productData[item.barcode];
                     if (d) {
                         out.metal = d.metal || null;
@@ -9289,7 +9521,7 @@
         // the item's existing frozen price if it can no longer be priced
         // (e.g. the barcode was since sold/removed from stock).
         function recalcInstallmentItemPrice(item, customPureRates){
-            if (item.type === 'repair') return item.finalPrice;
+            if (item.type === 'repair' || item.type === 'custom') return item.finalPrice;
 
             // A custom pure rate is the only thing ever entered manually —
             // the purity-specific rate is always DERIVED from it, by
@@ -9379,7 +9611,7 @@
             else if (makingType === '%') making = metalVal * (makingInput / 100);
 
             const subtotal = metalVal + making + otherCharge;
-            return subtotal + subtotal * (taxRate / 100);
+            return subtotal + subtotal * (taxRate / 100) + (item.hmAmount || 0);
         }
 
         // Cancelling keeps the plan record on file (never deleted — it might
@@ -9584,7 +9816,7 @@
         function getInstallmentPlanMetals(items){
             const metals = new Set();
             items.forEach(item => {
-                if (item.type === 'repair') return;
+                if (item.type === 'repair' || item.type === 'custom') return;
                 if (item.type === 'loose') { if (item.metal) metals.add(item.metal); return; }
                 const d = productData[item.barcode];
                 if (d && d.metal) metals.add(d.metal);
@@ -10240,7 +10472,7 @@
                     if (item.type === 'loose') {
                         details = `Weight: ${item.weight.toFixed(2)}g`;
                         clickAction = '';
-                    } else if (item.type === 'repair') {
+                    } else if (item.type === 'repair' || item.type === 'custom') {
                         details = '';
                         clickAction = '';
                     } else {
@@ -10251,7 +10483,7 @@
 
                     cartHtml += `
                         <div class="cart-item">
-                            <div class="cart-item-details" ${clickAction} ${item.type === 'loose' || item.type === 'repair' ? 'style="cursor: default;"' : ''}>
+                            <div class="cart-item-details" ${clickAction} ${item.type === 'loose' || item.type === 'repair' || item.type === 'custom' ? 'style="cursor: default;"' : ''}>
                                 <div class="cart-item-title">${item.presetName || item.itemName}</div>
                                 <div class="cart-item-barcode">${details}</div>
                             </div>
@@ -10982,6 +11214,7 @@
         // --- UTILITY/SETUP FUNCTIONS ---
 
         function clearAll() {
+            currentCustomItem = null;
             document.getElementById('barcode').value = '';
             document.getElementById('product-code').textContent = '';
             document.getElementById('price-display').textContent = '0.00';
@@ -11211,6 +11444,22 @@
             } else {
                 showCustomAlert('Invalid input');
             }
+        }
+        function openHallmarkModal() {
+            document.getElementById('hallmark-charge-input').value = hallmarkCharge || '';
+            document.getElementById('hallmark-modal').style.display = 'flex';
+        }
+        function updateHallmarkCharge() {
+            if (!checkPin()) return;
+            const raw = document.getElementById('hallmark-charge-input').value;
+            const v = raw === '' ? 0 : parseFloat(raw);
+            if (isNaN(v) || v < 0) { showCustomAlert('Enter a valid amount (0 or more).'); return; }
+            hallmarkCharge = Math.round(v * 100) / 100;
+            localStorage.setItem('hallmarkCharge', String(hallmarkCharge));
+            window.dbSafeUpdate({ 'jewelryData/config/hallmarkCharge': hallmarkCharge });
+            document.getElementById('hallmark-modal').style.display = 'none';
+            if (currentBarcode) runPriceCalculation();
+            showCustomAlert(hallmarkCharge > 0 ? `H/M charge set to ₹${hallmarkCharge} per HUID piece` : 'H/M charge turned off');
         }
         function updateTax() {
             if (!checkPin()) return;
@@ -11621,7 +11870,7 @@
 
         // Quick Checkout: adds current item to cart first, then opens cart+adjust
         function quickCheckoutFlow() {
-            if (currentBarcode && productData[currentBarcode]) {
+            if ((currentBarcode && productData[currentBarcode]) || currentCustomItem) {
                 addToCart(); // add item silently
             }
             openCartWithAdjust();
@@ -12391,7 +12640,7 @@
                 const ogTotal = (typeof oldGoldItems !== 'undefined' ? oldGoldItems : []).reduce((s,i)=>s+(i.value||0),0);
                 const grossNetPayable = netPayable + ogTotal; // restore OG so totals compute correctly
                 const finalAmt = grossNetPayable > 0 ? grossNetPayable : 0;
-                const t = invComputeTotals(sub, finalAmt, true, invExemptSub(rows)); // true = home state (SGST+CGST)
+                const t = invComputeTotals(sub, finalAmt, true, invExemptSub(rows), invHmTotal(rows)); // true = home state (SGST+CGST)
                 const { disc, taxable, sgst, cgst, igst, rounded, rndOff } = t;
                 // receipt = what customer actually pays = net after old gold, rounded
                 // Credit portion (Credit feature) stays outstanding on the invoice.
@@ -12649,10 +12898,12 @@
                 gstinBlockHtml: `<div style="font-size:9px;color:#000;margin-bottom:2px;"><strong>GSTIN :</strong> ${invEscH(invoiceSettings.gstin)}</div>
                 <div style="font-size:8px;color:#000;">Subject To Chikhli Jurisdiction</div>`,
                 grossRowLabel: 'Gross Amount',
-                taxRowsHtml: isHome
+                taxRowsHtml: (isHome
                   ? `<tr><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;">SGST ${(pct/2).toFixed(2)}%</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;">${sgst.toFixed(2)}</td></tr>
                      <tr><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;">CGST ${(pct/2).toFixed(2)}%</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;">${cgst.toFixed(2)}</td></tr>`
-                  : `<tr><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;">IGST ${pct.toFixed(2)}%</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;">${igst.toFixed(2)}</td></tr>`
+                  : `<tr><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;">IGST ${pct.toFixed(2)}%</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;">${igst.toFixed(2)}</td></tr>`)
+                  // H/M charges sit below the tax rows because they're added AFTER tax (untaxed)
+                  + ((t.hm > 0) ? `<tr><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;">H/M Charges</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;">${t.hm.toFixed(2)}</td></tr>` : '')
             };
         }
 
@@ -12670,7 +12921,7 @@
             const ogTotal = (typeof oldGoldItems !== 'undefined' ? oldGoldItems : []).reduce((s,i)=>s+(i.value||0),0);
             const grossNetPayable = netPayable + ogTotal;
             const finalAmt = grossNetPayable > 0 ? grossNetPayable : 0;
-            const t = invComputeTotals(sub, finalAmt, true, invExemptSub(rows)); // true = home state (SGST+CGST)
+            const t = invComputeTotals(sub, finalAmt, true, invExemptSub(rows), invHmTotal(rows)); // true = home state (SGST+CGST)
             const { disc, taxable, sgst, cgst, igst, rounded, rndOff, isHome, pct } = t;
             // Credit portion (Credit feature) stays outstanding on the invoice.
             const _crAmt = (paymentMode === 'partial' && paymentSplit && paymentSplit.credit > 0) ? Math.round(paymentSplit.credit) : 0;
@@ -12729,7 +12980,7 @@
                 // per row must be GST-inclusive (taxable value × (1 + tax rate)).
                 // MRP-type rows hold a real pre-tax taxable value (see invTaxableVal),
                 // so they're taxed the same as every other row — no exemption here.
-                const tv = (fmt === 'invoice2' && !r.taxInclusive) ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r);
+                const tv = ((fmt === 'invoice2' && !r.taxInclusive) ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r)) + (fmt === 'invoice2' ? (parseFloat(r.hm) || 0) : 0); // Format 2: H/M folded into the amount, unlabelled
                 tvTotal += tv;
                 itemsHtml += `<tr>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}">${invDescWithStamp(r)}</td>
@@ -13305,7 +13556,7 @@
                 return;
             }
             if (_productUsesMrp(d)) {
-                final = d.mrp + otherCharge + (d.mrp + otherCharge) * (taxRate / 100);
+                final = d.mrp + otherCharge + (d.mrp + otherCharge) * (taxRate / 100) + productHmCharge(d);
             } else {
                 const mKey = d.metal, stamp = d.stamp;
                 if (!mKey || !stamp || !rates[mKey] || !rates[mKey][stamp]) {
@@ -13334,9 +13585,9 @@
                     else if (mType === 'per pc' && off.perPc) { const adj = Math.max(0, mInput+off.perPc); making = adj; }
                 }
                 const total = metalVal + making + otherCharge;
-                final = total + total * (taxRate / 100);
+                final = total + total * (taxRate / 100) + productHmCharge(d);
             }
-            bulkList.push({ barcode, name: d.itemName || barcode, price: final, weight: d.netWeight, makingOverride: null });
+            bulkList.push({ barcode, name: d.itemName || barcode, price: final, hmAmount: productHmCharge(d), weight: d.netWeight, makingOverride: null });
             input.value = '';
             renderBulkList();
             setTimeout(() => input.focus(), 10);
@@ -13387,6 +13638,7 @@
                 barcode: item.barcode,
                 itemName: item.name,
                 finalPrice: item.price,
+                hmAmount: item.hmAmount || 0,
                 makingOverride: item.makingOverride || null
             };
             cart.push(cartItem);
@@ -15597,6 +15849,17 @@
             invRecalc();
         }
 
+        // Manual HUID entry: typing a HUID applies the current H/M charge to that row automatically;
+        // clearing it removes the charge. The amount is frozen on the row when set, so later
+        // changes to the setting never alter an invoice that was already built.
+        function invHuidChange(i, val) {
+            const huid = (val || '').trim().toUpperCase();
+            invRows[i].huid = huid;
+            invRows[i].hm = huid ? (hallmarkCharge || 0) : 0;
+            invRenderRows();
+            invRecalc();
+        }
+
         function invRowChange(i, field, val) {
             invRows[i][field] = (['desc','hsn','makingType'].includes(field)) ? val : (parseFloat(val) || 0);
             invRenderRows();
@@ -15656,6 +15919,7 @@
                 invRows[i].metal = metal;
                 invRows[i].itemName = d.itemName || key; // actual stock name, frozen — printName above is display-only and can't distinguish different items sharing one print label
                 invRows[i].huid = _invGetHuid(d);
+                invRows[i].hm = invRows[i].huid ? (hallmarkCharge || 0) : 0; // H/M applies automatically when a HUID is present
                 invRows[i].barcode = key; // store barcode separately from display name
                 invRows[i].grWt = parseFloat(gw.toFixed(3));
                 invRows[i].nlWt = parseFloat(nw.toFixed(3));
@@ -15680,6 +15944,7 @@
                 invRows[i].desc = raw;
                 invRows[i].barcode = null;
                 invRows[i].huid = '';
+                invRows[i].hm = 0;
             }
             invRenderRows();
             invRecalc();
@@ -16243,6 +16508,15 @@
                     <button onclick="invDelRow(${i})" style="background:var(--red);color:white;border:none;border-radius:8px;width:32px;height:32px;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;box-shadow:none;margin:0;">✕</button>
                   </div>
                   ${r.barcode ? `<div style="font-size:10px;color:#999;font-weight:600;margin:0 0 8px 2px;">🏷️ ${invEscH(r.barcode)}</div>` : ''}
+                  <div style="display:flex;gap:8px;align-items:flex-end;margin:0 0 8px 0;">
+                    <div class="field-mini" style="flex:1;">
+                      <label>HUID</label>
+                      <input type="text" value="${invEscH(String(r.huid || ''))}" placeholder="HUID code (adds H/M charge)"
+                        onchange="invHuidChange(${i},this.value)"
+                        style="width:100%;padding:5px 8px;font-size:12px;border:1.5px solid var(--border);border-radius:7px;margin:0;box-sizing:border-box;font-family:inherit;text-transform:uppercase;">
+                    </div>
+                    ${(r.hm > 0) ? `<div style="font-size:11px;font-weight:700;color:#8D6E63;white-space:nowrap;padding-bottom:6px;">+₹${Number(r.hm).toFixed(2)} H/M</div>` : ''}
+                  </div>
                   <div class="item-row-fields">
                     ${invNf('HSN','hsn',r.hsn,i,true)}${invNf('Pc','pc',r.pc,i)}${invNf('Gr.Wt','grWt',r.grWt,i)}${invNf('Nt.Wt','nlWt',r.nlWt,i)}${invNf('Rate/g','rate',r.rate,i)}
                   </div>
@@ -16277,15 +16551,19 @@
         // out before computing the taxable base/GST, then added back untaxed into the
         // final net/rounded total. Old callers that don't pass it behave exactly as
         // before (exempt defaults to 0).
-        function invComputeTotals(sub, finalAmt, isHomeOverride, exempt) {
+        // `hm` (optional, 5th arg) = total hallmark (H/M) charge on the bill. It is added AFTER
+        // tax and never taxed: a typed Final Amount INCLUDES it, so it's taken off before the
+        // GST back-calculation, then added back into net/rounded.
+        function invComputeTotals(sub, finalAmt, isHomeOverride, exempt, hm) {
             exempt = exempt || 0;
+            hm = hm || 0;
             const isHome = (isHomeOverride !== undefined) ? isHomeOverride : isInvHomeState();
             const pct = invoiceSettings.taxRate || 0;
             const frac = pct / 100;
             const subTaxable = sub - exempt;
             let disc = 0, taxable, sgst, cgst, igst, net, rounded, rndOff;
             if (finalAmt !== 0) {
-                const finalAmtTaxable = Math.max(0, finalAmt - exempt);
+                const finalAmtTaxable = Math.max(0, finalAmt - exempt - hm);
                 taxable = finalAmtTaxable / (1 + frac);
                 // Clamp: taxable can never exceed the actual non-exempt subtotal, and
                 // never go negative. Without this, a bill that's 100% MRP/exempt items
@@ -16301,10 +16579,10 @@
             }
             if (isHome) { sgst = taxable * (frac/2); cgst = taxable * (frac/2); igst = 0; }
             else        { sgst = 0; cgst = 0; igst = taxable * frac; }
-            net = taxable + sgst + cgst + igst + exempt;
+            net = taxable + sgst + cgst + igst + exempt + hm;
             if (finalAmt === 0) rounded = Math.round(net);
             rndOff = rounded - net;
-            return { disc, taxable, sgst, cgst, igst, net, rounded, rndOff, isHome, pct, exempt };
+            return { disc, taxable, sgst, cgst, igst, net, rounded, rndOff, isHome, pct, exempt, hm };
         }
 
         // Sum of rows whose amount is already tax-inclusive (settled/flat prices)
@@ -16319,6 +16597,10 @@
         // be taxed AND must never need to be redisplayed in a different format
         // later — read that comment fully before reintroducing this flag on any
         // row type.
+        // Total hallmark charge on a set of invoice rows (each row carries its own frozen `hm`).
+        function invHmTotal(rows) {
+            return (rows || []).reduce((s, r) => s + (parseFloat(r.hm) || 0), 0);
+        }
         function invExemptSub(rows) {
             // MRP-type rows (product items priced via a direct MRP figure, and manual
             // "MRP (direct)" entries) hold a genuine pre-tax taxable value — GST must be
@@ -16344,7 +16626,7 @@
         function invRecalc() {
             const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
             const finalAmt = _invFinalAmtGross();
-            const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows));
+            const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows), invHmTotal(invRows));
             const note = document.getElementById('inv-tax-note');
             if (note) note.textContent = t.isHome
                 ? `Home state — CGST ${(t.pct/2).toFixed(2)}% + SGST ${(t.pct/2).toFixed(2)}%`
@@ -16373,6 +16655,7 @@
                     ? row(`SGST ${(t.pct/2).toFixed(2)}%`, `₹${t.sgst.toFixed(2)}`) +
                       row(`CGST ${(t.pct/2).toFixed(2)}%`, `₹${t.cgst.toFixed(2)}`)
                     : row(`IGST ${t.pct.toFixed(2)}%`, `₹${t.igst.toFixed(2)}`)) +
+                (t.hm > 0 ? row('H/M Charges', `₹${t.hm.toFixed(2)}`) : '') +
                 (ogTotal > 0
                     ? row('Old Jewellery', `-₹${ogTotal.toFixed(2)}`, '#ff6b6b')
                     : '') +
@@ -16416,6 +16699,24 @@
                 // correct no matter which format it's later REPRINTED in — see the
                 // full explanation below.
                 // ═══════════════════════════════════════════════════════════════════
+                if (item.type === 'custom') {
+                    // Custom item: fixed TAX-INCLUDED price — back out the GST exactly like the
+                    // flat Jewellery row below, so Taxable + SGST/CGST reconcile to the set price
+                    // in either invoice format. HSN + print name come from Item Settings.
+                    const _cAmt = parseFloat((item.finalPrice || 0).toFixed(2));
+                    const _cTax = invoiceSettings.taxRate || 0;
+                    const _cItm = invApplyItemSettings(item.itemName || 'Custom Item', '7113');
+                    return {
+                        desc: _cItm.printName,
+                        hsn: _cItm.hsn, pc: 1,
+                        grWt: 0, nlWt: 0, rate: 0,
+                        makingType: 'mrp', makingPct: Math.round((_cAmt / (1 + _cTax / 100)) * 100) / 100,
+                        metal: '',
+                        itemName: item.itemName || '', // actual custom item name, frozen
+                        isCustom: true,
+                        customItemId: item.customItemId || null
+                    };
+                }
                 if (item.type === 'repair') {
                     // The amount typed into the Jewellery Amount box IS the final,
                     // tax-inclusive price — never a pre-tax taxable value. Treating
@@ -16589,6 +16890,7 @@
                     itemName: d.itemName || item.barcode || '', // actual stock name, frozen — see invDescChange for why
                     stamp: stamp,
                     huid: _invGetHuid(d),
+                    hm: parseFloat(item.hmAmount) || 0, // frozen hallmark charge from the cart item
                     barcode: item.barcode || null // internal only — never printed, used for sold/stock tracking
                 };
             });
@@ -16688,7 +16990,7 @@
             if (!_confirmedMismatch) {
                 const _sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
                 const _finalAmt = _invFinalAmtGross();
-                const _t = invComputeTotals(_sub, _finalAmt, undefined, invExemptSub(invRows));
+                const _t = invComputeTotals(_sub, _finalAmt, undefined, invExemptSub(invRows), invHmTotal(invRows));
                 const _ogTotal = invOgItems.reduce((s, i) => s + (i.value || 0), 0);
                 const _netAfterOG = Math.max(0, (_t.rounded || 0) - _ogTotal);
                 const _receipt = parseFloat(document.getElementById('inv-receipt').value) || 0;
@@ -16723,7 +17025,7 @@
             const dateDisp = dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0]}` : dateRaw;
 
             const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
-            const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows));
+            const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows), invHmTotal(invRows));
             const { disc, taxable, sgst, cgst, igst, rounded, rndOff, isHome, pct } = t;
             const ogTotal = invOgItems.reduce((s,i) => s + (i.value||0), 0);
             const netAfterOG = rounded - ogTotal;
@@ -16765,7 +17067,7 @@
                 // per row must be GST-inclusive (taxable value × (1 + tax rate)).
                 // MRP-type rows hold a real pre-tax taxable value (see invTaxableVal),
                 // so they're taxed the same as every other row — no exemption here.
-                const tv = (fmt === 'invoice2' && !r.taxInclusive) ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r);
+                const tv = ((fmt === 'invoice2' && !r.taxInclusive) ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r)) + (fmt === 'invoice2' ? (parseFloat(r.hm) || 0) : 0); // Format 2: H/M folded into the amount, unlabelled
                 tvTotal += tv;
                 itemsHtml += `<tr>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}">${invDescWithStamp(r)}</td>
@@ -17175,7 +17477,7 @@
             const paymentDetails = window._invPaymentDetails || {};
 
             const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
-            const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows));
+            const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows), invHmTotal(invRows));
             const { disc, taxable, sgst, cgst, igst, rounded, rndOff } = t;
             const ogTotal = invOgItems.reduce((s,i) => s + (i.value||0), 0);
             const netAfterOG = rounded - ogTotal;
@@ -17327,7 +17629,7 @@
         // collected) and is booked to the creditor when the invoice is saved.
         function _invNetAfterOG() {
             const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
-            const t = invComputeTotals(sub, _invFinalAmtGross(), undefined, invExemptSub(invRows));
+            const t = invComputeTotals(sub, _invFinalAmtGross(), undefined, invExemptSub(invRows), invHmTotal(invRows));
             const ogTotal = invOgItems.reduce((s, i) => s + (i.value || 0), 0);
             return Math.max(0, (t.rounded || 0) - ogTotal);
         }
@@ -17407,7 +17709,7 @@
             // Compute net after old jewellery
             const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
             const finalAmt = _invFinalAmtGross();
-            const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows));
+            const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows), invHmTotal(invRows));
             const ogTotal = invOgItems.reduce((s,i) => s + (i.value||0), 0);
             const net = Math.max(0, (t.rounded || 0) - ogTotal);
 
@@ -18580,6 +18882,8 @@
                 var n = (productData[bc].itemName || '').trim();
                 if (n) names[n] = true;
             }
+            // Custom items also get HSN / print-name settings
+            customItemList().forEach(function(ci) { names[ci.name.trim()] = true; });
             return Object.keys(names).sort();
         }
 
