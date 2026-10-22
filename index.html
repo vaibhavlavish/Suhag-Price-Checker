@@ -2275,6 +2275,7 @@
                     <span style="font-size:min(40px,10vw); margin-top:min(12px,2vh);">₹</span><span id="pd-price" style="font-size:min(92px,23vw,15vh); letter-spacing:-.01em;"></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:12px; margin-top:18px;"><div style="width:28px; height:1px; background:#5a4a22;"></div><div style="font-size:12px; font-weight:500; letter-spacing:.28em; color:#B9AD92;">ALL TAXES INCLUSIVE</div><div style="width:28px; height:1px; background:#5a4a22;"></div></div>
+                <div id="pd-offer" style="display:none; margin-top:20px; max-width:90%; text-align:center; font-family:'Cormorant Garamond',Georgia,serif; font-style:italic; font-weight:700; font-size:min(30px,7vw); line-height:1.25; letter-spacing:.02em; color:#fff; white-space:pre-line; text-shadow:0 0 18px rgba(255,255,255,.35);"></div>
             </div>
         </div>
 
@@ -2299,6 +2300,8 @@
                 <h4 style="margin:0; font-size:16px;">Stamp Display Names</h4>
                 <button onclick="document.getElementById('stamp-display-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
             </div>
+            <label for="pd-custom-text" style="font-size:13px; font-weight:700;">Custom Text (shown below "All taxes inclusive"):</label>
+            <textarea id="pd-custom-text" rows="3" placeholder="e.g., Special Offer&#10;5% Making Charge Only" maxlength="120" style="margin:4px 0 12px 0; width:100%; box-sizing:border-box; padding:8px 10px; font-size:14px; font-family:inherit; resize:vertical;"></textarea>
             <p style="font-size:12px; color:#666; margin:0 0 10px 0;">What the Price Display shows for each stamp, e.g. 22K → 22K916. Leave blank to show the stamp as it is.</p>
             <div id="stamp-display-list" style="overflow-y:auto; flex:1;"></div>
             <button onclick="saveStampDisplayNames()" style="width:100%; margin-top:10px;">Save</button>
@@ -3235,6 +3238,7 @@
                 invItemSettings: invItemSettings || {},       // keys are the original (decoded) item names
                 customItems: customItems || {},
                 stampDisplayNames: stampDisplayNames || {},
+                pdCustomText: pdCustomText || '',
                 invStampPrintToggle: invStampPrintToggle || {},
                 invTandC: invTandC || '',
                 packagingWeights: packagingWeights || {},
@@ -3830,6 +3834,7 @@
                                 invItemSettings: jsonContent.invItemSettings || {},
                                 customItems: jsonContent.customItems || {},
                                 stampDisplayNames: jsonContent.stampDisplayNames || {},
+                                pdCustomText: jsonContent.pdCustomText || '',
                                 invStampPrintToggle: jsonContent.invStampPrintToggle || {},
                                 invTandC: jsonContent.invTandC || '',
                                 packagingWeights: jsonContent.packagingWeights || {},
@@ -3873,6 +3878,7 @@
                                 restoreUpdate['jewelryData/config/presetStock']      = dataToRestore.presetStock || {};
                                 restoreUpdate['jewelryData/config/customItems']      = dataToRestore.customItems || {};
                                 restoreUpdate['jewelryData/config/stampDisplayNames'] = dataToRestore.stampDisplayNames || {};
+                                restoreUpdate['jewelryData/config/pdCustomText'] = dataToRestore.pdCustomText || null;
                                 restoreUpdate['jewelryData/products']                = dataToRestore.products || {};
                                 // Invoices
                                 (dataToRestore.invoiceHistory || []).forEach(inv => {
@@ -4302,6 +4308,11 @@
                 const m = document.getElementById('custom-items-modal');
                 if (m && m.style.display === 'flex') renderCustomItemsList();
             });
+            watch('pdCustomText', v => {
+                pdCustomText = (typeof v === 'string') ? v : '';
+                localStorage.setItem('pdCustomText', pdCustomText);
+                pdApplyCustomText();
+            });
             watch('stampDisplayNames', v => {
                 stampDisplayNames = (v && typeof v === 'object') ? v : {};
                 localStorage.setItem('stampDisplayNames', JSON.stringify(stampDisplayNames));
@@ -4728,6 +4739,8 @@
             invStampPrintToggle = cloudData.invStampPrintToggle || {};
             customItems = cloudData.customItems || {};
             stampDisplayNames = cloudData.stampDisplayNames || {};
+            pdCustomText = cloudData.pdCustomText || '';
+            localStorage.setItem('pdCustomText', pdCustomText);
             localStorage.setItem('stampDisplayNames', JSON.stringify(stampDisplayNames));
             if (document.getElementById('custom-items-modal') && document.getElementById('custom-items-modal').style.display === 'flex') renderCustomItemsList();
             invTandC = cloudData.invTandC || '';
@@ -5047,6 +5060,7 @@
                 ratesListLayout: config.ratesListLayout || null,
                 customItems: config.customItems || {},
                 stampDisplayNames: config.stampDisplayNames || {},
+                pdCustomText: config.pdCustomText || '',
                 hallmarkCharge: (config.hallmarkCharge !== undefined && config.hallmarkCharge !== null && !isNaN(parseFloat(config.hallmarkCharge))) ? parseFloat(config.hallmarkCharge) : null,
                 productDataImportedAt: config.productDataImportedAt || 0,
                 products:         val.products            || {},
@@ -7139,7 +7153,13 @@
         // Stamp text shown on the display, per metal|stamp, e.g. 22K → "22K916".
         // Cloud: jewelryData/config/stampDisplayNames (keys URL-encoded); localStorage = offline fallback.
         let stampDisplayNames = (() => { try { return JSON.parse(localStorage.getItem('stampDisplayNames')) || {}; } catch (e) { return {}; } })();
+        let pdCustomText = (() => { try { return localStorage.getItem('pdCustomText') || ''; } catch (e) { return ''; } })();
         let priceDisplayOpen = false;
+        function pdApplyCustomText() {
+            const el = document.getElementById('pd-offer'); if (!el) return;
+            el.textContent = pdCustomText;
+            el.style.display = pdCustomText.trim() ? 'block' : 'none';
+        }
         function stampDisplayLabel(metal, stamp) {
             const v = stampDisplayNames[invFirebaseKey(metal + '|' + stamp)];
             return (v && String(v).trim()) || stamp;
@@ -7165,6 +7185,7 @@
             }
             idle.style.display = 'none'; main.style.display = 'flex';
             document.getElementById('pd-price').textContent = Math.round(st.price).toLocaleString('en-IN');
+            pdApplyCustomText();
             const hasStamp = !!st.stamp, hasWt = st.weight > 0;
             document.getElementById('pd-stamp').textContent = st.stamp || '';
             document.getElementById('pd-weight').textContent = hasWt ? Number(st.weight).toFixed(3) : '';
@@ -7196,7 +7217,7 @@
             inp.value = ''; inp.focus(); // clean field for the next scan
         }
         function openStampDisplaySettings() {
-            if (!checkPin()) return;
+            document.getElementById('pd-custom-text').value = pdCustomText || '';
             let html = '';
             for (const metal in rates) {
                 for (const stamp in rates[metal]) {
@@ -7218,7 +7239,10 @@
             });
             stampDisplayNames = out;
             localStorage.setItem('stampDisplayNames', JSON.stringify(out));
-            dbSafeUpdateNotify({ 'jewelryData/config/stampDisplayNames': Object.keys(out).length ? out : null }, 'The stamp display names');
+            pdCustomText = document.getElementById('pd-custom-text').value.trim();
+            localStorage.setItem('pdCustomText', pdCustomText);
+            pdApplyCustomText();
+            dbSafeUpdateNotify({ 'jewelryData/config/stampDisplayNames': Object.keys(out).length ? out : null, 'jewelryData/config/pdCustomText': pdCustomText || null }, 'The price display settings');
             document.getElementById('stamp-display-modal').style.display = 'none';
         }
 
