@@ -1679,6 +1679,7 @@
         /* Bulk check area */
         #bulk-check h2 { color: var(--text); font-weight: 800; }
     </style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Jost:wght@400;500;600&display=swap">
 </head>
 <body>
 
@@ -1736,6 +1737,9 @@
             </button>
             <button onclick="showDeviceAccessSection()" data-menu-key="device-access">
                 <span class="menu-icon" style="background:#ffebee;">🔒</span> Device Access
+            </button>
+            <button onclick="openPriceDisplay()" data-menu-key="price-display">
+                <span class="menu-icon" style="background:#fff8e1;">💎</span> Price Display
             </button>
             <button onclick="openCustomItemsModal()" data-menu-key="custom-items">
                 <span class="menu-icon" style="background:#f3e5f5;">🧩</span> Custom Items
@@ -2255,6 +2259,52 @@
         </div>
     </div>
 
+    <div id="price-display-screen" style="display:none; position:fixed; inset:0; z-index:1400; background:#14110d; color:#F5EFE0; font-family:Jost,'Segoe UI',sans-serif; flex-direction:column; align-items:center; padding:max(44px,env(safe-area-inset-top)) 26px 0; box-sizing:border-box;">
+        <div style="position:absolute; inset:12px; border:1px solid #5a4a22; pointer-events:none;"></div>
+        <img src="icon-192.png" alt="Suhag Jewellers" width="76" height="76" style="border-radius:50%;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+        <svg style="display:none;" width="76" height="76" viewBox="0 0 76 76" aria-hidden="true"><circle cx="38" cy="40" r="31" fill="none" stroke="#D4AF37" stroke-width="1.5"/><circle cx="38" cy="40" r="26" fill="none" stroke="#5a4a22" stroke-width="1"/><path d="M38 2 L44 10 L38 18 L32 10 Z" fill="#E8C766"/><text x="38" y="52" text-anchor="middle" font-family="Georgia,serif" font-size="36" font-weight="700" fill="#E8C766">S</text></svg>
+        <div style="font-family:'Cormorant Garamond',Georgia,serif; font-weight:600; font-size:min(38px,9.5vw); letter-spacing:.36em; margin:16px 0 0 .36em; line-height:1;">SUHAG</div>
+        <div style="font-size:12px; font-weight:500; letter-spacing:.62em; margin:10px 0 0 .62em; color:#D4AF37;">JEWELLERS</div>
+        <div style="display:flex; align-items:center; gap:10px; margin-top:20px; width:200px;"><div style="flex:1; height:1px; background:#5a4a22;"></div><div style="width:7px; height:7px; background:#D4AF37; transform:rotate(45deg);"></div><div style="flex:1; height:1px; background:#5a4a22;"></div></div>
+
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; min-height:0;">
+            <div id="pd-idle" style="font-size:14px; letter-spacing:.08em; color:#8a7f66; text-align:center; padding:0 20px;">Scan or enter a barcode</div>
+            <div id="pd-main" style="display:none; flex-direction:column; align-items:center;">
+                <div style="font-size:12px; font-weight:500; letter-spacing:.5em; margin-left:.5em; color:#B9AD92;">PRICE</div>
+                <div style="display:flex; align-items:flex-start; gap:6px; margin-top:10px; font-family:'Cormorant Garamond',Georgia,serif; font-weight:600; color:#E8C766; line-height:1;">
+                    <span style="font-size:min(40px,10vw); margin-top:min(12px,2vh);">₹</span><span id="pd-price" style="font-size:min(92px,23vw,15vh); letter-spacing:-.01em;"></span>
+                </div>
+                <div style="display:flex; align-items:center; gap:12px; margin-top:18px;"><div style="width:28px; height:1px; background:#5a4a22;"></div><div style="font-size:12px; font-weight:500; letter-spacing:.28em; color:#B9AD92;">ALL TAXES INCLUSIVE</div><div style="width:28px; height:1px; background:#5a4a22;"></div></div>
+            </div>
+        </div>
+
+        <div id="pd-details" style="display:none; gap:14px; width:100%; max-width:520px; justify-content:center; margin-bottom:22px;">
+            <div id="pd-stamp-tile" style="flex:1; max-width:220px; border:1px solid #5a4a22; padding:16px 0 18px; text-align:center;"><div style="font-size:11px; font-weight:500; letter-spacing:.4em; margin-left:.4em; color:#B9AD92;">STAMP</div><div id="pd-stamp" style="font-family:'Cormorant Garamond',Georgia,serif; font-weight:600; font-size:min(38px,9.5vw); color:#F5EFE0; margin-top:6px; line-height:1;"></div></div>
+            <div id="pd-weight-tile" style="flex:1; max-width:220px; border:1px solid #5a4a22; padding:16px 0 18px; text-align:center;"><div style="font-size:11px; font-weight:500; letter-spacing:.4em; margin-left:.4em; color:#B9AD92;">WEIGHT</div><div style="font-family:'Cormorant Garamond',Georgia,serif; font-weight:600; font-size:min(38px,9.5vw); color:#F5EFE0; margin-top:6px; line-height:1;"><span id="pd-weight"></span> <span style="font-size:20px; color:#B9AD92;">g</span></div></div>
+        </div>
+
+        <div style="width:100%; max-width:520px; display:flex; gap:6px; align-items:center; padding:10px 0 max(16px,env(safe-area-inset-bottom)); border-top:1px solid #2a2318; opacity:.8;">
+            <input type="text" id="pd-input" placeholder="Barcode" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key==='Enter'){pdSubmit();}" style="flex:1; min-width:0; margin:0; padding:9px 10px; font-size:14px; background:#1d1912; color:#F5EFE0; border:1px solid #3a3020; border-radius:8px;">
+            <button onclick="pdSubmit()" style="width:auto; margin:0; padding:9px 12px; font-size:13px; background:#8D6E63; color:#fff; border-radius:8px; box-shadow:none;">Show</button>
+            <button onclick="openCamera('pricedisplay')" aria-label="Scan with camera" style="width:auto; margin:0; padding:9px 10px; font-size:14px; background:#2a2318; color:#E8C766; border-radius:8px; box-shadow:none;">📷</button>
+            <button onclick="openCustomQuickList()" aria-label="Custom items" style="width:auto; margin:0; padding:9px 10px; font-size:14px; background:#2a2318; color:#E8C766; border-radius:8px; box-shadow:none;">🧩</button>
+            <button onclick="openStampDisplaySettings()" aria-label="Stamp display settings" style="width:auto; margin:0; padding:9px 10px; font-size:14px; background:#2a2318; color:#E8C766; border-radius:8px; box-shadow:none;">⚙</button>
+            <button onclick="closePriceDisplay()" aria-label="Close" style="width:auto; margin:0; padding:9px 12px; font-size:14px; background:#2a2318; color:#B9AD92; border-radius:8px; box-shadow:none;">✕</button>
+        </div>
+    </div>
+
+    <div id="stamp-display-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1550; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:400px; width:100%; max-height:88vh; display:flex; flex-direction:column; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <h4 style="margin:0; font-size:16px;">Stamp Display Names</h4>
+                <button onclick="document.getElementById('stamp-display-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
+            </div>
+            <p style="font-size:12px; color:#666; margin:0 0 10px 0;">What the Price Display shows for each stamp, e.g. 22K → 22K916. Leave blank to show the stamp as it is.</p>
+            <div id="stamp-display-list" style="overflow-y:auto; flex:1;"></div>
+            <button onclick="saveStampDisplayNames()" style="width:100%; margin-top:10px;">Save</button>
+        </div>
+    </div>
+
     <div id="custom-items-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
         <div style="background:white; border-radius:16px; margin:16px; max-width:400px; width:100%; max-height:88vh; display:flex; flex-direction:column; padding:18px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
@@ -2288,7 +2338,8 @@
                 <div style="font-size:15px; font-weight:800;">Custom Items</div>
                 <button onclick="closeCustomQuickList()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; line-height:1; width:auto; margin:0; box-shadow:none;">&#x2715;</button>
             </div>
-            <div id="custom-quick-list" style="overflow-y:auto; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>
+            <input type="search" id="custom-quick-search" placeholder="🔍 Search custom items…" oninput="renderCustomQuickList()" autocomplete="off" style="width:100%; margin:0 0 10px 0; padding:10px 12px; font-size:14px; border:1.5px solid #ddd; border-radius:10px; box-sizing:border-box;">
+            <div id="custom-quick-list" style="overflow-y:auto; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start;"></div>
         </div>
     </div>
 
@@ -2492,7 +2543,7 @@
             <div style="display:flex; flex-direction:column; gap:10px;">
                 <button onclick="openUpdateRateModal()" style="background:#4CAF50; color:white; font-weight:700; width:100%; margin:0;">💰 Update Custom Rate</button>
                 <button onclick="openGlobalTaxModal()" style="background:#FF9800; color:white; font-weight:700; width:100%; margin:0;">📊 Global Tax</button>
-                <button onclick="openHallmarkModal()" style="background:#8D6E63; color:white; font-weight:700; width:100%; margin:0;">🔖 Hallmark Charges</button>
+                <button id="hallmark-btn" onclick="openHallmarkModal()" style="background:#8D6E63; color:white; font-weight:700; width:100%; margin:0;">🔖 Hallmark Charges</button>
                 <button onclick="openManageStampsModal()" style="background:#607D8B; color:white; font-weight:700; width:100%; margin:0;">⚙ Manage Stamp</button>
             </div>
         </div>
@@ -3183,6 +3234,7 @@
                 invBillStartNumber: invoiceSettings.invStartNumber || 1,
                 invItemSettings: invItemSettings || {},       // keys are the original (decoded) item names
                 customItems: customItems || {},
+                stampDisplayNames: stampDisplayNames || {},
                 invStampPrintToggle: invStampPrintToggle || {},
                 invTandC: invTandC || '',
                 packagingWeights: packagingWeights || {},
@@ -3777,6 +3829,7 @@
                                 invBillStartNumber: jsonContent.invBillStartNumber || null,
                                 invItemSettings: jsonContent.invItemSettings || {},
                                 customItems: jsonContent.customItems || {},
+                                stampDisplayNames: jsonContent.stampDisplayNames || {},
                                 invStampPrintToggle: jsonContent.invStampPrintToggle || {},
                                 invTandC: jsonContent.invTandC || '',
                                 packagingWeights: jsonContent.packagingWeights || {},
@@ -3819,6 +3872,7 @@
                                 restoreUpdate['jewelryData/config/packagingWeights'] = dataToRestore.packagingWeights || {};
                                 restoreUpdate['jewelryData/config/presetStock']      = dataToRestore.presetStock || {};
                                 restoreUpdate['jewelryData/config/customItems']      = dataToRestore.customItems || {};
+                                restoreUpdate['jewelryData/config/stampDisplayNames'] = dataToRestore.stampDisplayNames || {};
                                 restoreUpdate['jewelryData/products']                = dataToRestore.products || {};
                                 // Invoices
                                 (dataToRestore.invoiceHistory || []).forEach(inv => {
@@ -4213,6 +4267,54 @@
         // Hallmark (H/M) charge — flat ₹ added to every piece that has a HUID. Added AFTER tax
         // (never taxed). Cloud-synced at jewelryData/config/hallmarkCharge; localStorage = offline fallback.
         let hallmarkCharge = (() => { const v = parseFloat(localStorage.getItem('hallmarkCharge')); return (isNaN(v) || v < 0) ? 0 : v; })();
+        // Cloud write that TELLS you when it didn't reach the cloud (instead of failing silently):
+        //  • not running from the official site URL → writes are blocked, setting stays on this device only
+        //  • Firebase refused it (e.g. PERMISSION_DENIED from the database rules)
+        function dbSafeUpdateNotify(obj, label) {
+            if (!window._writeAllowed) {
+                showCustomAlert(`⚠️ ${label} was saved on THIS device only. The app isn't running from the official site URL, so nothing was sent to the cloud — it will not appear on other devices or after the browser data is cleared.`);
+                return Promise.resolve();
+            }
+            return Promise.resolve(window.dbSafeUpdate(obj)).catch(e => {
+                console.error('[Cloud save failed]', label, e);
+                showCustomAlert(`⚠️ ${label} could NOT be saved to the cloud (${(e && (e.code || e.message)) || 'error'}). It exists on this device only. If this says PERMISSION_DENIED, the Firebase database rules need to allow this setting.`);
+            });
+        }
+        // Live listeners for the newer settings. Each reads its own path directly, so they load
+        // even if the big jewelryData snapshot/cache pipeline skips or lags behind them.
+        // A missing value never wipes what's already on the device.
+        function _startSettingListeners() {
+            if (!window.dbOnValue || !window.firebaseDB) return;
+            const watch = (key, fn) => window.dbOnValue(
+                window.dbRef(window.firebaseDB, 'jewelryData/config/' + key),
+                snap => { try { fn(snap.val()); } catch (e) { console.error('[setting listener]', key, e); } },
+                err => console.warn('[setting listener] read failed for', key, err && err.code));
+            watch('hallmarkCharge', v => {
+                const n = parseFloat(v);
+                if (v !== null && v !== undefined && !isNaN(n) && n >= 0) {
+                    hallmarkCharge = n;
+                    localStorage.setItem('hallmarkCharge', String(n));
+                }
+                _renderHallmarkBtn();
+            });
+            watch('customItems', v => {
+                customItems = (v && typeof v === 'object') ? v : {};
+                const m = document.getElementById('custom-items-modal');
+                if (m && m.style.display === 'flex') renderCustomItemsList();
+            });
+            watch('stampDisplayNames', v => {
+                stampDisplayNames = (v && typeof v === 'object') ? v : {};
+                localStorage.setItem('stampDisplayNames', JSON.stringify(stampDisplayNames));
+            });
+            watch('ratesListLayout', v => {
+                if (v && typeof v === 'object') {
+                    const toArr = x => Array.isArray(x) ? x : (x && typeof x === 'object' ? Object.values(x) : []);
+                    ratesListLayout = { order: toArr(v.order), hidden: toArr(v.hidden) };
+                    localStorage.setItem('ratesListLayout', JSON.stringify(ratesListLayout));
+                    if (typeof renderRatesTable === 'function') renderRatesTable();
+                }
+            });
+        }
         function productHmCharge(d) { return (d && _invGetHuid(d)) ? (hallmarkCharge || 0) : 0; }
         let printWithLetterhead = false; // universal setting (moved from device-local localStorage) — factory default, overwritten by Firebase on load
         // Checkout track (A/B) and checkout print format — universal settings,
@@ -4625,6 +4727,8 @@
             }
             invStampPrintToggle = cloudData.invStampPrintToggle || {};
             customItems = cloudData.customItems || {};
+            stampDisplayNames = cloudData.stampDisplayNames || {};
+            localStorage.setItem('stampDisplayNames', JSON.stringify(stampDisplayNames));
             if (document.getElementById('custom-items-modal') && document.getElementById('custom-items-modal').style.display === 'flex') renderCustomItemsList();
             invTandC = cloudData.invTandC || '';
             installmentReminderTemplate = cloudData.installmentReminderTemplate || '';
@@ -4670,6 +4774,7 @@
             if (typeof cloudData.hallmarkCharge === 'number' && cloudData.hallmarkCharge >= 0) {
                 hallmarkCharge = cloudData.hallmarkCharge;
                 localStorage.setItem('hallmarkCharge', String(hallmarkCharge));
+                _renderHallmarkBtn();
             }
             // Current Rates list layout (order + hidden stamps)
             if (cloudData.ratesListLayout && typeof cloudData.ratesListLayout === 'object') {
@@ -4941,7 +5046,8 @@
                 checkoutFormat: config.checkoutFormat || null,
                 ratesListLayout: config.ratesListLayout || null,
                 customItems: config.customItems || {},
-                hallmarkCharge: (typeof config.hallmarkCharge === 'number') ? config.hallmarkCharge : null,
+                stampDisplayNames: config.stampDisplayNames || {},
+                hallmarkCharge: (config.hallmarkCharge !== undefined && config.hallmarkCharge !== null && !isNaN(parseFloat(config.hallmarkCharge))) ? parseFloat(config.hallmarkCharge) : null,
                 productDataImportedAt: config.productDataImportedAt || 0,
                 products:         val.products            || {},
                 // billHistory and profiles may be keyed objects (new) or arrays (old)
@@ -5008,6 +5114,7 @@
                 return;
             }
 
+            _startSettingListeners();
             const dataRef = window.dbRef(window.firebaseDB, 'jewelryData');
             window.dbOnValue(dataRef, (snapshot) => {
                 // Try to read split-key format; fall back to flat (backward compat)
@@ -5409,6 +5516,7 @@
             { key: 'stock-calc',     label: 'Stock Weight Calc',  icon: '⚖️', action: () => showStockCalcSection() },
             { key: 'profiles',       label: 'Making Profiles',    icon: '⚙️', action: () => openProfileModal() },
             { key: 'device-access',  label: 'Device Access',      icon: '🔒', action: () => showDeviceAccessSection() },
+            { key: 'price-display',  label: 'Price Display',      icon: '💎', action: () => openPriceDisplay() },
             { key: 'custom-items',   label: 'Custom Items',       icon: '🧩', action: () => openCustomItemsModal() },
             { key: 'upi-setting',    label: 'Set UPI IDs',        icon: '📱', action: () => openUpiIdSetting() },
             { key: 'ledger',         label: 'Cash Ledger',        icon: '💰', action: () => showSection('ledger') },
@@ -6517,7 +6625,7 @@
         function _rlSave(order, hidden) {
             ratesListLayout = { order, hidden };
             localStorage.setItem('ratesListLayout', JSON.stringify(ratesListLayout));
-            window.dbSafeUpdate({ 'jewelryData/config/ratesListLayout': { order, hidden } });
+            dbSafeUpdateNotify({ 'jewelryData/config/ratesListLayout': { order, hidden } }, 'The rates list layout');
             renderRatesTable();
         }
         function toggleRatesListEdit() {
@@ -7027,6 +7135,93 @@
             clearLooseScreen();
         }
 
+        // ═══ PRICE DISPLAY (customer-facing, display only) ═══
+        // Stamp text shown on the display, per metal|stamp, e.g. 22K → "22K916".
+        // Cloud: jewelryData/config/stampDisplayNames (keys URL-encoded); localStorage = offline fallback.
+        let stampDisplayNames = (() => { try { return JSON.parse(localStorage.getItem('stampDisplayNames')) || {}; } catch (e) { return {}; } })();
+        let priceDisplayOpen = false;
+        function stampDisplayLabel(metal, stamp) {
+            const v = stampDisplayNames[invFirebaseKey(metal + '|' + stamp)];
+            return (v && String(v).trim()) || stamp;
+        }
+        function openPriceDisplay() {
+            closeOptions();
+            priceDisplayOpen = true;
+            pdRender(null);
+            document.getElementById('price-display-screen').style.display = 'flex';
+            const inp = document.getElementById('pd-input'); inp.value = ''; inp.focus();
+        }
+        function closePriceDisplay() {
+            priceDisplayOpen = false;
+            document.getElementById('price-display-screen').style.display = 'none';
+        }
+        // state: null (idle) | {msg} | {price, stamp, weight}. Stamp / weight tiles hide when empty.
+        function pdRender(st) {
+            const idle = document.getElementById('pd-idle'), main = document.getElementById('pd-main'), det = document.getElementById('pd-details');
+            if (!st || st.msg) {
+                idle.textContent = st ? st.msg : 'Scan or enter a barcode';
+                idle.style.display = 'block'; main.style.display = 'none'; det.style.display = 'none';
+                return;
+            }
+            idle.style.display = 'none'; main.style.display = 'flex';
+            document.getElementById('pd-price').textContent = Math.round(st.price).toLocaleString('en-IN');
+            const hasStamp = !!st.stamp, hasWt = st.weight > 0;
+            document.getElementById('pd-stamp').textContent = st.stamp || '';
+            document.getElementById('pd-weight').textContent = hasWt ? Number(st.weight).toFixed(3) : '';
+            document.getElementById('pd-stamp-tile').style.display = hasStamp ? 'block' : 'none';
+            document.getElementById('pd-weight-tile').style.display = hasWt ? 'block' : 'none';
+            det.style.display = (hasStamp || hasWt) ? 'flex' : 'none';
+        }
+        function pdShowBarcode(raw) {
+            const code = String(raw || '').trim();
+            if (!code) return;
+            const key = productData[code] ? code : code.toUpperCase();
+            const d = productData[key];
+            if (!d) { pdRender({ msg: 'Item not found' }); return; }
+            const res = calcProductFinalPriceForActiveProfile(key);
+            if (!res || !(res.final > 0)) { pdRender({ msg: 'Price not available' }); return; }
+            pdRender({
+                price: res.final,
+                stamp: d.stamp ? stampDisplayLabel(d.metal, d.stamp) : '',
+                weight: parseFloat(d.netWeight) || 0
+            });
+        }
+        function pdShowCustom(id) {
+            const it = customItems[id];
+            if (it) pdRender({ price: it.price, stamp: '', weight: 0 });
+        }
+        function pdSubmit() {
+            const inp = document.getElementById('pd-input');
+            pdShowBarcode(inp.value);
+            inp.value = ''; inp.focus(); // clean field for the next scan
+        }
+        function openStampDisplaySettings() {
+            if (!checkPin()) return;
+            let html = '';
+            for (const metal in rates) {
+                for (const stamp in rates[metal]) {
+                    const cur = stampDisplayNames[invFirebaseKey(metal + '|' + stamp)] || '';
+                    html += `<div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+                        <div style="width:110px; font-size:13px; font-weight:700;">${_ciEsc(stamp)} <span style="font-weight:400; color:#888; font-size:11px;">${_ciEsc(metal)}</span></div>
+                        <input type="text" data-metal="${_ciEsc(metal)}" data-stamp="${_ciEsc(stamp)}" value="${_ciEsc(cur)}" placeholder="${_ciEsc(stamp)}" maxlength="20" style="flex:1; margin:0; padding:8px 10px; font-size:14px;">
+                    </div>`;
+                }
+            }
+            document.getElementById('stamp-display-list').innerHTML = html || '<div style="color:#888; font-size:13px;">No stamps found.</div>';
+            document.getElementById('stamp-display-modal').style.display = 'flex';
+        }
+        function saveStampDisplayNames() {
+            const out = {};
+            document.querySelectorAll('#stamp-display-list input[data-stamp]').forEach(inp => {
+                const v = inp.value.trim();
+                if (v) out[invFirebaseKey(inp.dataset.metal + '|' + inp.dataset.stamp)] = v;
+            });
+            stampDisplayNames = out;
+            localStorage.setItem('stampDisplayNames', JSON.stringify(out));
+            dbSafeUpdateNotify({ 'jewelryData/config/stampDisplayNames': Object.keys(out).length ? out : null }, 'The stamp display names');
+            document.getElementById('stamp-display-modal').style.display = 'none';
+        }
+
         // ═══ CUSTOM ITEMS ═══
         // Barcode-less items with a fixed, TAX-INCLUDED price. Stored at
         // jewelryData/config/customItems/{id} -> {id, name, price}. They behave like the flat
@@ -7039,7 +7234,7 @@
         function _ciEsc(t) { return String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
         function customItemList() {
             return Object.values(customItems || {}).filter(x => x && x.name)
-                .sort((a, b) => a.name.localeCompare(b.name));
+                .sort((a, b) => (a.price - b.price) || a.name.localeCompare(b.name)); // low → high price
         }
 
         function _brandTap() {
@@ -7104,7 +7299,7 @@
                 update['jewelryData/config/invItemSettings/' + invFirebaseKey(old.name)] = null;
             }
             customItems[rec.id] = rec;
-            window.dbSafeUpdate(update);
+            dbSafeUpdateNotify(update, 'The custom item');
             document.getElementById('custom-item-form-modal').style.display = 'none';
             renderCustomItemsList();
             if (currentCustomItem && currentCustomItem.id === rec.id) showCustomItemOnMain(rec.id);
@@ -7115,28 +7310,41 @@
             if (!it) return;
             showCustomConfirm(`Delete custom item "${it.name}"? Items already in the cart or on past invoices are not affected.`, 'Delete Custom Item', () => {
                 delete customItems[id];
-                window.dbSafeUpdate({ ['jewelryData/config/customItems/' + id]: null });
+                dbSafeUpdateNotify({ ['jewelryData/config/customItems/' + id]: null }, 'The custom item deletion');
                 if (currentCustomItem && currentCustomItem.id === id) clearAll();
                 renderCustomItemsList();
             });
         }
 
         function openCustomQuickList() {
-            const list = customItemList();
-            const el = document.getElementById('custom-quick-list');
-            el.innerHTML = list.length ? list.map(it => `
-                <button onclick="closeCustomQuickList(); showCustomItemOnMain('${it.id}')" style="background:#f7f7f5; color:#222; border:1.5px solid #e0e0da; border-radius:12px; padding:12px 8px; margin:0; text-align:center; box-shadow:none; width:100%;">
-                    <div style="font-size:13px; font-weight:700; line-height:1.25;">${_ciEsc(it.name)}</div>
-                    <div style="font-size:12px; color:#2e7d32; font-weight:700; margin-top:3px;">₹${Number(it.price).toFixed(2)}</div>
-                </button>`).join('')
-                : '<div style="grid-column:1/-1; text-align:center; color:#888; font-size:13px; padding:24px 0;">No custom items yet — add them from More → Custom Items.</div>';
+            const q = document.getElementById('custom-quick-search');
+            if (q) q.value = '';
+            renderCustomQuickList();
             document.getElementById('custom-quick-modal').style.display = 'flex';
+        }
+        // Cheapest first; the search box filters by name as you type.
+        function renderCustomQuickList() {
+            const term = ((document.getElementById('custom-quick-search') || {}).value || '').trim().toLowerCase();
+            const all = customItemList();
+            const list = term ? all.filter(it => it.name.toLowerCase().includes(term)) : all;
+            const el = document.getElementById('custom-quick-list');
+            if (!list.length) {
+                el.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#888; font-size:13px; padding:24px 0;">' +
+                    (all.length ? 'No items match your search.' : 'No custom items yet — add them from More → Custom Items.') + '</div>';
+                return;
+            }
+            el.innerHTML = list.map(it => `
+                <button onclick="closeCustomQuickList(); showCustomItemOnMain('${it.id}')" style="background:#f7f7f5; color:#222; border:1.5px solid #e0e0da; border-radius:12px; padding:12px 8px; margin:0; text-align:center; box-shadow:none; width:100%;">
+                    <div style="font-size:14px; font-weight:700; line-height:1.25;">${_ciEsc(it.name)}</div>
+                    <div style="font-size:14px; color:#2e7d32; font-weight:700; margin-top:3px;">₹${Number(it.price).toFixed(2)}</div>
+                </button>`).join('');
         }
         function closeCustomQuickList() { document.getElementById('custom-quick-modal').style.display = 'none'; }
 
         // Shows a custom item on the Main screen exactly like a scanned item: name + price,
         // ready for Add to Cart / Checkout (no Alter / Details — the price is fixed).
         function showCustomItemOnMain(id) {
+            if (priceDisplayOpen) { pdShowCustom(id); return; } // picked from the Price Display → show it there
             const it = customItems[id];
             if (!it) return;
             clearAll(); // wipe whatever was on screen (also resets currentCustomItem)
@@ -11445,6 +11653,10 @@
                 showCustomAlert('Invalid input');
             }
         }
+        function _renderHallmarkBtn() {
+            const b = document.getElementById('hallmark-btn');
+            if (b) b.textContent = '🔖 Hallmark Charges' + (hallmarkCharge > 0 ? ' · ₹' + hallmarkCharge : '');
+        }
         function openHallmarkModal() {
             document.getElementById('hallmark-charge-input').value = hallmarkCharge || '';
             document.getElementById('hallmark-modal').style.display = 'flex';
@@ -11456,7 +11668,8 @@
             if (isNaN(v) || v < 0) { showCustomAlert('Enter a valid amount (0 or more).'); return; }
             hallmarkCharge = Math.round(v * 100) / 100;
             localStorage.setItem('hallmarkCharge', String(hallmarkCharge));
-            window.dbSafeUpdate({ 'jewelryData/config/hallmarkCharge': hallmarkCharge });
+            _renderHallmarkBtn();
+            dbSafeUpdateNotify({ 'jewelryData/config/hallmarkCharge': hallmarkCharge }, 'The H/M charge');
             document.getElementById('hallmark-modal').style.display = 'none';
             if (currentBarcode) runPriceCalculation();
             showCustomAlert(hallmarkCharge > 0 ? `H/M charge set to ₹${hallmarkCharge} per HUID piece` : 'H/M charge turned off');
@@ -12331,6 +12544,9 @@
             } else if (cameraTarget === 'issue') {
                 document.getElementById('issue-barcode').value = value;
                 issueLookup();
+            } else if (cameraTarget === 'pricedisplay') {
+                pdShowBarcode(value);
+                setTimeout(() => { const i = document.getElementById('pd-input'); if (i) i.focus(); }, 120);
             } else {
                 const inp = document.getElementById('barcode');
                 inp.value = value;
