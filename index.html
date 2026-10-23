@@ -8149,6 +8149,7 @@
             let html = `
                 <p><strong>Item Name:</strong> <span>${d.itemName || ''}</span></p>
                 <p><strong>Barcode:</strong> <span>${currentBarcode}</span></p>
+                ${_invGetHuid(d) ? `<p><strong>HUID:</strong> <span>${invEscH(_invGetHuid(d))}</span></p>` : ''}
                 <p><strong>Size:</strong> <span>${d.size || '-'}</span></p>
                 <p><strong>Gr. Wt.:</strong> <span style="${grossWeightOverridden ? 'color:#C62828; font-weight:700;' : ''}">${effectiveGrossWeight.toFixed(2)}g${grossWeightOverridden ? ' (adjusted)' : ''}</span></p>
                 <p><strong>N. Wt.:</strong>
@@ -11569,6 +11570,7 @@
                     metal: findColumn(headers, ['metal']),
                     stamp: findColumn(headers, ['stamp']),
                     huid: findColumn(headers, ['huid', 'huid no', 'huid number', 'hallmark unique id']),
+                    design: findColumn(headers, ['design', 'design no', 'design no.', 'design name', 'design code']),
                     vouchNo: findColumn(headers, ['vou no', 'vou no.', 'vouno', 'vouch no', 'vouch no.', 'vouchno', 'voucher no', 'voucher no.', 'voucherno']),
                     voucherType: findColumn(headers, ['vou type', 'vou type.', 'voutype', 'voucher type', 'vouchertype', 'vch type', 'vch. type'])
                 };
@@ -11599,6 +11601,7 @@
                         metal: cols.metal !== -1 ? (row[cols.metal] || '').toString().trim().toLowerCase() : '',
                         stamp: cols.stamp !== -1 ? (row[cols.stamp] || '').toString().trim().toUpperCase() : '',
                         HUID: cols.huid !== -1 ? (row[cols.huid] || '').toString().trim().toUpperCase() : '',
+                        design: cols.design !== -1 ? (row[cols.design] || '').toString().trim() : '',
                         vouchNo: cols.vouchNo !== -1 ? (row[cols.vouchNo] || '').toString().trim() : '',
                         voucherType: cols.voucherType !== -1 ? (row[cols.voucherType] || '').toString().trim() : ''
                     };
@@ -16159,6 +16162,8 @@
                 invRows[i].metal = metal;
                 invRows[i].itemName = d.itemName || key; // actual stock name, frozen — printName above is display-only and can't distinguish different items sharing one print label
                 invRows[i].huid = _invGetHuid(d);
+                invRows[i].size = d.size || '';
+                invRows[i].design = d.design || '';
                 invRows[i].hm = invRows[i].huid ? (hallmarkCharge || 0) : 0; // H/M applies automatically when a HUID is present
                 invRows[i].barcode = key; // store barcode separately from display name
                 invRows[i].grWt = parseFloat(gw.toFixed(3));
@@ -16184,6 +16189,8 @@
                 invRows[i].desc = raw;
                 invRows[i].barcode = null;
                 invRows[i].huid = '';
+                invRows[i].size = '';
+                invRows[i].design = '';
                 invRows[i].hm = 0;
             }
             invRenderRows();
@@ -17130,6 +17137,8 @@
                     itemName: d.itemName || item.barcode || '', // actual stock name, frozen — see invDescChange for why
                     stamp: stamp,
                     huid: _invGetHuid(d),
+                    size: d.size || '',
+                    design: d.design || '',
                     hm: parseFloat(item.hmAmount) || 0, // frozen hallmark charge from the cart item
                     barcode: item.barcode || null // internal only — never printed, used for sold/stock tracking
                 };
