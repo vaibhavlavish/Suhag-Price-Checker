@@ -15649,22 +15649,35 @@
         }
         function openAcctPicker() {
             const s = document.getElementById('acct-pick-search'); if (s) s.value = '';
+            _acctPickSupOpen = false;
             document.getElementById('acct-pick-title').textContent = _ledgerEntryType === 'in' ? 'Received from' : 'Paid to';
             renderAcctPicker();
             document.getElementById('acct-pick-modal').style.display = 'flex';
         }
         function closeAcctPicker() { document.getElementById('acct-pick-modal').style.display = 'none'; }
+        let _acctPickSupOpen = false;
+        function acctPickToggleSup() { _acctPickSupOpen = !_acctPickSupOpen; renderAcctPicker(); }
         function renderAcctPicker() {
             const term = ((document.getElementById('acct-pick-search') || {}).value || '').trim().toLowerCase();
             const dir = _ledgerEntryType === 'in' ? 'in' : 'out';
             const cur = document.getElementById('ledger-entry-account').value;
+            // Order: Old Jewellery first, other categories next, Supplier last (collapsed).
+            const rank = c => c.id === 'cat_oldjewellery' ? 0 : c.id === 'cat_supplier' ? 2 : 1;
+            const cats = _acctAllCats().filter(c => c.dir === dir).sort((a, b) => rank(a) - rank(b));
+            const tile = a => `<button onclick="pickAcct('${a.id}')" style="background:${a.id === cur ? '#fff4d6' : '#f7f7f5'}; color:#222; border:1.5px solid ${a.id === cur ? '#b8860b' : '#e0e0da'}; border-radius:12px; padding:12px 4px; margin:0; text-align:center; box-shadow:none; width:100%; font-size:13px; font-weight:700; line-height:1.2; word-break:break-word; min-width:0;">${_ciEsc(a.name)}</button>`;
+            const head = c => `<div style="grid-column:1/-1; font-size:11px; font-weight:800; letter-spacing:.06em; color:#888; text-transform:uppercase; margin:6px 0 0;">${_ciEsc(c.name)}</div>`;
             let html = '', total = 0;
-            _acctAllCats().filter(c => c.dir === dir).forEach(c => {
+            cats.forEach(c => {
                 const list = _acctActiveIn(c.id).filter(a => !term || (a.name || '').toLowerCase().includes(term));
                 if (!list.length) return;
                 total += list.length;
-                html += `<div style="grid-column:1/-1; font-size:11px; font-weight:800; letter-spacing:.06em; color:#888; text-transform:uppercase; margin:6px 0 0;">${_ciEsc(c.name)}</div>`;
-                html += list.map(a => `<button onclick="pickAcct('${a.id}')" style="background:${a.id === cur ? '#fff4d6' : '#f7f7f5'}; color:#222; border:1.5px solid ${a.id === cur ? '#b8860b' : '#e0e0da'}; border-radius:12px; padding:14px 8px; margin:0; text-align:center; box-shadow:none; width:100%; font-size:14px; font-weight:700; line-height:1.25;">${_ciEsc(a.name)}</button>`).join('');
+                if (c.id === 'cat_supplier') {
+                    const open = _acctPickSupOpen || !!term;
+                    html += `<button onclick="acctPickToggleSup()" style="grid-column:1/-1; display:flex; justify-content:space-between; align-items:center; width:100%; margin:8px 0 0; padding:11px 14px; background:#faf7ef; color:#222; border:1.5px solid #e6dcc3; border-radius:12px; box-shadow:none; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;"><span>${_ciEsc(c.name)}</span><span style="color:#888;">${list.length} &nbsp;${open ? '▴' : '▾'}</span></button>`;
+                    if (open) html += list.map(tile).join('');
+                } else {
+                    html += head(c) + list.map(tile).join('');
+                }
             });
             if (!total) html = '<div style="grid-column:1/-1; text-align:center; color:#888; font-size:13px; padding:24px 0;">' +
                 (term ? 'No accounts match your search.' : 'No accounts yet — add them from More → Accounts.') + '</div>';
@@ -19882,7 +19895,7 @@
                 <button onclick="closeAcctPicker()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; line-height:1; width:auto; margin:0; box-shadow:none;">&#x2715;</button>
             </div>
             <input type="search" id="acct-pick-search" placeholder="🔍 Search accounts…" oninput="renderAcctPicker()" autocomplete="off" style="width:100%; margin:0 0 10px 0; padding:10px 12px; font-size:14px; border:1.5px solid #ddd; border-radius:10px; box-sizing:border-box;">
-            <div id="acct-pick-list" style="overflow-y:auto; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start;"></div>
+            <div id="acct-pick-list" style="overflow-y:auto; flex:1; display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; align-content:start;"></div>
         </div>
     </div>
 
