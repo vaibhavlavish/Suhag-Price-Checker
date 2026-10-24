@@ -268,6 +268,13 @@
            own content still only fades in once 'app-ready' is added to body
            by the existing (untouched) init-sequence code — same timing as
            before, just no longer also gating the login screen behind it. */
+        /* iOS 26: solid dark strip behind the translucent status bar so the system blur has nothing light to fade over */
+        html { background-color: #1a1a1a; }
+        body::before {
+            content: ""; position: fixed; top: 0; left: 0; right: 0;
+            height: env(safe-area-inset-top, 0px);
+            background: #1a1a1a; z-index: 99999; pointer-events: none;
+        }
         #app-view { opacity: 0; transition: opacity 0.18s ease; }
         body.app-ready #app-view { opacity: 1; }
         #brand-header {
