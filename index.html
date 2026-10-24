@@ -15451,7 +15451,8 @@
         }
 
         // ── Accounts manager ──
-        let _acctView = 'list', _acctSelCat = '';
+        let _acctView = 'list', _acctSelCat = '', _acctOpenCats = {};
+        function acctToggleCat(id) { _acctOpenCats[id] = !_acctOpenCats[id]; renderAccountsList(); }
         function openAccountsModal() {
             closeOptions();
             _acctView = 'list';
@@ -15477,16 +15478,20 @@
             if (creating) { _renderAcctCreate(); return; }
             let html = '';
             _acctAllCats().forEach(c => {
-                _acctActiveIn(c.id).forEach(a => {
-                    html += `<div style="display:flex; align-items:center; gap:6px; padding:10px 0; border-bottom:1px solid #eee3c8;">
-                        <div style="flex:1; min-width:0;">
-                            <div style="font-size:14px; font-weight:700;">${_ciEsc(a.name)}</div>
-                            <div style="font-size:11px; color:${c.dir === 'in' ? '#2e7d32' : '#c62828'};">${_ciEsc(c.name)} · ${c.dir === 'in' ? '↓ Money in' : '↑ Money out'}</div>
-                        </div>
+                const list = _acctActiveIn(c.id);
+                if (!list.length) return;
+                const open = !!_acctOpenCats[c.id];
+                html += `<div style="border:1px solid #e6dcc3; border-radius:12px; margin-bottom:8px; overflow:hidden;">
+                    <button onclick="acctToggleCat('${c.id}')" style="display:flex; justify-content:space-between; align-items:center; width:100%; margin:0; padding:12px 14px; background:#faf7ef; color:#222; box-shadow:none; border:none; border-radius:0; text-align:left; font-size:14px;">
+                        <span><b>${_ciEsc(c.name)}</b> <span style="font-size:11px; font-weight:700; color:${c.dir === 'in' ? '#2e7d32' : '#c62828'};">${c.dir === 'in' ? '↓ Money in' : '↑ Money out'}</span></span>
+                        <span style="font-size:12px; color:#888; font-weight:700;">${list.length} &nbsp;${open ? '▴' : '▾'}</span>
+                    </button>
+                    ${open ? list.map(a => `<div style="display:flex; align-items:center; gap:6px; padding:9px 14px; border-top:1px solid #eee3c8; background:white;">
+                        <div style="flex:1; min-width:0; font-size:14px; font-weight:600;">${_ciEsc(a.name)}</div>
                         <button onclick="acctRenameAccount('${a.id}')" style="width:auto; margin:0; padding:4px 9px; font-size:13px; background:#eee; color:#333; box-shadow:none;">✎</button>
                         ${a.isSupplier ? '' : `<button onclick="acctArchiveAccount('${a.id}')" style="width:auto; margin:0; padding:4px 9px; font-size:13px; background:#eee; color:#c62828; box-shadow:none;">✕</button>`}
-                    </div>`;
-                });
+                    </div>`).join('') : ''}
+                </div>`;
             });
             el.innerHTML = html || '<p style="font-size:13px; color:#888; text-align:center; padding:24px 0; margin:0;">No accounts yet. Tap “＋ New account” below.</p>';
         }
@@ -15616,6 +15621,7 @@
             sel.innerHTML = '<option value="">' + (count ? '— Select account —' : 'No accounts yet — add in More → Accounts') + '</option>' + html;
             if (prev) sel.value = prev;
             _acctPickLabel();
+            _acctRenderShortcuts();
         }
 
         // ── Account picker popup (same look as Custom Items) ──
@@ -15625,6 +15631,21 @@
             const hit = sel.value ? _acctFind(sel.value, _ledgerEntryType === 'in' ? 'in' : 'out') : null;
             lab.textContent = hit ? hit.a.name + '  ·  ' + hit.c.name : '— Select account —';
             lab.style.color = hit ? '#222' : '#888';
+        }
+        // Quick-pick buttons under "Select account" (matched by account name, per direction).
+        const ACCT_SHORTCUTS = { in: ['CUSTOMER', 'HM', 'LAVISH'], out: ['FOOD', 'HM', 'LAVISH'] };
+        function _acctRenderShortcuts() {
+            const box = document.getElementById('ledger-acct-shortcuts'); if (!box) return;
+            const dir = _ledgerEntryType === 'in' ? 'in' : 'out';
+            const cur = document.getElementById('ledger-entry-account').value;
+            const all = [];
+            _acctAllCats().filter(c => c.dir === dir).forEach(c => _acctActiveIn(c.id).forEach(a => all.push(a)));
+            box.innerHTML = ACCT_SHORTCUTS[dir].map(n => {
+                const a = all.find(x => (x.name || '').trim().toLowerCase() === n.toLowerCase());
+                if (!a) return '';
+                const on = a.id === cur;
+                return `<button type="button" onclick="pickAcct('${a.id}')" style="width:auto; margin:0; padding:9px 16px; font-size:13px; font-weight:800; border-radius:20px; box-shadow:none; border:2px solid ${on ? '#b8860b' : '#e0e0da'}; background:${on ? '#fff4d6' : '#f7f7f5'}; color:#222;">${_ciEsc(a.name)}</button>`;
+            }).join('');
         }
         function openAcctPicker() {
             const s = document.getElementById('acct-pick-search'); if (s) s.value = '';
@@ -15653,6 +15674,7 @@
             const sel = document.getElementById('ledger-entry-account');
             sel.value = id;
             _acctPickLabel();
+            _acctRenderShortcuts();
             closeAcctPicker();
         }
 
@@ -19826,7 +19848,8 @@
             <div id="ledger-b-fields" style="display:none;">
                 <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">ACCOUNT</label>
                 <select id="ledger-entry-account" style="display:none;"></select>
-                <button type="button" id="ledger-acct-btn" onclick="openAcctPicker()" style="display:flex; justify-content:space-between; align-items:center; width:100%; padding:12px 14px; margin:0 0 12px 0; background:white; color:#222; border:1.5px solid #e0e0e0; border-radius:10px; font-size:14px; font-weight:600; text-align:left; box-shadow:none; box-sizing:border-box;"><span id="ledger-acct-label" style="color:#888;">— Select account —</span><span style="color:#aaa;">▾</span></button>
+                <button type="button" id="ledger-acct-btn" onclick="openAcctPicker()" style="display:flex; justify-content:space-between; align-items:center; width:100%; padding:12px 14px; margin:0 0 8px 0; background:white; color:#222; border:1.5px solid #e0e0e0; border-radius:10px; font-size:14px; font-weight:600; text-align:left; box-shadow:none; box-sizing:border-box;"><span id="ledger-acct-label" style="color:#888;">— Select account —</span><span style="color:#aaa;">▾</span></button>
+                <div id="ledger-acct-shortcuts" style="display:flex; flex-wrap:wrap; gap:8px; margin:0 0 12px 0;"></div>
                 <label id="ledger-mode-label" style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">PAID VIA</label>
                 <div style="display:flex; gap:8px; margin-bottom:14px;">
                     <button onclick="setLedgerMode('cash')" id="lmode-cash" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">💵 Cash</button>
