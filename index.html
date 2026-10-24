@@ -1741,6 +1741,9 @@
             <button onclick="openPriceDisplay()" data-menu-key="price-display">
                 <span class="menu-icon" style="background:#fff8e1;">💎</span> Price Display
             </button>
+            <button onclick="openAccountsModal()" data-menu-key="accounts">
+                <span class="menu-icon" style="background:#e0f2f1;">📒</span> Accounts
+            </button>
             <button onclick="openCustomItemsModal()" data-menu-key="custom-items">
                 <span class="menu-icon" style="background:#f3e5f5;">🧩</span> Custom Items
             </button>
@@ -5270,19 +5273,32 @@
         }
 
         // Save a single ledger entry
-        function _saveLedgerRecord(entry) {
+        function _saveLedgerRecord(entry, extraUpdates) {
             if (!entry || !entry.id) return;
             const update = {};
             update[`jewelryData/ledgerEntries/${entry.id}`] = entry;
+            // Every entry (any track): keep an independent copy for the Purchase
+            // Manager's report — the POS bulk-clear never touches this node.
+            try { update[`cashbook/${entry.id}`] = _cashbookFromEntry(entry); } catch (err) { console.error('[Cashbook] copy failed', err); }
+            if (extraUpdates) Object.assign(update, extraUpdates);
             window.dbSafeUpdate(update).catch(e => console.error('[Ledger] save failed', e));
         }
 
         // Delete a single ledger entry from Firebase + local
         function _deleteLedgerRecord(id, onDone) {
+            const _gone = ledgerEntries.find(e => String(e.id) === String(id));
             ledgerEntries = ledgerEntries.filter(e => String(e.id) !== String(id));
             _saveLedgerLocal();
             const update = {};
             update[`jewelryData/ledgerEntries/${id}`] = null;
+            // A single delete removes the Purchase Manager copy too (and any
+            // supplier payment records this entry created). Bulk clear does not.
+            update[`cashbook/${id}`] = null;
+            if (_gone && _gone.supplier) {
+                if (_gone.supplier.paymentId)   update[`payments/${_gone.supplier.paymentId}`] = null;
+                if (_gone.supplier.pieceBillId) update[`pieceSupplies/${_gone.supplier.pieceBillId}`] = null;
+                if (_gone.supplier.piecePayId)  update[`pieceSupplies/${_gone.supplier.piecePayId}`] = null;
+            }
             window.dbSafeUpdate(update)
                 .then(() => { if (onDone) onDone(); })
                 .catch(e => { console.error('[Ledger] delete failed', e); if (onDone) onDone(); });
@@ -5569,6 +5585,7 @@
             { key: 'profiles',       label: 'Making Profiles',    icon: '⚙️', action: () => openProfileModal() },
             { key: 'device-access',  label: 'Device Access',      icon: '🔒', action: () => showDeviceAccessSection() },
             { key: 'price-display',  label: 'Price Display',      icon: '💎', action: () => openPriceDisplay() },
+            { key: 'accounts',       label: 'Accounts',           icon: '📒', action: () => openAccountsModal() },
             { key: 'custom-items',   label: 'Custom Items',       icon: '🧩', action: () => openCustomItemsModal() },
             { key: 'upi-setting',    label: 'Set UPI IDs',        icon: '📱', action: () => openUpiIdSetting() },
             { key: 'ledger',         label: 'Cash Ledger',        icon: '💰', action: () => showSection('ledger') },
@@ -11911,6 +11928,7 @@
             startInstallmentsSync();
             startSavingsSync();
             startCreditSync();
+            startAcctSync();
             initPrintServerIfEnabled();
             initBackupTriggerListenerIfEnabled();
             // Load ledger from cache immediately (Firebase will overwrite shortly)
@@ -13533,7 +13551,8 @@
                 const entry = {
                     id: crypto.randomUUID(), type: 'out', amount: amt, cashPortion: amt,
                     note: 'Refund to customer',
-                    timestamp: new Date().toISOString(), source, ...(extraFields || {})
+                    timestamp: new Date().toISOString(), source, ...(extraFields || {}),
+                    ...(_ledgerTrackFor(extraFields) === 'B' ? { track: 'B' } : {})
                 };
                 ledgerEntries.push(entry); _saveLedgerLocal(); _saveLedgerRecord(entry); renderLedger();
                 return;
@@ -13574,7 +13593,8 @@
 
             const entry = {
                 id: crypto.randomUUID(), type: 'sale', amount: amt, cashPortion: Math.round(cashPortion),
-                note, timestamp: new Date().toISOString(), source, ...(extraFields || {})
+                note, timestamp: new Date().toISOString(), source, ...(extraFields || {}),
+                ...(_ledgerTrackFor(extraFields) === 'B' ? { track: 'B' } : {})
             };
             ledgerEntries.push(entry); _saveLedgerLocal(); _saveLedgerRecord(entry); renderLedger();
             invSyncCatalogueAvailability();
@@ -14462,6 +14482,8 @@
                 // Cloud is always authoritative — replace local state regardless of
                 // whether cloud is empty (e.g. after a delete or clearAllData).
                 ledgerEntries = cloudEntries;
+                window._ledgerCloudLoaded = true;
+                if (typeof _acctMaybeBackfill === 'function') _acctMaybeBackfill();
                 _saveLedgerLocal();
                 // (If cloud is empty because we just cleared, local is now empty too — correct.)
                 // Always render after cloud sync — don't gate on visibility.
@@ -14505,6 +14527,7 @@
                 }
                 return e.amount || 0;
             }
+            if ((e.type === 'in' || e.type === 'out' || e.type === 'expense') && e.mode === 'upi') return 0;
             if (e.type === 'in')  return e.amount || 0;
             if (e.type === 'out' || e.type === 'expense') return -(e.amount || 0);
             return 0;
@@ -14600,7 +14623,7 @@
                         <div class="ledger-entry-icon ${iconClass}">${icons[e.type]||'📝'}</div>
                         <div class="ledger-entry-body">
                             <div class="ledger-entry-title">${labels[e.type]||e.type}</div>
-                            <div class="ledger-entry-meta">${time}${e.source === 'checkout' ? ' · checkout' : e.source === 'invoice' ? ' · From Invoice' : e.source === 'installment' ? ' · From Installment Plan' : e.source === 'credit' ? ' · Credit Received' : ' · Manual'}</div>
+                            <div class="ledger-entry-meta">${time}${_ledgerTagHtml(e)}${e.source === 'checkout' ? ' · checkout' : e.source === 'invoice' ? ' · From Invoice' : e.source === 'installment' ? ' · From Installment Plan' : e.source === 'credit' ? ' · Credit Received' : ' · Manual'}</div>
                             ${e.note ? `<div class="ledger-entry-note">${e.note}</div>` : ''}
                         </div>
                         <div class="ledger-entry-amount ${isPos ? 'positive' : 'negative'}">${isPos?'+':'-'}₹${_fmt(e.amount)}</div>
@@ -15314,14 +15337,394 @@
         // === END SAVINGS SCHEME SECTION ===============
         // =============================================
 
+        // ═══════════════════════════════════════════════════════════
+        // ACCOUNTS · CASH BOOK · SUPPLIER PAYMENTS (Track B only)
+        // Firebase: acctCategories/{id}, acctAccounts/{id}  (set here)
+        //           cashbook/{ledgerEntryId}                (copy for Purchase Manager; never bulk-cleared)
+        //           parties, purchases, payments, pieceSupplies (shared with Purchase Manager)
+        // ═══════════════════════════════════════════════════════════
+        const ACCT_BUILTIN_CATS = [
+            { id: 'cat_supplier', name: 'Supplier',     dir: 'out', system: 'supplier' },
+            { id: 'cat_expense',  name: 'Expense',      dir: 'out' },
+            { id: 'cat_oldjewellery', name: 'Old Jewellery', dir: 'out' }
+        ];
+        // Old default category — no longer offered for new accounts, but kept visible
+        // while it still holds accounts so existing "money in" accounts keep working.
+        const ACCT_LEGACY_INCOME = { id: 'cat_income', name: 'Other Income', dir: 'in', legacy: true };
+        let acctCustomCats = [], acctAccounts = [];
+        let pmParties = [], pmPurchases = [], pmPayments = [], pmPieceSupplies = [];
+        let _acctSyncStarted = false, _acctSyncRetries = 0;
+        let _ledgerMode = 'cash';
+        let _pendingSupEntry = null, _supKind = 'metal';
+
+        function _isTrackBActive() { return !!invTrackBUnlocked && currentInvTrack === 'B'; }
+        function _localDateStr(d) {
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+        // Which track a ledger SALE entry belongs to: the invoice's own track when
+        // there is one, otherwise whichever track is active / the checkout track.
+        function _ledgerTrackFor(ef) {
+            try {
+                if (ef && ef.invoiceId) {
+                    const inv = (invoiceHistory || []).find(i => i.id === ef.invoiceId);
+                    if (inv && inv.track) return inv.track;
+                }
+                if (_isTrackBActive()) return 'B';
+                return (typeof invGetCheckoutTrack === 'function') ? invGetCheckoutTrack() : 'A';
+            } catch (e) { return 'A'; }
+        }
+        function startAcctSync() {
+            if (_acctSyncStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB) {
+                if (_acctSyncRetries++ < 20) setTimeout(startAcctSync, 500);
+                return;
+            }
+            _acctSyncStarted = true;
+            const sub = (path, fn) => window.dbOnValue(window.dbRef(window.firebaseDB, path), s => fn(s.val() || {}), err => console.error('[Acct] read error', path, err));
+            sub('acctCategories', v => { acctCustomCats = Object.values(v).filter(c => c && c.id); _acctRefresh(); });
+            sub('acctAccounts',   v => { acctAccounts = Object.values(v).filter(a => a && a.id); _acctRefresh(); });
+            sub('parties',        v => { pmParties = Object.values(v).filter(p => p && p.id).sort((a, b) => (a.name || '').localeCompare(b.name || '')); });
+            sub('purchases',      v => { pmPurchases = Object.values(v); });
+            sub('payments',       v => { pmPayments = Object.values(v); });
+            sub('pieceSupplies',  v => { pmPieceSupplies = Object.values(v); });
+            sub('cashbook',       v => { _cbIds = new Set(Object.keys(v)); _cbLoaded = true; _acctMaybeBackfill(); });
+            sub('cashbookMeta',   v => { _cbBackfilled = !!(v && v.backfilledAt); _cbMetaLoaded = true; _acctMaybeBackfill(); });
+        }
+        // One-time: copy every entry already in the POS ledger into cashbook/ so the
+        // Purchase Manager report has the current data too (not just entries from now on).
+        let _cbIds = new Set(), _cbLoaded = false, _cbMetaLoaded = false, _cbBackfilled = false, _cbBackfilling = false;
+        function _acctMaybeBackfill() {
+            if (_cbBackfilled || _cbBackfilling || !_cbLoaded || !_cbMetaLoaded || !window._ledgerCloudLoaded) return;
+            if (!window.dbSafeUpdate) return;
+            _cbBackfilling = true;
+            try {
+                const upd = {};
+                (ledgerEntries || []).forEach(e => {
+                    if (!e || !e.id || _cbIds.has(String(e.id))) return;
+                    try { upd['cashbook/' + e.id] = _cashbookFromEntry(e); } catch (err) { /* skip bad timestamp */ }
+                });
+                upd['cashbookMeta/backfilledAt'] = new Date().toISOString();
+                window.dbSafeUpdate(upd).then(() => { _cbBackfilled = true; }).catch(e => { _cbBackfilling = false; console.error('[Cashbook] backfill failed', e); });
+            } catch (err) { _cbBackfilling = false; console.error(err); }
+        }
+        function _acctRefresh() {
+            const m = document.getElementById('accounts-modal');
+            if (m && m.style.display !== 'none' && m.style.display !== '') renderAccountsList();
+            if (document.getElementById('ledger-entry-modal').classList.contains('show')) _ledgerBRefresh();
+        }
+        function _acctAllCats() {
+            const legacy = acctAccounts.some(a => a.categoryId === ACCT_LEGACY_INCOME.id && !a.archived) ? [ACCT_LEGACY_INCOME] : [];
+            return [...ACCT_BUILTIN_CATS, ...legacy, ...acctCustomCats];
+        }
+        function _acctEntryTrack() { return _isTrackBActive() ? 'B' : 'A'; }
+        function _acctActiveIn(catId) {
+            return acctAccounts.filter(a => a.categoryId === catId && !a.archived).sort((x, y) => (x.name || '').localeCompare(y.name || ''));
+        }
+        function _acctFind(accountId, dir) {
+            for (const c of _acctAllCats()) {
+                if (c.dir !== dir) continue;
+                const a = _acctActiveIn(c.id).find(x => x.id === accountId);
+                if (a) return { a, c };
+            }
+            return null;
+        }
+
+        // ── Accounts manager ──
+        let _acctView = 'list', _acctSelCat = '';
+        function openAccountsModal() {
+            closeOptions();
+            _acctView = 'list';
+            renderAccountsList();
+            document.getElementById('accounts-modal').style.display = 'flex';
+        }
+        function closeAccountsModal() { document.getElementById('accounts-modal').style.display = 'none'; }
+
+        // Accounts screen: ONLY accounts. Categories appear in the "New account" screen.
+        function renderAccountsList() {
+            const el = document.getElementById('accounts-list');
+            const cv = document.getElementById('acct-create-view');
+            const nb = document.getElementById('acct-new-btn');
+            const help = document.getElementById('acct-help');
+            if (!el || !cv) return;
+            const creating = _acctView === 'create';
+            el.style.display = creating ? 'none' : 'block';
+            cv.style.display = creating ? 'block' : 'none';
+            nb.style.display = creating ? 'none' : 'block';
+            if (help) help.textContent = creating
+                ? 'Choose a category for the new account, or create a new category.'
+                : 'Where money goes or comes from. Pick an account on every ledger entry — the Purchase Manager report groups by these.';
+            if (creating) { _renderAcctCreate(); return; }
+            let html = '';
+            _acctAllCats().forEach(c => {
+                _acctActiveIn(c.id).forEach(a => {
+                    html += `<div style="display:flex; align-items:center; gap:6px; padding:10px 0; border-bottom:1px solid #eee3c8;">
+                        <div style="flex:1; min-width:0;">
+                            <div style="font-size:14px; font-weight:700;">${_ciEsc(a.name)}</div>
+                            <div style="font-size:11px; color:${c.dir === 'in' ? '#2e7d32' : '#c62828'};">${_ciEsc(c.name)} · ${c.dir === 'in' ? '↓ Money in' : '↑ Money out'}</div>
+                        </div>
+                        <button onclick="acctRenameAccount('${a.id}')" style="width:auto; margin:0; padding:4px 9px; font-size:13px; background:#eee; color:#333; box-shadow:none;">✎</button>
+                        <button onclick="acctArchiveAccount('${a.id}')" style="width:auto; margin:0; padding:4px 9px; font-size:13px; background:#eee; color:#c62828; box-shadow:none;">✕</button>
+                    </div>`;
+                });
+            });
+            el.innerHTML = html || '<p style="font-size:13px; color:#888; text-align:center; padding:24px 0; margin:0;">No accounts yet. Tap “＋ New account” below.</p>';
+        }
+        function acctShowCreate() {
+            _acctView = 'create';
+            if (!_acctAllCats().some(c => c.id === _acctSelCat)) _acctSelCat = ACCT_BUILTIN_CATS[0].id;
+            const n = document.getElementById('acct-new-acct-name'); if (n) n.value = '';
+            renderAccountsList();
+            setTimeout(() => { const n2 = document.getElementById('acct-new-acct-name'); if (n2) n2.focus(); }, 60);
+        }
+        function acctBackToList() { _acctView = 'list'; renderAccountsList(); }
+        function _renderAcctCreate() {
+            const box = document.getElementById('acct-cat-chips'); if (!box) return;
+            if (!_acctAllCats().some(c => c.id === _acctSelCat)) _acctSelCat = ACCT_BUILTIN_CATS[0].id;
+            box.innerHTML = _acctAllCats().map(c => {
+                const sel = c.id === _acctSelCat;
+                const canDelete = !c.legacy && !ACCT_BUILTIN_CATS.some(b => b.id === c.id) && !_acctActiveIn(c.id).length;
+                return `<div style="display:inline-flex; align-items:stretch; margin:0 6px 6px 0;">
+                    <button onclick="acctSelectCat('${c.id}')" style="width:auto; margin:0; padding:8px 12px; font-size:13px; font-weight:700; box-shadow:none; border:2px solid ${sel ? '#b8860b' : '#e0e0e0'}; background:${sel ? '#fff4d6' : 'white'}; color:#333; border-radius:${canDelete ? '10px 0 0 10px' : '10px'};">
+                        ${_ciEsc(c.name)} <span style="font-size:11px; color:${c.dir === 'in' ? '#2e7d32' : '#c62828'};">${c.dir === 'in' ? '↓' : '↑'}</span></button>
+                    ${canDelete ? `<button onclick="acctDeleteCategory('${c.id}')" title="Delete category" style="width:auto; margin:0; padding:8px 9px; font-size:12px; box-shadow:none; border:2px solid #e0e0e0; border-left:none; background:#f6f6f6; color:#c62828; border-radius:0 10px 10px 0;">✕</button>` : ''}
+                </div>`;
+            }).join('');
+            const sel = _acctAllCats().find(c => c.id === _acctSelCat);
+            const note = document.getElementById('acct-cat-note');
+            if (note) note.textContent = (sel && sel.id === 'cat_supplier') ? 'Entries in Supplier ask for supplier, metal / per-piece details.' : '';
+        }
+        function acctSelectCat(id) { _acctSelCat = id; _renderAcctCreate(); }
+        function acctCreateAccount() {
+            const inp = document.getElementById('acct-new-acct-name');
+            const name = (inp.value || '').trim();
+            if (!name) { showCustomAlert('Enter the account name.'); return; }
+            const cat = _acctAllCats().find(c => c.id === _acctSelCat);
+            if (!cat) { showCustomAlert('Choose a category first.'); return; }
+            if (_acctActiveIn(cat.id).some(a => (a.name || '').toLowerCase() === name.toLowerCase())) { showCustomAlert('That account already exists in this category.'); return; }
+            const id = crypto.randomUUID();
+            acctAccounts.push({ id, name, categoryId: cat.id });   // show instantly; Firebase listener replaces it
+            window.dbSafeUpdate({ ['acctAccounts/' + id]: { id, name, categoryId: cat.id } }).catch(e => console.error(e));
+            _acctView = 'list';
+            renderAccountsList();
+        }
+        function acctRenameAccount(id) {
+            const a = acctAccounts.find(x => x.id === id); if (!a) return;
+            const name = (prompt('Rename account:', a.name) || '').trim();
+            if (!name || name === a.name) return;
+            window.dbSafeUpdate({ ['acctAccounts/' + id + '/name']: name }).catch(e => console.error(e));
+        }
+        function acctArchiveAccount(id) {
+            const a = acctAccounts.find(x => x.id === id); if (!a) return;
+            showCustomConfirm('Remove account "' + _ciEsc(a.name) + '"? Past entries keep their history; it just disappears from the list.', 'Remove Account', () => {
+                window.dbSafeUpdate({ ['acctAccounts/' + id + '/archived']: true }).catch(e => console.error(e));
+            });
+        }
+        function acctAddCategory() {
+            const inp = document.getElementById('acct-new-cat-name');
+            const name = (inp.value || '').trim();
+            if (!name) return;
+            if (_acctAllCats().some(c => (c.name || '').toLowerCase() === name.toLowerCase())) { showCustomAlert('A category with that name already exists.'); return; }
+            const id = crypto.randomUUID();
+            const dir = document.getElementById('acct-new-cat-dir').value === 'in' ? 'in' : 'out';
+            acctCustomCats.push({ id, name, dir });
+            window.dbSafeUpdate({ ['acctCategories/' + id]: { id, name, dir } }).catch(e => console.error(e));
+            inp.value = '';
+            _acctSelCat = id;
+            _renderAcctCreate();
+        }
+        function acctDeleteCategory(id) {
+            if (_acctActiveIn(id).length) return;
+            acctCustomCats = acctCustomCats.filter(c => c.id !== id);
+            if (_acctSelCat === id) _acctSelCat = ACCT_BUILTIN_CATS[0].id;
+            window.dbSafeUpdate({ ['acctCategories/' + id]: null }).catch(e => console.error(e));
+            _renderAcctCreate();
+        }
+
+        // ── Cash book copy ──
+        function _cashbookFromEntry(e) {
+            const rec = {
+                id: e.id, track: (e.track === 'B' ? 'B' : 'A'), ts: e.timestamp, date: _localDateStr(new Date(e.timestamp)),
+                type: e.type, amount: e.amount || 0, note: e.note || '', source: e.source || ''
+            };
+            if (e.cashPortion !== undefined) rec.cashPortion = e.cashPortion;
+            if (e.mode) rec.mode = e.mode;
+            if (e.accountId) { rec.accountId = e.accountId; rec.accountName = e.accountName || ''; rec.categoryId = e.categoryId || ''; rec.categoryName = e.categoryName || ''; }
+            if (e.supplier) rec.supplier = e.supplier;
+            if (e.invoiceId) rec.invoiceId = e.invoiceId;
+            return rec;
+        }
+        function _ledgerTagHtml(e) {
+            let t = '';
+            if (e.accountName) t += ' · ' + _ciEsc(e.accountName);
+            if (e.supplier && e.supplier.partyName) t += ' · ' + _ciEsc(e.supplier.partyName);
+            if (e.mode === 'upi') t += ' · UPI';
+            return t;
+        }
+
+        // ── Ledger entry modal: Track B account + cash/UPI ──
+        function setLedgerMode(m) {
+            _ledgerMode = (m === 'upi') ? 'upi' : 'cash';
+            ['cash', 'upi'].forEach(x => {
+                const b = document.getElementById('lmode-' + x); if (!b) return;
+                b.style.border = x === _ledgerMode ? '2.5px solid #1565C0' : '2px solid #e0e0e0';
+                b.style.background = x === _ledgerMode ? '#e3f2fd' : 'white';
+            });
+        }
+        function _ledgerBRefresh() {
+            const box = document.getElementById('ledger-b-fields'); if (!box) return;
+            box.style.display = 'block';   // accounts are available on every track
+            const dir = _ledgerEntryType === 'in' ? 'in' : 'out';
+            document.getElementById('ledger-mode-label').textContent = dir === 'in' ? 'RECEIVED VIA' : 'PAID VIA';
+            const sel = document.getElementById('ledger-entry-account');
+            const prev = sel.value;
+            let html = '', count = 0;
+            _acctAllCats().filter(c => c.dir === dir).forEach(c => {
+                const list = _acctActiveIn(c.id); if (!list.length) return;
+                count += list.length;
+                html += `<optgroup label="${_ciEsc(c.name)}">` + list.map(a => `<option value="${a.id}">${_ciEsc(a.name)}</option>`).join('') + '</optgroup>';
+            });
+            sel.innerHTML = '<option value="">' + (count ? '— Select account —' : 'No accounts yet — add in More → Accounts') + '</option>' + html;
+            if (prev) sel.value = prev;
+        }
+
         function openLedgerEntryModal(type) {
             setLedgerEntryType(type || 'in');
             document.getElementById('ledger-entry-amount').value = '';
             document.getElementById('ledger-entry-note').value = '';
+            setLedgerMode('cash');
+            document.getElementById('ledger-entry-account').value = '';
+            _ledgerBRefresh();
             document.getElementById('ledger-entry-modal').classList.add('show');
             setTimeout(() => document.getElementById('ledger-entry-amount').focus(), 80);
         }
 
+        // ── Supplier payment dialog ──
+        function _supOutstanding(partyId, metal, track) {
+            track = track || 'B';
+            const purchased = pmPurchases.filter(p => p.partyId === partyId && p.track === track && p.metal === metal && p.status === 'credit').reduce((s, p) => s + (p.weight || 0), 0);
+            const paid = pmPayments.filter(p => p.partyId === partyId && p.track === track && p.metal === metal).reduce((s, p) => s + (p.weight || 0), 0);
+            return Math.max(0, purchased - paid);
+        }
+        function _supPieceBalance(partyId) {
+            return pmPieceSupplies.filter(r => r.partyId === partyId)
+                .reduce((s, r) => s + (r.kind === 'payment' ? -(r.amount || 0) : (r.amount || 0)), 0);
+        }
+        function _openSupplierPayDialog(entry) {
+            _pendingSupEntry = entry;
+            document.getElementById('sup-amount-line').textContent = 'Paying ₹' + _fmt(entry.amount) + ' via ' + (entry.mode === 'upi' ? 'UPI' : 'Cash');
+            document.getElementById('sup-party').innerHTML = '<option value="">— Select supplier —</option>' +
+                pmParties.map(p => `<option value="${_ciEsc(p.id)}">${_ciEsc(p.name)}</option>`).join('') + '<option value="__new">＋ New supplier…</option>';
+            document.getElementById('sup-new-party').style.display = 'none';
+            document.getElementById('sup-new-party').value = '';
+            ['sup-weight', 'sup-rate', 'sup-desc', 'sup-qty', 'sup-bill'].forEach(id => { document.getElementById(id).value = ''; });
+            _supSetKind('metal');
+            document.getElementById('supplier-pay-modal').style.display = 'flex';
+        }
+        function closeSupplierPayDialog() {
+            document.getElementById('supplier-pay-modal').style.display = 'none';
+            _pendingSupEntry = null;
+        }
+        function _supPartyChanged() {
+            const isNew = document.getElementById('sup-party').value === '__new';
+            document.getElementById('sup-new-party').style.display = isNew ? 'block' : 'none';
+            _supRecalc();
+        }
+        function _supSetKind(k) {
+            _supKind = (k === 'piece') ? 'piece' : 'metal';
+            ['metal', 'piece'].forEach(x => {
+                const b = document.getElementById('sup-kind-' + x);
+                b.style.border = x === _supKind ? '2.5px solid #1565C0' : '2px solid #e0e0e0';
+                b.style.background = x === _supKind ? '#e3f2fd' : 'white';
+            });
+            document.getElementById('sup-metal-box').style.display = _supKind === 'metal' ? 'block' : 'none';
+            document.getElementById('sup-piece-box').style.display = _supKind === 'piece' ? 'block' : 'none';
+            _supRecalc();
+        }
+        function _supRecalc() {
+            if (!_pendingSupEntry) return;
+            const amt = _pendingSupEntry.amount;
+            const pid = document.getElementById('sup-party').value;
+            if (_supKind === 'metal') {
+                const metal = document.getElementById('sup-metal').value;
+                const w = parseFloat(document.getElementById('sup-weight').value) || 0;
+                const r = parseFloat(document.getElementById('sup-rate').value) || 0;
+                let t = '';
+                if (pid && pid !== '__new') t += 'Outstanding with this supplier: <b>' + _supOutstanding(pid, metal, _pendingSupEntry.track).toFixed(2) + 'g</b> ' + metal + '<br>';
+                if (w > 0 && r > 0) {
+                    const diff = Math.round((w * r - amt) * 100) / 100;
+                    t += 'Booked value ₹' + _fmt(w * r) + ' vs paid ₹' + _fmt(amt) + ' → ' +
+                        (Math.abs(diff) < 0.5 ? 'exact' : (diff > 0 ? '<b style="color:#2e7d32;">discount ₹' + _fmt(diff) + '</b>' : '<b style="color:#e65100;">round-off / extra ₹' + _fmt(-diff) + '</b>'));
+                } else if (w > 0) {
+                    t += 'No rate entered — effective rate ₹' + (amt / w).toFixed(2) + '/g will be recorded.';
+                }
+                document.getElementById('sup-metal-info').innerHTML = t;
+            } else {
+                const bill = parseFloat(document.getElementById('sup-bill').value) || 0;
+                let t = '';
+                if (pid && pid !== '__new') {
+                    const bal = _supPieceBalance(pid);
+                    t += 'Credit owed to this supplier now: <b>₹' + _fmt(bal) + '</b><br>After this: <b>₹' + _fmt(Math.max(0, bal + bill - amt)) + '</b>';
+                } else if (bill > 0) {
+                    t += 'Left on credit after this: <b>₹' + _fmt(Math.max(0, bill - amt)) + '</b>';
+                }
+                document.getElementById('sup-piece-info').innerHTML = t;
+            }
+        }
+        function _confirmSupplierPay() {
+            const e = _pendingSupEntry; if (!e) return;
+            let partyId = document.getElementById('sup-party').value;
+            const extra = {};
+            let partyName = '';
+            if (!partyId) { showCustomAlert('Select a supplier.'); return; }
+            if (partyId === '__new') {
+                const nm = (document.getElementById('sup-new-party').value || '').trim();
+                if (!nm) { showCustomAlert('Enter the new supplier name.'); return; }
+                const ex = pmParties.find(p => (p.name || '').toLowerCase() === nm.toLowerCase());
+                if (ex) { partyId = ex.id; partyName = ex.name; }
+                else { partyId = crypto.randomUUID(); partyName = nm; extra['parties/' + partyId] = { id: partyId, name: nm }; }
+            } else {
+                const p = pmParties.find(x => x.id === partyId); partyName = p ? p.name : '';
+            }
+            const now = new Date();
+            const date = _localDateStr(now);
+            const createdAt = new Date(date + 'T12:00:00.000Z').toISOString();
+            const sup = { partyId, partyName, kind: _supKind, adjustment: 0 };
+            let autoNote = '';
+            if (_supKind === 'metal') {
+                const metal = document.getElementById('sup-metal').value;
+                const weight = parseFloat(document.getElementById('sup-weight').value) || 0;
+                let rate = parseFloat(document.getElementById('sup-rate').value) || 0;
+                if (!(weight > 0)) { showCustomAlert('Enter the weight paid.'); return; }
+                if (!extra['parties/' + partyId]) {
+                    const out = _supOutstanding(partyId, metal, e.track);
+                    if (weight > out + 0.001) { showCustomAlert('Weight is more than the ' + out.toFixed(2) + 'g ' + metal + ' outstanding with this supplier.'); return; }
+                } else { showCustomAlert('A new supplier has nothing outstanding yet — add the purchase in Purchase Manager first.'); return; }
+                if (!(rate > 0)) rate = Math.round((e.amount / weight) * 100) / 100;
+                sup.adjustment = Math.round((weight * rate - e.amount) * 100) / 100;
+                const payId = crypto.randomUUID();
+                extra['payments/' + payId] = { id: payId, partyId, track: e.track || 'A', metal, weight, rate, note: e.note || '', date, createdAt, source: 'pos', ledgerEntryId: e.id, amountPaid: e.amount };
+                Object.assign(sup, { metal, weight, rate, paymentId: payId });
+                autoNote = weight + 'g ' + metal + ' @ ₹' + rate;
+            } else {
+                const desc = (document.getElementById('sup-desc').value || '').trim();
+                const qty = parseFloat(document.getElementById('sup-qty').value) || 0;
+                const bill = parseFloat(document.getElementById('sup-bill').value) || 0;
+                if (bill > 0) {
+                    const billId = crypto.randomUUID();
+                    extra['pieceSupplies/' + billId] = { id: billId, partyId, track: e.track || 'A', kind: 'bill', desc, qty, amount: bill, date, createdAt, source: 'pos', ledgerEntryId: e.id };
+                    sup.pieceBillId = billId;
+                }
+                const pId = crypto.randomUUID();
+                extra['pieceSupplies/' + pId] = { id: pId, partyId, track: e.track || 'A', kind: 'payment', desc, qty, amount: e.amount, date, createdAt, source: 'pos', ledgerEntryId: e.id };
+                sup.piecePayId = pId; sup.desc = desc; sup.qty = qty; sup.billAmount = bill;
+                autoNote = desc || 'per-piece supplies';
+            }
+            e.supplier = sup;
+            if (!e.note) e.note = partyName + ' — ' + autoNote;
+            ledgerEntries.push(e); _saveLedgerLocal(); _saveLedgerRecord(e, extra); renderLedger();
+            closeSupplierPayDialog();
+            closeLedgerEntryModal();
+        }
         function closeLedgerEntryModal() {
             document.getElementById('ledger-entry-modal').classList.remove('show');
         }
@@ -15339,8 +15742,8 @@
             const saveBtn = document.getElementById('ledger-save-btn');
             saveBtn.style.background = type === 'in' ? '#4CAF50' : '#FF9800';
             document.getElementById('ledger-modal-title').textContent = labels[type] || 'Add Entry';
+            _ledgerBRefresh();
         }
-
         let _saveLedgerInProgress = false;
         function saveLedgerEntry() {
             if (_saveLedgerInProgress) { console.warn('[Guard] saveLedgerEntry double-submit blocked'); return; }
@@ -15349,6 +15752,13 @@
             const amt = parseFloat(document.getElementById('ledger-entry-amount').value);
             if (!amt || amt <= 0) { _saveLedgerInProgress = false; showCustomAlert('Please enter a valid amount.'); return; }
             const note = document.getElementById('ledger-entry-note').value.trim();
+            // Every manual entry (any track) needs an account
+            let acctSel = null;
+            {
+                const aid = document.getElementById('ledger-entry-account').value;
+                acctSel = aid ? _acctFind(aid, _ledgerEntryType === 'in' ? 'in' : 'out') : null;
+                if (!acctSel) { _saveLedgerInProgress = false; showCustomAlert('Select an account first. You can create accounts from More → Accounts.'); return; }
+            }
             // Pre-write dedup: reject if a matching entry already exists within last 5 seconds
             const now = Date.now();
             const isDuplicate = ledgerEntries.some(e =>
@@ -15367,6 +15777,12 @@
                 timestamp: new Date().toISOString(),
                 source: 'manual'
             };
+            Object.assign(entry, {
+                track: _acctEntryTrack(), mode: _ledgerMode,
+                accountId: acctSel.a.id, accountName: acctSel.a.name,
+                categoryId: acctSel.c.id, categoryName: acctSel.c.name
+            });
+            if (acctSel.c.system === 'supplier') { _openSupplierPayDialog(entry); return; }
             ledgerEntries.push(entry);
             _saveLedgerLocal();
             _saveLedgerRecord(entry); // single-record Firebase write
@@ -15374,7 +15790,6 @@
             closeLedgerEntryModal();
             showCustomAlert('Entry saved!');
         }
-
         function deleteLedgerEntry(id) {
             if (!checkPin()) return;
             _deleteLedgerRecord(id, () => {
@@ -16084,12 +16499,14 @@
             if (!entry || !entry.id) return;
             const update = {};
             update[`jewelryData/invoiceHistory/${entry.id}`] = entry;
+            update[`pmSales/${entry.id}`] = entry; // independent copy for the Purchase Manager
             _durableWrite('invoice_' + entry.id, update);
         }
 
         function _deleteInvoiceRecord(id) {
             const update = {};
             update[`jewelryData/invoiceHistory/${id}`] = null;
+            update[`pmSales/${id}`] = null; // single delete removes the Purchase Manager copy too
             _durableWrite('invoice_delete_' + id, update);
         }
 
@@ -16107,6 +16524,8 @@
             const update = {};
             update[`jewelryData/invoiceHistory/${newEntry.id}`] = newEntry;
             update[`jewelryData/invoiceHistory/${deleteId}`] = null;
+            update[`pmSales/${newEntry.id}`] = newEntry;
+            update[`pmSales/${deleteId}`] = null;
             _durableWrite('invoice_move_' + newEntry.id, update);
         }
 
@@ -19334,6 +19753,16 @@
                 <button onclick="setLedgerEntryType('expense')" id="ltype-expense" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#e65100; cursor:pointer;">🧾 Expense</button>
             </div>
 
+            <div id="ledger-b-fields" style="display:none;">
+                <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">ACCOUNT</label>
+                <select id="ledger-entry-account" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:12px; box-sizing:border-box;"></select>
+                <label id="ledger-mode-label" style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">PAID VIA</label>
+                <div style="display:flex; gap:8px; margin-bottom:14px;">
+                    <button onclick="setLedgerMode('cash')" id="lmode-cash" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">💵 Cash</button>
+                    <button onclick="setLedgerMode('upi')" id="lmode-upi" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">📱 UPI</button>
+                </div>
+            </div>
+
             <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">AMOUNT (₹)</label>
             <input type="number" id="ledger-entry-amount" placeholder="0" min="0" step="1"
                    onkeydown="if(event.key==='Enter') saveLedgerEntry()"
@@ -19348,6 +19777,76 @@
                 style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">
                 ✓ Save Entry
             </button>
+        </div>
+    </div>
+
+    <!-- Accounts manager (all tracks) -->
+    <div id="accounts-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:420px; width:100%; max-height:88vh; display:flex; flex-direction:column; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <h4 style="margin:0; font-size:16px;">📒 Accounts</h4>
+                <button onclick="closeAccountsModal()" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
+            </div>
+            <p id="acct-help" style="font-size:12px; color:#666; margin:0 0 10px 0;"></p>
+            <div id="accounts-list" style="overflow-y:auto; flex:1;"></div>
+            <div id="acct-create-view" style="display:none; overflow-y:auto; flex:1;">
+                <div style="font-size:11px; font-weight:700; color:#888; margin-bottom:6px;">CATEGORY</div>
+                <div id="acct-cat-chips"></div>
+                <div id="acct-cat-note" style="font-size:11px; color:#888; margin:0 0 8px;"></div>
+                <div style="display:flex; gap:6px; margin:4px 0 4px; align-items:center;">
+                    <input type="text" id="acct-new-cat-name" placeholder="Create new category" maxlength="30" style="flex:1; margin:0; padding:9px 10px; font-size:14px; min-width:0;">
+                    <select id="acct-new-cat-dir" style="margin:0; padding:9px 6px; font-size:13px; width:auto;"><option value="out">Money out</option><option value="in">Money in</option></select>
+                    <button onclick="acctAddCategory()" style="width:auto; margin:0; padding:9px 12px; font-size:13px;">Add</button>
+                </div>
+                <div style="font-size:11px; font-weight:700; color:#888; margin:14px 0 6px;">ACCOUNT NAME</div>
+                <input type="text" id="acct-new-acct-name" placeholder="e.g. Shop rent" maxlength="40" style="width:100%; margin:0 0 12px; padding:10px 12px; font-size:14px; box-sizing:border-box;">
+                <div style="display:flex; gap:8px;">
+                    <button onclick="acctBackToList()" style="flex:1; margin:0; padding:11px; font-size:14px; background:#eee; color:#333; box-shadow:none;">Cancel</button>
+                    <button onclick="acctCreateAccount()" style="flex:2; margin:0; padding:11px; font-size:14px; background:#4CAF50; color:white;">✓ Create account</button>
+                </div>
+            </div>
+            <button id="acct-new-btn" onclick="acctShowCreate()" style="width:100%; margin:10px 0 0; padding:11px; font-size:14px; font-weight:800; background:#4CAF50; color:white;">＋ New account</button>
+        </div>
+    </div>
+
+    <!-- Supplier payment dialog (Track B ledger) -->
+    <div id="supplier-pay-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1600; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:400px; width:100%; max-height:90vh; overflow-y:auto; padding:18px; box-sizing:border-box;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <h4 style="margin:0; font-size:16px;">Supplier Payment</h4>
+                <button onclick="closeSupplierPayDialog()" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
+            </div>
+            <div id="sup-amount-line" style="font-size:13px; font-weight:700; color:#2e7d32; margin-bottom:10px;"></div>
+            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">SUPPLIER</label>
+            <select id="sup-party" onchange="_supPartyChanged()" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:8px; box-sizing:border-box;"></select>
+            <input type="text" id="sup-new-party" placeholder="New supplier name" style="display:none; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:8px; box-sizing:border-box;">
+            <div style="display:flex; gap:8px; margin:6px 0 12px;">
+                <button onclick="_supSetKind('metal')" id="sup-kind-metal" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">⚖️ Metal</button>
+                <button onclick="_supSetKind('piece')" id="sup-kind-piece" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">🧩 Per-piece</button>
+            </div>
+            <div id="sup-metal-box">
+                <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">METAL</label>
+                <select id="sup-metal" onchange="_supRecalc()" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"><option value="Gold">Gold</option><option value="Silver">Silver</option></select>
+                <div style="display:flex; gap:8px;">
+                    <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">WEIGHT (g, pure)</label>
+                    <input type="number" id="sup-weight" oninput="_supRecalc()" step="0.01" min="0" placeholder="0" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
+                    <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">RATE BOOKED (₹/g)</label>
+                    <input type="number" id="sup-rate" oninput="_supRecalc()" step="0.01" min="0" placeholder="optional" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
+                </div>
+                <div id="sup-metal-info" style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.5;"></div>
+            </div>
+            <div id="sup-piece-box" style="display:none;">
+                <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">ITEM / DESCRIPTION</label>
+                <input type="text" id="sup-desc" placeholder="e.g. Boxes, tags, polishing" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;">
+                <div style="display:flex; gap:8px;">
+                    <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">QTY (optional)</label>
+                    <input type="number" id="sup-qty" min="0" step="1" placeholder="0" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
+                    <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">BILL AMOUNT (₹)</label>
+                    <input type="number" id="sup-bill" oninput="_supRecalc()" min="0" step="1" placeholder="blank = old credit" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
+                </div>
+                <div id="sup-piece-info" style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.5;"></div>
+            </div>
+            <button onclick="_confirmSupplierPay()" style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">✓ Save Payment</button>
         </div>
     </div>
 
