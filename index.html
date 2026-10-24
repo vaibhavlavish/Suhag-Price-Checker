@@ -15382,13 +15382,28 @@
             _acctSyncStarted = true;
             const sub = (path, fn) => window.dbOnValue(window.dbRef(window.firebaseDB, path), s => fn(s.val() || {}), err => console.error('[Acct] read error', path, err));
             sub('acctCategories', v => { acctCustomCats = Object.values(v).filter(c => c && c.id); _acctRefresh(); });
-            sub('acctAccounts',   v => { acctAccounts = Object.values(v).filter(a => a && a.id); _acctRefresh(); });
-            sub('parties',        v => { pmParties = Object.values(v).filter(p => p && p.id).sort((a, b) => (a.name || '').localeCompare(b.name || '')); });
+            sub('acctAccounts',   v => { acctAccounts = Object.values(v).filter(a => a && a.id); _acctLoaded = true; _acctMigrateSuppliers(); _acctRefresh(); });
+            sub('parties',        v => { pmParties = Object.values(v).filter(p => p && p.id).sort((a, b) => (a.name || '').localeCompare(b.name || '')); _partiesLoaded = true; _acctMigrateSuppliers(); _acctRefresh(); });
             sub('purchases',      v => { pmPurchases = Object.values(v); });
             sub('payments',       v => { pmPayments = Object.values(v); });
             sub('pieceSupplies',  v => { pmPieceSupplies = Object.values(v); });
             sub('cashbook',       v => { _cbIds = new Set(Object.keys(v)); _cbLoaded = true; _acctMaybeBackfill(); });
             sub('cashbookMeta',   v => { _cbBackfilled = !!(v && v.backfilledAt); _cbMetaLoaded = true; _acctMaybeBackfill(); });
+        }
+        // Supplier accounts created earlier inside the POS become shared suppliers (parties).
+        let _partiesLoaded = false, _acctLoaded = false, _supMigrated = false;
+        function _acctMigrateSuppliers() {
+            if (_supMigrated || !_partiesLoaded || !_acctLoaded || !window.dbSafeUpdate || !window._writeAllowed) return;
+            _supMigrated = true;
+            const legacy = acctAccounts.filter(a => a.categoryId === 'cat_supplier' && !a.archived);
+            if (!legacy.length) return;
+            const upd = {};
+            legacy.forEach(a => {
+                const hit = pmParties.find(x => (x.name || '').toLowerCase() === (a.name || '').toLowerCase());
+                if (!hit) upd['parties/' + a.id] = { id: a.id, name: a.name };
+                upd['acctAccounts/' + a.id + '/archived'] = true;
+            });
+            window.dbSafeUpdate(upd).catch(e => console.error('[Acct] supplier migration failed', e));
         }
         // One-time: copy every entry already in the POS ledger into cashbook/ so the
         // Purchase Manager report has the current data too (not just entries from now on).
@@ -15416,8 +15431,14 @@
             const legacy = acctAccounts.some(a => a.categoryId === ACCT_LEGACY_INCOME.id && !a.archived) ? [ACCT_LEGACY_INCOME] : [];
             return [...ACCT_BUILTIN_CATS, ...legacy, ...acctCustomCats];
         }
-        function _acctEntryTrack() { return _isTrackBActive() ? 'B' : 'A'; }
         function _acctActiveIn(catId) {
+            if (catId === 'cat_supplier') {
+                // Suppliers are the Purchase Manager's parties (shared node) — one list for both apps.
+                const names = new Set(pmParties.map(x => (x.name || '').toLowerCase()));
+                const legacy = acctAccounts.filter(a => a.categoryId === 'cat_supplier' && !a.archived && !names.has((a.name || '').toLowerCase()));
+                return [...pmParties.map(x => ({ id: x.id, name: x.name, categoryId: 'cat_supplier', isSupplier: true })), ...legacy]
+                    .sort((x, y) => (x.name || '').localeCompare(y.name || ''));
+            }
             return acctAccounts.filter(a => a.categoryId === catId && !a.archived).sort((x, y) => (x.name || '').localeCompare(y.name || ''));
         }
         function _acctFind(accountId, dir) {
@@ -15463,7 +15484,7 @@
                             <div style="font-size:11px; color:${c.dir === 'in' ? '#2e7d32' : '#c62828'};">${_ciEsc(c.name)} · ${c.dir === 'in' ? '↓ Money in' : '↑ Money out'}</div>
                         </div>
                         <button onclick="acctRenameAccount('${a.id}')" style="width:auto; margin:0; padding:4px 9px; font-size:13px; background:#eee; color:#333; box-shadow:none;">✎</button>
-                        <button onclick="acctArchiveAccount('${a.id}')" style="width:auto; margin:0; padding:4px 9px; font-size:13px; background:#eee; color:#c62828; box-shadow:none;">✕</button>
+                        ${a.isSupplier ? '' : `<button onclick="acctArchiveAccount('${a.id}')" style="width:auto; margin:0; padding:4px 9px; font-size:13px; background:#eee; color:#c62828; box-shadow:none;">✕</button>`}
                     </div>`;
                 });
             });
@@ -15491,7 +15512,7 @@
             }).join('');
             const sel = _acctAllCats().find(c => c.id === _acctSelCat);
             const note = document.getElementById('acct-cat-note');
-            if (note) note.textContent = (sel && sel.id === 'cat_supplier') ? 'Entries in Supplier ask for supplier, metal / per-piece details.' : '';
+            if (note) note.textContent = (sel && sel.id === 'cat_supplier') ? 'Supplier accounts are the same list as the Purchase Manager suppliers. Entries ask for metal / per-piece details.' : '';
         }
         function acctSelectCat(id) { _acctSelCat = id; _renderAcctCreate(); }
         function acctCreateAccount() {
@@ -15502,18 +15523,26 @@
             if (!cat) { showCustomAlert('Choose a category first.'); return; }
             if (_acctActiveIn(cat.id).some(a => (a.name || '').toLowerCase() === name.toLowerCase())) { showCustomAlert('That account already exists in this category.'); return; }
             const id = crypto.randomUUID();
-            acctAccounts.push({ id, name, categoryId: cat.id });   // show instantly; Firebase listener replaces it
-            window.dbSafeUpdate({ ['acctAccounts/' + id]: { id, name, categoryId: cat.id } }).catch(e => console.error(e));
+            if (cat.id === 'cat_supplier') {
+                // A supplier account IS a Purchase Manager supplier (party) — shared list.
+                pmParties.push({ id, name });
+                window.dbSafeUpdate({ ['parties/' + id]: { id, name } }).catch(e => { console.error(e); showCustomAlert('Could not save the supplier — open the POS from the official link.'); });
+            } else {
+                acctAccounts.push({ id, name, categoryId: cat.id });   // show instantly; Firebase listener replaces it
+                window.dbSafeUpdate({ ['acctAccounts/' + id]: { id, name, categoryId: cat.id } }).catch(e => console.error(e));
+            }
             _acctView = 'list';
             renderAccountsList();
         }
         function acctRenameAccount(id) {
-            const a = acctAccounts.find(x => x.id === id); if (!a) return;
-            const name = (prompt('Rename account:', a.name) || '').trim();
+            const party = pmParties.find(x => x.id === id);
+            const a = party || acctAccounts.find(x => x.id === id); if (!a) return;
+            const name = (prompt(party ? 'Rename supplier (also renames it in Purchase Manager):' : 'Rename account:', a.name) || '').trim();
             if (!name || name === a.name) return;
-            window.dbSafeUpdate({ ['acctAccounts/' + id + '/name']: name }).catch(e => console.error(e));
+            window.dbSafeUpdate({ [(party ? 'parties/' : 'acctAccounts/') + id + '/name']: name }).catch(e => console.error(e));
         }
         function acctArchiveAccount(id) {
+            if (pmParties.some(x => x.id === id)) { showCustomAlert('Suppliers are shared with the Purchase Manager — remove a supplier there.'); return; }
             const a = acctAccounts.find(x => x.id === id); if (!a) return;
             showCustomConfirm('Remove account "' + _ciEsc(a.name) + '"? Past entries keep their history; it just disappears from the list.', 'Remove Account', () => {
                 window.dbSafeUpdate({ ['acctAccounts/' + id + '/archived']: true }).catch(e => console.error(e));
@@ -15543,7 +15572,8 @@
         // ── Cash book copy ──
         function _cashbookFromEntry(e) {
             const rec = {
-                id: e.id, track: (e.track === 'B' ? 'B' : 'A'), ts: e.timestamp, date: _localDateStr(new Date(e.timestamp)),
+                id: e.id, track: 'B', ts: e.timestamp,   // POS ledger always feeds Purchase Manager Track B
+                date: _localDateStr(new Date(e.timestamp)),
                 type: e.type, amount: e.amount || 0, note: e.note || '', source: e.source || ''
             };
             if (e.cashPortion !== undefined) rec.cashPortion = e.cashPortion;
@@ -15606,7 +15636,7 @@
             return Math.max(0, purchased - paid);
         }
         function _supPieceBalance(partyId) {
-            return pmPieceSupplies.filter(r => r.partyId === partyId)
+            return pmPieceSupplies.filter(r => r.partyId === partyId && r.track === 'B')
                 .reduce((s, r) => s + (r.kind === 'payment' ? -(r.amount || 0) : (r.amount || 0)), 0);
         }
         function _openSupplierPayDialog(entry) {
@@ -15616,6 +15646,7 @@
                 pmParties.map(p => `<option value="${_ciEsc(p.id)}">${_ciEsc(p.name)}</option>`).join('') + '<option value="__new">＋ New supplier…</option>';
             document.getElementById('sup-new-party').style.display = 'none';
             document.getElementById('sup-new-party').value = '';
+            if (entry.accountId && pmParties.some(x => x.id === entry.accountId)) document.getElementById('sup-party').value = entry.accountId;
             ['sup-weight', 'sup-rate', 'sup-desc', 'sup-qty', 'sup-bill'].forEach(id => { document.getElementById(id).value = ''; });
             _supSetKind('metal');
             document.getElementById('supplier-pay-modal').style.display = 'flex';
@@ -15649,7 +15680,7 @@
                 const w = parseFloat(document.getElementById('sup-weight').value) || 0;
                 const r = parseFloat(document.getElementById('sup-rate').value) || 0;
                 let t = '';
-                if (pid && pid !== '__new') t += 'Outstanding with this supplier: <b>' + _supOutstanding(pid, metal, _pendingSupEntry.track).toFixed(2) + 'g</b> ' + metal + '<br>';
+                if (pid && pid !== '__new') t += 'Outstanding with this supplier: <b>' + _supOutstanding(pid, metal).toFixed(2) + 'g</b> ' + metal + '<br>';
                 if (w > 0 && r > 0) {
                     const diff = Math.round((w * r - amt) * 100) / 100;
                     t += 'Booked value ₹' + _fmt(w * r) + ' vs paid ₹' + _fmt(amt) + ' → ' +
@@ -15696,13 +15727,13 @@
                 let rate = parseFloat(document.getElementById('sup-rate').value) || 0;
                 if (!(weight > 0)) { showCustomAlert('Enter the weight paid.'); return; }
                 if (!extra['parties/' + partyId]) {
-                    const out = _supOutstanding(partyId, metal, e.track);
+                    const out = _supOutstanding(partyId, metal);
                     if (weight > out + 0.001) { showCustomAlert('Weight is more than the ' + out.toFixed(2) + 'g ' + metal + ' outstanding with this supplier.'); return; }
                 } else { showCustomAlert('A new supplier has nothing outstanding yet — add the purchase in Purchase Manager first.'); return; }
                 if (!(rate > 0)) rate = Math.round((e.amount / weight) * 100) / 100;
                 sup.adjustment = Math.round((weight * rate - e.amount) * 100) / 100;
                 const payId = crypto.randomUUID();
-                extra['payments/' + payId] = { id: payId, partyId, track: e.track || 'A', metal, weight, rate, note: e.note || '', date, createdAt, source: 'pos', ledgerEntryId: e.id, amountPaid: e.amount };
+                extra['payments/' + payId] = { id: payId, partyId, track: 'B', metal, weight, rate, note: e.note || '', date, createdAt, source: 'pos', ledgerEntryId: e.id, amountPaid: e.amount };
                 Object.assign(sup, { metal, weight, rate, paymentId: payId });
                 autoNote = weight + 'g ' + metal + ' @ ₹' + rate;
             } else {
@@ -15711,11 +15742,11 @@
                 const bill = parseFloat(document.getElementById('sup-bill').value) || 0;
                 if (bill > 0) {
                     const billId = crypto.randomUUID();
-                    extra['pieceSupplies/' + billId] = { id: billId, partyId, track: e.track || 'A', kind: 'bill', desc, qty, amount: bill, date, createdAt, source: 'pos', ledgerEntryId: e.id };
+                    extra['pieceSupplies/' + billId] = { id: billId, partyId, track: 'B', kind: 'bill', desc, qty, amount: bill, date, createdAt, source: 'pos', ledgerEntryId: e.id };
                     sup.pieceBillId = billId;
                 }
                 const pId = crypto.randomUUID();
-                extra['pieceSupplies/' + pId] = { id: pId, partyId, track: e.track || 'A', kind: 'payment', desc, qty, amount: e.amount, date, createdAt, source: 'pos', ledgerEntryId: e.id };
+                extra['pieceSupplies/' + pId] = { id: pId, partyId, track: 'B', kind: 'payment', desc, qty, amount: e.amount, date, createdAt, source: 'pos', ledgerEntryId: e.id };
                 sup.piecePayId = pId; sup.desc = desc; sup.qty = qty; sup.billAmount = bill;
                 autoNote = desc || 'per-piece supplies';
             }
@@ -15778,7 +15809,7 @@
                 source: 'manual'
             };
             Object.assign(entry, {
-                track: _acctEntryTrack(), mode: _ledgerMode,
+                mode: _ledgerMode,
                 accountId: acctSel.a.id, accountName: acctSel.a.name,
                 categoryId: acctSel.c.id, categoryName: acctSel.c.name
             });
