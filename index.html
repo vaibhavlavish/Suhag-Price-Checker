@@ -2296,12 +2296,33 @@
 
     <div id="stamp-display-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1550; align-items:center; justify-content:center;">
         <div style="background:white; border-radius:16px; margin:16px; max-width:400px; width:100%; max-height:88vh; display:flex; flex-direction:column; padding:18px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <h4 style="margin:0; font-size:16px;">Stamp Display Names</h4>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h4 style="margin:0; font-size:16px;">Price Display Settings</h4>
                 <button onclick="document.getElementById('stamp-display-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
             </div>
             <label for="pd-custom-text" style="font-size:13px; font-weight:700;">Custom Text (shown below "All taxes inclusive"):</label>
             <textarea id="pd-custom-text" rows="3" placeholder="e.g., Special Offer&#10;5% Making Charge Only" maxlength="120" style="margin:4px 0 12px 0; width:100%; box-sizing:border-box; padding:8px 10px; font-size:14px; font-family:inherit; resize:vertical;"></textarea>
+            <style>
+                .pd-opt { display:flex; align-items:center; justify-content:space-between; box-sizing:border-box; width:100%; min-height:50px; padding:0 14px; margin:0 0 8px 0; background:#f7f3ea; border:1px solid #e6dcc3; border-radius:10px; font-size:14px; font-weight:700; color:#3a3020; cursor:pointer; user-select:none; }
+                .pd-opt .pd-chev { font-size:20px; font-weight:400; color:#8a7a4a; line-height:1; }
+                .pd-opt input.pd-switch { appearance:none; -webkit-appearance:none; position:relative; width:44px; height:26px; margin:0; padding:0; border:none; border-radius:13px; background:#cfc6ad; cursor:pointer; flex:none; transition:background .15s; }
+                .pd-opt input.pd-switch::after { content:''; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:transform .15s; }
+                .pd-opt input.pd-switch:checked { background:#B8902B; }
+                .pd-opt input.pd-switch:checked::after { transform:translateX(18px); }
+            </style>
+            <label class="pd-opt"><span>Show Stamp</span><input type="checkbox" id="pd-show-stamp" class="pd-switch"></label>
+            <label class="pd-opt"><span>Show Weight</span><input type="checkbox" id="pd-show-weight" class="pd-switch"></label>
+            <div class="pd-opt" role="button" tabindex="0" onclick="openStampNamesDialog()"><span>Stamp Display</span><span class="pd-chev">›</span></div>
+            <button onclick="savePriceDisplaySettings()" style="width:100%; margin-top:10px;">Save</button>
+        </div>
+    </div>
+
+    <div id="stamp-names-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1560; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:400px; width:100%; max-height:88vh; display:flex; flex-direction:column; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <h4 style="margin:0; font-size:16px;">Stamp Display</h4>
+                <button onclick="document.getElementById('stamp-names-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
+            </div>
             <p style="font-size:12px; color:#666; margin:0 0 10px 0;">What the Price Display shows for each stamp, e.g. 22K → 22K916. Leave blank to show the stamp as it is.</p>
             <div id="stamp-display-list" style="overflow-y:auto; flex:1;"></div>
             <button onclick="saveStampDisplayNames()" style="width:100%; margin-top:10px;">Save</button>
@@ -3239,6 +3260,7 @@
                 customItems: customItems || {},
                 stampDisplayNames: stampDisplayNames || {},
                 pdCustomText: pdCustomText || '',
+                pdShowStamp: pdShowStamp, pdShowWeight: pdShowWeight,
                 invStampPrintToggle: invStampPrintToggle || {},
                 invTandC: invTandC || '',
                 packagingWeights: packagingWeights || {},
@@ -3835,6 +3857,7 @@
                                 customItems: jsonContent.customItems || {},
                                 stampDisplayNames: jsonContent.stampDisplayNames || {},
                                 pdCustomText: jsonContent.pdCustomText || '',
+                                pdShowStamp: jsonContent.pdShowStamp !== false, pdShowWeight: jsonContent.pdShowWeight !== false,
                                 invStampPrintToggle: jsonContent.invStampPrintToggle || {},
                                 invTandC: jsonContent.invTandC || '',
                                 packagingWeights: jsonContent.packagingWeights || {},
@@ -3879,6 +3902,8 @@
                                 restoreUpdate['jewelryData/config/customItems']      = dataToRestore.customItems || {};
                                 restoreUpdate['jewelryData/config/stampDisplayNames'] = dataToRestore.stampDisplayNames || {};
                                 restoreUpdate['jewelryData/config/pdCustomText'] = dataToRestore.pdCustomText || null;
+                                restoreUpdate['jewelryData/config/pdShowStamp'] = dataToRestore.pdShowStamp !== false;
+                                restoreUpdate['jewelryData/config/pdShowWeight'] = dataToRestore.pdShowWeight !== false;
                                 restoreUpdate['jewelryData/products']                = dataToRestore.products || {};
                                 // Invoices
                                 (dataToRestore.invoiceHistory || []).forEach(inv => {
@@ -4307,6 +4332,16 @@
                 customItems = (v && typeof v === 'object') ? v : {};
                 const m = document.getElementById('custom-items-modal');
                 if (m && m.style.display === 'flex') renderCustomItemsList();
+            });
+            watch('pdShowStamp', v => {
+                pdShowStamp = v !== false;
+                localStorage.setItem('pdShowStamp', String(pdShowStamp));
+                if (pdLastState && priceDisplayOpen) pdRender(pdLastState);
+            });
+            watch('pdShowWeight', v => {
+                pdShowWeight = v !== false;
+                localStorage.setItem('pdShowWeight', String(pdShowWeight));
+                if (pdLastState && priceDisplayOpen) pdRender(pdLastState);
             });
             watch('pdCustomText', v => {
                 pdCustomText = (typeof v === 'string') ? v : '';
@@ -4740,6 +4775,8 @@
             customItems = cloudData.customItems || {};
             stampDisplayNames = cloudData.stampDisplayNames || {};
             pdCustomText = cloudData.pdCustomText || '';
+            pdShowStamp = cloudData.pdShowStamp !== false;
+            pdShowWeight = cloudData.pdShowWeight !== false;
             localStorage.setItem('pdCustomText', pdCustomText);
             localStorage.setItem('stampDisplayNames', JSON.stringify(stampDisplayNames));
             if (document.getElementById('custom-items-modal') && document.getElementById('custom-items-modal').style.display === 'flex') renderCustomItemsList();
@@ -5061,6 +5098,7 @@
                 customItems: config.customItems || {},
                 stampDisplayNames: config.stampDisplayNames || {},
                 pdCustomText: config.pdCustomText || '',
+                pdShowStamp: config.pdShowStamp !== false, pdShowWeight: config.pdShowWeight !== false,
                 hallmarkCharge: (config.hallmarkCharge !== undefined && config.hallmarkCharge !== null && !isNaN(parseFloat(config.hallmarkCharge))) ? parseFloat(config.hallmarkCharge) : null,
                 productDataImportedAt: config.productDataImportedAt || 0,
                 products:         val.products            || {},
@@ -7154,6 +7192,9 @@
         // Cloud: jewelryData/config/stampDisplayNames (keys URL-encoded); localStorage = offline fallback.
         let stampDisplayNames = (() => { try { return JSON.parse(localStorage.getItem('stampDisplayNames')) || {}; } catch (e) { return {}; } })();
         let pdCustomText = (() => { try { return localStorage.getItem('pdCustomText') || ''; } catch (e) { return ''; } })();
+        let pdShowStamp = (() => { try { return localStorage.getItem('pdShowStamp') !== 'false'; } catch (e) { return true; } })();
+        let pdShowWeight = (() => { try { return localStorage.getItem('pdShowWeight') !== 'false'; } catch (e) { return true; } })();
+        let pdLastState = null;
         let priceDisplayOpen = false;
         function pdApplyCustomText() {
             const el = document.getElementById('pd-offer'); if (!el) return;
@@ -7177,6 +7218,7 @@
         }
         // state: null (idle) | {msg} | {price, stamp, weight}. Stamp / weight tiles hide when empty.
         function pdRender(st) {
+            pdLastState = st;
             const idle = document.getElementById('pd-idle'), main = document.getElementById('pd-main'), det = document.getElementById('pd-details');
             if (!st || st.msg) {
                 idle.textContent = st ? st.msg : 'Scan or enter a barcode';
@@ -7186,7 +7228,7 @@
             idle.style.display = 'none'; main.style.display = 'flex';
             document.getElementById('pd-price').textContent = Math.round(st.price).toLocaleString('en-IN');
             pdApplyCustomText();
-            const hasStamp = !!st.stamp, hasWt = st.weight > 0;
+            const hasStamp = pdShowStamp && !!st.stamp, hasWt = pdShowWeight && st.weight > 0;
             document.getElementById('pd-stamp').textContent = st.stamp || '';
             document.getElementById('pd-weight').textContent = hasWt ? Number(st.weight).toFixed(3) : '';
             document.getElementById('pd-stamp-tile').style.display = hasStamp ? 'block' : 'none';
@@ -7218,6 +7260,23 @@
         }
         function openStampDisplaySettings() {
             document.getElementById('pd-custom-text').value = pdCustomText || '';
+            document.getElementById('pd-show-stamp').checked = pdShowStamp;
+            document.getElementById('pd-show-weight').checked = pdShowWeight;
+            document.getElementById('stamp-display-modal').style.display = 'flex';
+        }
+        function savePriceDisplaySettings() {
+            pdCustomText = document.getElementById('pd-custom-text').value.trim();
+            pdShowStamp = document.getElementById('pd-show-stamp').checked;
+            pdShowWeight = document.getElementById('pd-show-weight').checked;
+            localStorage.setItem('pdCustomText', pdCustomText);
+            localStorage.setItem('pdShowStamp', String(pdShowStamp));
+            localStorage.setItem('pdShowWeight', String(pdShowWeight));
+            pdApplyCustomText();
+            if (pdLastState) pdRender(pdLastState);
+            dbSafeUpdateNotify({ 'jewelryData/config/pdCustomText': pdCustomText || null, 'jewelryData/config/pdShowStamp': pdShowStamp, 'jewelryData/config/pdShowWeight': pdShowWeight }, 'The price display settings');
+            document.getElementById('stamp-display-modal').style.display = 'none';
+        }
+        function openStampNamesDialog() {
             let html = '';
             for (const metal in rates) {
                 for (const stamp in rates[metal]) {
@@ -7229,7 +7288,7 @@
                 }
             }
             document.getElementById('stamp-display-list').innerHTML = html || '<div style="color:#888; font-size:13px;">No stamps found.</div>';
-            document.getElementById('stamp-display-modal').style.display = 'flex';
+            document.getElementById('stamp-names-modal').style.display = 'flex';
         }
         function saveStampDisplayNames() {
             const out = {};
@@ -7239,11 +7298,8 @@
             });
             stampDisplayNames = out;
             localStorage.setItem('stampDisplayNames', JSON.stringify(out));
-            pdCustomText = document.getElementById('pd-custom-text').value.trim();
-            localStorage.setItem('pdCustomText', pdCustomText);
-            pdApplyCustomText();
-            dbSafeUpdateNotify({ 'jewelryData/config/stampDisplayNames': Object.keys(out).length ? out : null, 'jewelryData/config/pdCustomText': pdCustomText || null }, 'The price display settings');
-            document.getElementById('stamp-display-modal').style.display = 'none';
+            dbSafeUpdateNotify({ 'jewelryData/config/stampDisplayNames': Object.keys(out).length ? out : null }, 'The stamp display names');
+            document.getElementById('stamp-names-modal').style.display = 'none';
         }
 
         // ═══ CUSTOM ITEMS ═══
