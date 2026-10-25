@@ -327,7 +327,7 @@
             flex-wrap: nowrap;
             gap: 5px;
             -webkit-overflow-scrolling: touch;
-            position: relative;
+            position: sticky; top: 0;   /* iOS 26 Safari tints its top bar from a sticky/fixed element at the top edge */
             border-bottom: 1px solid rgba(255,255,255,0.06);
         }
         #taskbar button {
