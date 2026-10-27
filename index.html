@@ -1398,6 +1398,8 @@
             flex-shrink: 0; align-self: center;
         }
         .ledger-entry-del:hover { color: #f44336; }
+        .ledger-entry .ledger-entry-title .ledger-entry-edit { background: none !important; background-color: transparent !important; border: none !important; box-shadow: none !important; color: #888 !important; font-size: 12px !important; font-weight: 400 !important; line-height: 1 !important; padding: 2px 4px !important; margin: 0 0 0 4px !important; width: auto !important; border-radius: 6px !important; cursor: pointer; opacity: .65; vertical-align: baseline; }
+        .ledger-entry .ledger-entry-title .ledger-entry-edit:hover { opacity: 1; background-color: #f0f0f0 !important; }
 
         .ledger-day-header {
             font-size: 11px; font-weight: 700; color: #aaa;
@@ -13266,7 +13268,7 @@
             const billNo = _invNextBillNo(checkoutTrackC);
 
             const d = new Date();
-            const dateDisp = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+            const dateDisp = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}` + _invTimeSuffix(checkoutTrackC, d.toISOString());
 
             const paymentMethod = paymentMode || 'none';
             const paymentDetails = paymentMode === 'partial' ? (paymentSplit || {}) : {};
@@ -14629,7 +14631,7 @@
                     <div class="ledger-entry">
                         <div class="ledger-entry-icon ${iconClass}">${icons[e.type]||'📝'}</div>
                         <div class="ledger-entry-body">
-                            <div class="ledger-entry-title">${labels[e.type]||e.type}</div>
+                            <div class="ledger-entry-title">${labels[e.type]||e.type}${_ledgerEditFull(e) ? `<button class="ledger-entry-edit" data-entry-id="${String(e.id).replace(/"/g,'&quot;')}" aria-label="Edit entry" title="Edit">✏️</button>` : ''}</div>
                             <div class="ledger-entry-meta">${time}${_ledgerTagHtml(e)}${e.source === 'checkout' ? ' · checkout' : e.source === 'invoice' ? ' · From Invoice' : e.source === 'installment' ? ' · From Installment Plan' : e.source === 'credit' ? ' · Credit Received' : ' · Manual'}</div>
                             ${e.note ? `<div class="ledger-entry-note">${e.note}</div>` : ''}
                         </div>
@@ -14645,6 +14647,8 @@
             // id containing characters that could break an inline onclick string.
             if (!el.dataset.deleteHandlerAttached) {
                 el.addEventListener('click', function(ev) {
+                    const eb = ev.target.closest('.ledger-entry-edit');
+                    if (eb) { openLedgerEntryEdit(eb.dataset.entryId); return; }
                     const btn = ev.target.closest('.ledger-entry-del');
                     if (!btn) return;
                     deleteLedgerEntry(btn.dataset.entryId);
@@ -15448,7 +15452,20 @@
             }
             return acctAccounts.filter(a => a.categoryId === catId && !a.archived).sort((x, y) => (x.name || '').localeCompare(y.name || ''));
         }
+        // Ad-hoc names made with the ＋ button in the Paid-to picker: they live only on the ledger entry
+        // (accountId 'adhoc:<categoryId>:<name>'), never as a real account/supplier.
+        const _adhocAccts = {};
+        function _adhocEnsureOption(id) {
+            const a = _adhocAccts[id], sel = document.getElementById('ledger-entry-account');
+            if (!a || !sel || [...sel.options].some(o => o.value === id)) return;
+            const o = document.createElement('option'); o.value = id; o.textContent = a.name; sel.appendChild(o);
+        }
         function _acctFind(accountId, dir) {
+            if (typeof accountId === 'string' && accountId.indexOf('adhoc:') === 0) {
+                const a = _adhocAccts[accountId];
+                const c = a && _acctAllCats().find(x => x.id === a.categoryId);
+                return (a && c && c.dir === dir) ? { a, c } : null;
+            }
             for (const c of _acctAllCats()) {
                 if (c.dir !== dir) continue;
                 const a = _acctActiveIn(c.id).find(x => x.id === accountId);
@@ -15626,7 +15643,7 @@
                 html += `<optgroup label="${_ciEsc(c.name)}">` + list.map(a => `<option value="${a.id}">${_ciEsc(a.name)}</option>`).join('') + '</optgroup>';
             });
             sel.innerHTML = '<option value="">' + (count ? '— Select account —' : 'No accounts yet — add in More → Accounts') + '</option>' + html;
-            if (prev) sel.value = prev;
+            if (prev) { _adhocEnsureOption(prev); sel.value = prev; }
             _acctPickLabel();
             _acctRenderShortcuts();
         }
@@ -15673,22 +15690,45 @@
             const cats = _acctAllCats().filter(c => c.dir === dir).sort((a, b) => rank(a) - rank(b));
             const tile = a => `<button onclick="pickAcct('${a.id}')" style="background:${a.id === cur ? '#fff4d6' : '#f7f7f5'}; color:#222; border:1.5px solid ${a.id === cur ? '#b8860b' : '#e0e0da'}; border-radius:12px; padding:12px 4px; margin:0; text-align:center; box-shadow:none; width:100%; font-size:13px; font-weight:700; line-height:1.2; word-break:break-word; min-width:0;">${_ciEsc(a.name)}</button>`;
             const head = c => `<div style="grid-column:1/-1; font-size:11px; font-weight:800; letter-spacing:.06em; color:#888; text-transform:uppercase; margin:6px 0 0;">${_ciEsc(c.name)}</div>`;
+            const plusTile = c => `<button onclick="openAdhocDialog('${c.id}')" aria-label="Add a name under ${_ciEsc(c.name)}" style="background:#e8f5e9; color:#2e7d32; border:1.5px dashed #81c784; border-radius:12px; padding:12px 4px; margin:0; text-align:center; box-shadow:none; width:100%; font-size:20px; font-weight:800; line-height:1.2; min-width:0;">＋</button>`;
             let html = '', total = 0;
             cats.forEach(c => {
                 const list = _acctActiveIn(c.id).filter(a => !term || (a.name || '').toLowerCase().includes(term));
-                if (!list.length) return;
-                total += list.length;
+                const plusCat = !term && (c.id === 'cat_expense' || c.id === 'cat_supplier' || (c.dir === 'in' && (c.name || '').trim().toLowerCase() === 'pocket'));
+                if (!list.length && !plusCat) return;
+                total += Math.max(list.length, plusCat ? 1 : 0);
+                if (!list.length) { html += head(c) + plusTile(c); return; }
                 if (c.id === 'cat_supplier') {
                     const open = _acctPickSupOpen || !!term;
                     html += `<button onclick="acctPickToggleSup()" style="grid-column:1/-1; display:flex; justify-content:space-between; align-items:center; width:100%; margin:8px 0 0; padding:11px 14px; background:#faf7ef; color:#222; border:1.5px solid #e6dcc3; border-radius:12px; box-shadow:none; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;"><span>${_ciEsc(c.name)}</span><span style="color:#888;">${list.length} &nbsp;${open ? '▴' : '▾'}</span></button>`;
                     if (open) html += list.map(tile).join('');
+                    if (plusCat) html += plusTile(c);
                 } else {
-                    html += head(c) + list.map(tile).join('');
+                    html += head(c) + list.map(tile).join('') + (plusCat ? plusTile(c) : '');
                 }
             });
             if (!total) html = '<div style="grid-column:1/-1; text-align:center; color:#888; font-size:13px; padding:24px 0;">' +
                 (term ? 'No accounts match your search.' : 'No accounts yet — add them from More → Accounts.') + '</div>';
             document.getElementById('acct-pick-list').innerHTML = html;
+        }
+        let _adhocCat = '';
+        function openAdhocDialog(catId) {
+            _adhocCat = catId;
+            const c = _acctAllCats().find(x => x.id === catId);
+            document.getElementById('adhoc-cat-line').textContent = 'Shows as its own heading under "' + (c ? c.name : '') + '" in the report. No account is created.';
+            const inp = document.getElementById('adhoc-name'); inp.value = '';
+            document.getElementById('acct-adhoc-modal').style.display = 'flex';
+            setTimeout(() => inp.focus(), 80);
+        }
+        function closeAdhocDialog() { document.getElementById('acct-adhoc-modal').style.display = 'none'; }
+        function adhocConfirm() {
+            const name = (document.getElementById('adhoc-name').value || '').trim().replace(/\s+/g, ' ');
+            if (!name) { document.getElementById('adhoc-name').focus(); return; }
+            const id = 'adhoc:' + _adhocCat + ':' + name.toLowerCase();
+            _adhocAccts[id] = { id, name, categoryId: _adhocCat, adhoc: true };
+            _adhocEnsureOption(id);
+            closeAdhocDialog();
+            pickAcct(id);
         }
         function pickAcct(id) {
             const sel = document.getElementById('ledger-entry-account');
@@ -15698,7 +15738,79 @@
             closeAcctPicker();
         }
 
+        // ── Ledger: date helpers + edit mode ──
+        let _ledgerEditId = null;
+        function _ledgerTsFor(dateVal, baseIso) {
+            const b = baseIso ? new Date(baseIso) : new Date();
+            const pr = (dateVal || '').split('-').map(Number);
+            if (pr.length !== 3 || pr.some(isNaN)) return b.toISOString();
+            b.setFullYear(pr[0], pr[1] - 1, pr[2]);
+            return b.toISOString();
+        }
+        function _ledgerEditFull(e) { return e.source === 'manual' && !e.supplier && (e.type === 'in' || e.type === 'expense'); }
+        function _ledgerModalLock(full) {
+            document.getElementById('ledger-type-row').style.display = full ? 'flex' : 'none';
+            document.getElementById('ledger-b-fields').style.display = full ? 'block' : 'none';
+            document.getElementById('ledger-entry-amount').readOnly = !full;
+            document.getElementById('ledger-entry-date').disabled = !full;
+            const h = document.getElementById('ledger-edit-hint');
+            h.style.display = full ? 'none' : 'block';
+            h.textContent = full ? '' : 'This entry is linked to a sale / payment, so only the note can be edited here.';
+        }
+        function openLedgerEntryEdit(id) {
+            if (!checkPin()) return;
+            const e = ledgerEntries.find(x => String(x.id) === String(id)); if (!e) return;
+            const full = _ledgerEditFull(e);
+            _ledgerEditId = e.id;
+            if (full) {
+                setLedgerEntryType(e.type);
+                setLedgerMode(e.mode || 'cash');
+                _ledgerBRefresh();
+                if (String(e.accountId || '').indexOf('adhoc:') === 0) {
+                    _adhocAccts[e.accountId] = { id: e.accountId, name: e.accountName, categoryId: e.categoryId, adhoc: true };
+                    _adhocEnsureOption(e.accountId);
+                }
+                document.getElementById('ledger-entry-account').value = e.accountId || '';
+                _acctPickLabel(); _acctRenderShortcuts();
+            }
+            document.getElementById('ledger-modal-title').textContent = full ? '✏️ Edit Entry' : '✏️ Edit Note';
+            document.getElementById('ledger-entry-amount').value = e.amount;
+            document.getElementById('ledger-entry-note').value = e.note || '';
+            document.getElementById('ledger-entry-date').value = _localDateStr(new Date(e.timestamp));
+            document.getElementById('ledger-entry-date').max = _localDateStr(new Date());
+            _ledgerModalLock(full);
+            document.getElementById('ledger-save-btn').textContent = '✓ Save Changes';
+            document.getElementById('ledger-entry-modal').classList.add('show');
+        }
+        function _saveLedgerEdit() {
+            _saveLedgerInProgress = false;
+            const e = ledgerEntries.find(x => String(x.id) === String(_ledgerEditId));
+            if (!e) { closeLedgerEntryModal(); return; }
+            if (_ledgerEditFull(e)) {
+                const amt = parseFloat(document.getElementById('ledger-entry-amount').value);
+                if (!amt || amt <= 0) { showCustomAlert('Please enter a valid amount.'); return; }
+                const dateVal = document.getElementById('ledger-entry-date').value;
+                if (dateVal && dateVal > _localDateStr(new Date())) { showCustomAlert('Date cannot be in the future.'); return; }
+                const aid = document.getElementById('ledger-entry-account').value;
+                const acctSel = aid ? _acctFind(aid, _ledgerEntryType === 'in' ? 'in' : 'out') : null;
+                if (!acctSel) { showCustomAlert('Select an account first.'); return; }
+                if (acctSel.c.system === 'supplier' && !acctSel.a.adhoc) { showCustomAlert('Supplier payments need the supplier dialog — delete this entry and add a new one for that.'); return; }
+                Object.assign(e, { type: _ledgerEntryType, amount: amt, mode: _ledgerMode, accountId: acctSel.a.id, accountName: acctSel.a.name, categoryId: acctSel.c.id, categoryName: acctSel.c.name });
+                if (dateVal) e.timestamp = _ledgerTsFor(dateVal, e.timestamp);
+            }
+            e.note = document.getElementById('ledger-entry-note').value.trim();
+            _saveLedgerLocal();
+            _saveLedgerRecord(e);
+            renderLedger();
+            closeLedgerEntryModal();
+            showCustomAlert('Entry updated!');
+        }
+
         function openLedgerEntryModal(type) {
+            _ledgerEditId = null;
+            _ledgerModalLock(true);
+            { const dEl = document.getElementById('ledger-entry-date'); dEl.max = _localDateStr(new Date()); dEl.value = dEl.max; }
+            document.getElementById('ledger-save-btn').textContent = '✓ Save Entry';
             setLedgerEntryType(type || 'in');
             document.getElementById('ledger-entry-amount').value = '';
             document.getElementById('ledger-entry-note').value = '';
@@ -15712,9 +15824,28 @@
         // ── Supplier payment dialog ──
         function _supOutstanding(partyId, metal, track) {
             track = track || 'B';
-            const purchased = pmPurchases.filter(p => p.partyId === partyId && p.track === track && p.metal === metal && p.status === 'credit').reduce((s, p) => s + (p.weight || 0), 0);
+            const purchased = pmPurchases.filter(p => p.partyId === partyId && p.track === track && p.metal === metal && p.status === 'credit' && !((p.rate || 0) > 0)).reduce((s, p) => s + (p.weight || 0), 0);
             const paid = pmPayments.filter(p => p.partyId === partyId && p.track === track && p.metal === metal).reduce((s, p) => s + (p.weight || 0), 0);
             return Math.max(0, purchased - paid);
+        }
+        // ₹ (cash) owed to the supplier: credit-in-amount purchases + locked-rate credit purchases,
+        // less any amount payments — same rule the Purchase Manager uses.
+        function _supCashOwed(partyId, track) {
+            track = track || 'B';
+            const owed = pmPurchases.filter(p => p.partyId === partyId && p.track === track && p.status === 'credit' && (p.creditType === 'amount' || (p.rate || 0) > 0))
+                .reduce((s, p) => s + (p.creditType === 'amount' ? (p.amount || 0) : (p.weight || 0) * (p.rate || 0) + (p.extra || 0)), 0);
+            const paid = pmPayments.filter(p => p.partyId === partyId && p.track === track && p.payType === 'amount').reduce((s, p) => s + (p.amount || 0), 0);
+            return Math.max(0, owed - paid);
+        }
+        function _supRenderBalance() {
+            const box = document.getElementById('sup-balance-box'); if (!box) return;
+            const pid = document.getElementById('sup-party').value;
+            if (!pid || pid === '__new') { box.style.display = 'none'; return; }
+            const cell = (lbl, val, bad) => `<div style="flex:1; min-width:70px;"><div style="font-size:10px; color:#888; font-weight:700;">${lbl}</div><div style="font-size:14px; font-weight:800; color:${bad ? '#c62828' : '#2e7d32'};">${val}</div></div>`;
+            const g = _supOutstanding(pid, 'Gold'), si = _supOutstanding(pid, 'Silver'), c = _supCashOwed(pid), pc = Math.max(0, _supPieceBalance(pid));
+            box.innerHTML = '<div style="font-size:11px; font-weight:800; color:#888; margin-bottom:6px;">OWED TO THIS SUPPLIER</div><div style="display:flex; flex-wrap:wrap; gap:8px;">' +
+                cell('CASH', '₹' + _fmt(c), c > 0.5) + cell('GOLD', g.toFixed(2) + 'g', g > 0.001) + cell('SILVER', si.toFixed(2) + 'g', si > 0.001) + cell('PER-PIECE', '₹' + _fmt(pc), pc > 0.5) + '</div>';
+            box.style.display = 'block';
         }
         function _supPieceBalance(partyId) {
             return pmPieceSupplies.filter(r => r.partyId === partyId && r.track === 'B')
@@ -15754,6 +15885,7 @@
         }
         function _supRecalc() {
             if (!_pendingSupEntry) return;
+            _supRenderBalance();
             const amt = _pendingSupEntry.amount;
             const pid = document.getElementById('sup-party').value;
             if (_supKind === 'metal') {
@@ -15797,7 +15929,7 @@
             } else {
                 const p = pmParties.find(x => x.id === partyId); partyName = p ? p.name : '';
             }
-            const now = new Date();
+            const now = new Date(e.timestamp || Date.now());
             const date = _localDateStr(now);
             const createdAt = new Date(date + 'T12:00:00.000Z').toISOString();
             const sup = { partyId, partyName, kind: _supKind, adjustment: 0 };
@@ -15838,6 +15970,7 @@
             closeLedgerEntryModal();
         }
         function closeLedgerEntryModal() {
+            _ledgerEditId = null;
             document.getElementById('ledger-entry-modal').classList.remove('show');
         }
 
@@ -15861,6 +15994,7 @@
             if (_saveLedgerInProgress) { console.warn('[Guard] saveLedgerEntry double-submit blocked'); return; }
             _saveLedgerInProgress = true;
             setTimeout(() => { _saveLedgerInProgress = false; }, 1500); // reset after 1.5s
+            if (_ledgerEditId) { _saveLedgerEdit(); return; }
             const amt = parseFloat(document.getElementById('ledger-entry-amount').value);
             if (!amt || amt <= 0) { _saveLedgerInProgress = false; showCustomAlert('Please enter a valid amount.'); return; }
             const note = document.getElementById('ledger-entry-note').value.trim();
@@ -15871,6 +16005,8 @@
                 acctSel = aid ? _acctFind(aid, _ledgerEntryType === 'in' ? 'in' : 'out') : null;
                 if (!acctSel) { _saveLedgerInProgress = false; showCustomAlert('Select an account first. You can create accounts from More → Accounts.'); return; }
             }
+            const _entryDate = document.getElementById('ledger-entry-date').value;
+            if (_entryDate && _entryDate > _localDateStr(new Date())) { _saveLedgerInProgress = false; showCustomAlert('Date cannot be in the future.'); return; }
             // Pre-write dedup: reject if a matching entry already exists within last 5 seconds
             const now = Date.now();
             const isDuplicate = ledgerEntries.some(e =>
@@ -15886,7 +16022,7 @@
                 type: _ledgerEntryType,
                 amount: amt,
                 note,
-                timestamp: new Date().toISOString(),
+                timestamp: _ledgerTsFor(_entryDate, null),
                 source: 'manual'
             };
             Object.assign(entry, {
@@ -15894,7 +16030,7 @@
                 accountId: acctSel.a.id, accountName: acctSel.a.name,
                 categoryId: acctSel.c.id, categoryName: acctSel.c.name
             });
-            if (acctSel.c.system === 'supplier') { _openSupplierPayDialog(entry); return; }
+            if (acctSel.c.system === 'supplier' && !acctSel.a.adhoc) { _openSupplierPayDialog(entry); return; }
             ledgerEntries.push(entry);
             _saveLedgerLocal();
             _saveLedgerRecord(entry); // single-record Firebase write
@@ -17799,6 +17935,13 @@
             return isNaN(merged) ? fallback : merged.toISOString();
         }
 
+        // Track B only: " 10:15 AM" to append beside an invoice date. Track A stays date-only.
+        function _invTimeSuffix(track, iso) {
+            if (track !== 'B') return '';
+            const d = iso ? new Date(iso) : new Date();
+            if (isNaN(d)) return '';
+            return ' ' + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).toUpperCase();
+        }
         function invSetTodayDate() {
             const el = document.getElementById('inv-date');
             if (el && !el.value) {
@@ -17858,7 +18001,8 @@
             const paymentDetails = window._invPaymentDetails || {};
 
             const dp = dateRaw.split('-');
-            const dateDisp = dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0]}` : dateRaw;
+            const _eInv = (invEditingId && invoiceHistory.find(i => i.id === invEditingId)) || null;
+            const dateDisp = (dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0]}` : dateRaw) + _invTimeSuffix(_eInv ? _eInv.track : currentInvTrack, _eInv ? _eInv.timestamp : null);
 
             const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
             const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows), invHmTotal(invRows));
@@ -18655,7 +18799,7 @@
                 return `<div class="hist-item" onclick="invOpenBillDetail('${inv.id}')">
                   <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                     <div style="flex:1;">
-                      <div style="font-size:11px;color:var(--text2);">${ds} ${badge}${draftTag}</div>
+                      <div style="font-size:11px;color:var(--text2);">${ds}${_invTimeSuffix(inv.track, inv.timestamp)} ${badge}${draftTag}</div>
                       <div style="font-size:14px;font-weight:700;color:var(--text);margin:2px 0;">${invEscH(inv.custName||'—')}</div>
                       <div style="font-size:11px;color:#aaa;">${inv.billNo} · ${inv.items?.length||0} item(s)</div>
                     </div>
@@ -18734,7 +18878,7 @@
             if (!inv) return;
             if (inv.track === 'B' && !invTrackBUnlocked) return;
 
-            const dt = new Date(inv.timestamp).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+            const dt = new Date(inv.timestamp).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) + _invTimeSuffix(inv.track, inv.timestamp);
             const t = inv.totals || {};
             document.getElementById('inv-bill-modal-title').textContent = inv.billNo;
 
@@ -18769,7 +18913,6 @@
                 </div>
                 ${inv.track === 'B' ? `<div style="margin-top:8px;">
                   <button onclick="invCopyToTrackA('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="width:100%;background:#4CAF50;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">➡️ Copy to Track A</button>
-                  <button onclick="invMoveToTrackA('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="width:100%;background:#FF9800;color:white;border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:none;margin:8px 0 0;">↪️ Move to Track A</button>
                 </div>` : ''}`;
             document.getElementById('inv-bill-modal').style.display = 'flex';
         }
@@ -18875,7 +19018,7 @@
                   <input type="checkbox" class="inv-bulk-chk" value="${inv.id}" onchange="_invBulkUpdateCount()" style="width:16px;height:16px;flex-shrink:0;margin:0;">
                   <span style="flex:1;">
                     <span style="font-weight:700;">${invEscH(inv.custName||'—')}</span>
-                    <span style="color:#999;"> · ${inv.billNo} · ${ds}</span>
+                    <span style="color:#999;"> · ${inv.billNo} · ${ds}${_invTimeSuffix(inv.track, inv.timestamp)}</span>
                   </span>
                   <span style="font-weight:700;color:var(--green);">₹${amt.toLocaleString('en-IN')}</span>
                 </label>`;
@@ -19856,6 +19999,8 @@
         <div id="ledger-entry-panel">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
                 <h3 id="ledger-modal-title" style="margin:0; font-size:18px; color:#1a1a1a;">Add Entry</h3>
+                <input type="date" id="ledger-entry-date" aria-label="Entry date" onclick="try{this.showPicker()}catch(e){}"
+                       style="margin:0 10px 0 auto; width:auto; flex-shrink:0; padding:6px 8px; border:1.5px solid #bbdefb; border-radius:10px; font-size:13px; font-weight:700; color:#1565C0; background:#f0f6ff; cursor:pointer;">
                 <button onclick="closeLedgerEntryModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
             </div>
 
@@ -19887,6 +20032,8 @@
                    onkeydown="if(event.key==='Enter') saveLedgerEntry()"
                    style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:16px; box-sizing:border-box;">
 
+            <div id="ledger-edit-hint" style="display:none; font-size:12px; color:#e65100; margin:0 0 14px;"></div>
+
             <button onclick="saveLedgerEntry()" id="ledger-save-btn"
                 style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">
                 ✓ Save Entry
@@ -19903,6 +20050,21 @@
             </div>
             <input type="search" id="acct-pick-search" placeholder="🔍 Search accounts…" oninput="renderAcctPicker()" autocomplete="off" style="width:100%; margin:0 0 10px 0; padding:10px 12px; font-size:14px; border:1.5px solid #ddd; border-radius:10px; box-sizing:border-box;">
             <div id="acct-pick-list" style="overflow-y:auto; flex:1; display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; align-content:start;"></div>
+        </div>
+    </div>
+
+    <!-- Ad-hoc name (＋ in Paid-to picker) -->
+    <div id="acct-adhoc-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1800; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:360px; width:100%; padding:18px; box-sizing:border-box;">
+            <div style="font-size:16px; font-weight:800; margin-bottom:6px;">Add a name</div>
+            <div id="adhoc-cat-line" style="font-size:12px; color:#666; margin-bottom:12px;"></div>
+            <input type="text" id="adhoc-name" maxlength="40" placeholder="e.g. Courier charges" autocomplete="off"
+                   onkeydown="if(event.key==='Enter') adhocConfirm()"
+                   style="width:100%; margin:0 0 14px; padding:11px 12px; font-size:15px; border:1.5px solid #e0e0e0; border-radius:10px; box-sizing:border-box;">
+            <div style="display:flex; gap:8px;">
+                <button onclick="closeAdhocDialog()" style="flex:1; margin:0; padding:12px; font-size:14px; background:#eee; color:#333; box-shadow:none;">Cancel</button>
+                <button onclick="adhocConfirm()" style="flex:1; margin:0; padding:12px; font-size:14px; font-weight:800; background:#4CAF50; color:white;">OK</button>
+            </div>
         </div>
     </div>
 
@@ -19946,6 +20108,7 @@
             <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">SUPPLIER</label>
             <select id="sup-party" onchange="_supPartyChanged()" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:8px; box-sizing:border-box;"></select>
             <input type="text" id="sup-new-party" placeholder="New supplier name" style="display:none; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:8px; box-sizing:border-box;">
+            <div id="sup-balance-box" style="display:none; background:#F7F7F5; border-radius:10px; padding:10px 12px; margin:2px 0 6px;"></div>
             <div style="display:flex; gap:8px; margin:6px 0 12px;">
                 <button onclick="_supSetKind('metal')" id="sup-kind-metal" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">⚖️ Metal</button>
                 <button onclick="_supSetKind('piece')" id="sup-kind-piece" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">🧩 Per-piece</button>
