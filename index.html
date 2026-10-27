@@ -4820,7 +4820,7 @@
             // (5-tap toggles write here; other open devices pick this up live
             // via this same onValue snapshot). localStorage stays in sync as
             // an offline-fallback cache only.
-            if (cloudData.checkoutTrack === 'A' || cloudData.checkoutTrack === 'B') {
+            if (cloudData.checkoutTrack === 'A' || cloudData.checkoutTrack === 'B' || cloudData.checkoutTrack === 'both') {
                 invCheckoutTrackSynced = cloudData.checkoutTrack;
                 localStorage.setItem('invCheckoutTrack', invCheckoutTrackSynced);
             } else {
@@ -13005,6 +13005,7 @@
                 invoiceHistory.unshift(record);
                 _saveInvoiceLocal();
                 _saveInvoiceRecord(record);
+                _invSaveTrackACopy(record);
                 return { ok: true, invoiceId: record.id };
             } catch (e) {
                 // Previously this was swallowed with only a console.error — the sale
@@ -13099,8 +13100,23 @@
         // see invHandleSettingsHeadingTap(). Universal/cloud-synced (see applyDataSnapshot)
         // so the same track/format follow across every device, not just this one.
         // ══════════════════════════════════════════════════════════
-        function invGetCheckoutTrack() {
-            return (invCheckoutTrackSynced === 'A' || invCheckoutTrackSynced === 'B') ? invCheckoutTrackSynced : 'B';
+        // Two checkout modes now: 'B' = save to Track B only, 'both' = save to Track B AND a copy in Track A.
+        // The primary checkout track is therefore always B (an old saved 'A' value behaves as 'B').
+        function invGetCheckoutTrack() { return 'B'; }
+        function invCheckoutBoth() { return invCheckoutTrackSynced === 'both'; }
+        // "Both tracks" mode: after the Track B invoice is saved, file an identical Track A copy
+        // (same bill number — A and B share the number by design). The copy has its own id, and
+        // carries no creditor link so a credit sale isn't counted twice.
+        function _invSaveTrackACopy(rec) {
+            if (!invCheckoutBoth() || !rec || rec.track !== 'B') return;
+            const copy = JSON.parse(JSON.stringify(rec));
+            copy.id = crypto.randomUUID();
+            copy.track = 'A';
+            copy.mirrorOf = rec.id;
+            delete copy.creditorId; delete copy.creditAmount;
+            invoiceHistory.unshift(copy);
+            _saveInvoiceLocal();
+            _saveInvoiceRecord(copy);
         }
 
         function invSetCheckoutTrack(track) {
@@ -13117,9 +13133,9 @@
             if (_invSettingsTapCount >= 5) {
                 _invSettingsTapCount = 0;
                 clearTimeout(_invSettingsTapTimer);
-                const next = invGetCheckoutTrack() === 'B' ? 'A' : 'B';
+                const next = invCheckoutBoth() ? 'B' : 'both';
                 invSetCheckoutTrack(next);
-                invToast(next === 'A' ? '🔒 Checkout billing → Track A' : '🔓 Checkout billing → Track B');
+                invToast(next === 'both' ? '🔀 Checkout billing → Both tracks (A + B)' : '🔓 Checkout billing → Track B only');
             }
         }
 
@@ -13627,6 +13643,7 @@
                 invoiceHistory.unshift(invoiceRecordOverride);
                 _saveInvoiceLocal();
                 _saveInvoiceRecord(invoiceRecordOverride);
+                _invSaveTrackACopy(invoiceRecordOverride);
                 _savedInvoiceId = invoiceRecordOverride.id;
             } else {
                 const _saveResult = _invAutoSaveFromCheckout(
