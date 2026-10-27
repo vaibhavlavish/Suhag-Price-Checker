@@ -2272,6 +2272,7 @@
     </div>
 
     <div id="price-display-screen" style="display:none; position:fixed; inset:0; z-index:1400; background:#14110d; color:#F5EFE0; font-family:Jost,'Segoe UI',sans-serif; flex-direction:column; align-items:center; padding:max(44px,env(safe-area-inset-top)) 26px 0; box-sizing:border-box;">
+        <canvas id="pd-fireworks" style="position:absolute; inset:0; width:100%; height:100%; z-index:-1; pointer-events:none;"></canvas>
         <div style="position:absolute; inset:12px; border:1px solid #5a4a22; pointer-events:none;"></div>
         <img src="icon-192.png" alt="Suhag Jewellers" width="76" height="76" style="border-radius:50%;" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
         <svg style="display:none;" width="76" height="76" viewBox="0 0 76 76" aria-hidden="true"><circle cx="38" cy="40" r="31" fill="none" stroke="#D4AF37" stroke-width="1.5"/><circle cx="38" cy="40" r="26" fill="none" stroke="#5a4a22" stroke-width="1"/><path d="M38 2 L44 10 L38 18 L32 10 Z" fill="#E8C766"/><text x="38" y="52" text-anchor="middle" font-family="Georgia,serif" font-size="36" font-weight="700" fill="#E8C766">S</text></svg>
@@ -7248,11 +7249,73 @@
             pdRender(null);
             document.getElementById('price-display-screen').style.display = 'flex';
             const inp = document.getElementById('pd-input'); inp.value = ''; inp.focus();
+            pdFireworksStart();
         }
         function closePriceDisplay() {
             priceDisplayOpen = false;
             document.getElementById('price-display-screen').style.display = 'none';
+            pdFireworksStop();
         }
+        // ── Fireworks behind the price display (runs only while the screen is open) ──
+        let _fw = null;
+        function pdFireworksStart() {
+            const cv = document.getElementById('pd-fireworks');
+            if (!cv || _fw) return;
+            const ctx = cv.getContext('2d');
+            const COLORS = ['#D4AF37', '#E8C766', '#F5EFE0', '#FFB347', '#ff7a59', '#9fd8ff'];
+            let W = 0, H = 0, dpr = 1;
+            const rockets = [], sparks = [];
+            function resize() {
+                dpr = Math.min(window.devicePixelRatio || 1, 2);
+                W = cv.clientWidth; H = cv.clientHeight;
+                cv.width = W * dpr; cv.height = H * dpr;
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+            resize();
+            const onResize = () => resize();
+            window.addEventListener('resize', onResize);
+            function launch() {
+                rockets.push({ x: W * (0.12 + Math.random() * 0.76), y: H, vx: (Math.random() - 0.5) * 1.2,
+                    vy: -(H * 0.012 + Math.random() * H * 0.006), targetY: H * (0.12 + Math.random() * 0.38),
+                    color: COLORS[(Math.random() * COLORS.length) | 0] });
+            }
+            function burst(x, y, color) {
+                const n = 55 + ((Math.random() * 35) | 0), pow = 2 + Math.random() * 2.6;
+                for (let i = 0; i < n && sparks.length < 450; i++) {
+                    const a = (i / n) * Math.PI * 2, sp = pow * (0.45 + Math.random() * 0.55);
+                    sparks.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, decay: 0.008 + Math.random() * 0.012,
+                        color: Math.random() < 0.25 ? '#F5EFE0' : color });
+                }
+            }
+            let last = 0, nextLaunch = 0, raf = 0;
+            function frame(t) {
+                raf = requestAnimationFrame(frame);
+                if (t - last < 28) return; // ~35 fps is plenty and kind to phones
+                last = t;
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(0, 0, W, H); // fade → trails
+                ctx.globalCompositeOperation = 'lighter';
+                if (t > nextLaunch && rockets.length < 3) { launch(); nextLaunch = t + 700 + Math.random() * 1400; }
+                for (let i = rockets.length - 1; i >= 0; i--) {
+                    const r = rockets[i];
+                    r.x += r.vx; r.y += r.vy; r.vy += 0.035;
+                    ctx.fillStyle = r.color; ctx.globalAlpha = 0.9;
+                    ctx.beginPath(); ctx.arc(r.x, r.y, 1.8, 0, 6.283); ctx.fill();
+                    if (r.y <= r.targetY || r.vy >= -0.6) { burst(r.x, r.y, r.color); rockets.splice(i, 1); }
+                }
+                for (let i = sparks.length - 1; i >= 0; i--) {
+                    const p = sparks[i];
+                    p.x += p.vx; p.y += p.vy; p.vx *= 0.985; p.vy = p.vy * 0.985 + 0.045; p.life -= p.decay;
+                    if (p.life <= 0) { sparks.splice(i, 1); continue; }
+                    ctx.globalAlpha = Math.max(0, p.life) * 0.9; ctx.fillStyle = p.color;
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 1.5, 0, 6.283); ctx.fill();
+                }
+                ctx.globalAlpha = 1;
+            }
+            raf = requestAnimationFrame(frame);
+            _fw = { stop() { cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); ctx.clearRect(0, 0, W, H); } };
+        }
+        function pdFireworksStop() { if (_fw) { _fw.stop(); _fw = null; } }
         // state: null (idle) | {msg} | {price, stamp, weight}. Stamp / weight tiles hide when empty.
         function pdRender(st) {
             pdLastState = st;
