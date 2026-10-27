@@ -10957,6 +10957,68 @@
             return b;
         }
 
+        // ── Per-invoice payment allocation ─────────────────────────
+        // A payment txn can carry alloc:[{invoiceId, amount}] = which invoices it paid.
+        // Allocations live on the PAYMENT, so deleting an invoice never changes the creditor balance.
+        function _cdAllocList(t) {
+            if (!t || t.type !== 'payment' || !t.alloc) return [];
+            return (Array.isArray(t.alloc) ? t.alloc : Object.values(t.alloc)).filter(a => a && a.invoiceId && a.amount > 0);
+        }
+        function _cdInvoicePaid(invId) {
+            let s = 0;
+            creditTxns.forEach(t => _cdAllocList(t).forEach(a => { if (a.invoiceId === invId) s += a.amount; }));
+            return s;
+        }
+        function _cdInvoicePayments(invId) {
+            const out = [];
+            creditTxns.forEach(t => _cdAllocList(t).forEach(a => { if (a.invoiceId === invId) out.push({ timestamp: t.timestamp, method: t.method, amount: a.amount }); }));
+            return out.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        }
+        // Credit invoices of a creditor that still have a balance, oldest first.
+        // beforeTs: ignore credit entries made after this time. extra: {invId: amount} already allocated this run.
+        function _cdOpenInvoices(creditorId, beforeTs, extra) {
+            const byInv = {};
+            creditTxns.forEach(t => {
+                if (t.creditorId !== creditorId || t.type !== 'sale' || !t.invoiceId) return;
+                const inv = invoiceHistory.find(r => r.id === t.invoiceId);
+                if (!inv) return; // invoice deleted — nothing to show or allocate against
+                if (beforeTs && new Date(t.timestamp) > beforeTs) return;
+                const o = byInv[t.invoiceId] || (byInv[t.invoiceId] = { invId: t.invoiceId, billNo: inv.billNo, ts: new Date(inv.timestamp || t.timestamp), credit: 0 });
+                o.credit += t.amount || 0;
+            });
+            return Object.values(byInv)
+                .map(o => { o.due = o.credit - _cdInvoicePaid(o.invId) - ((extra && extra[o.invId]) || 0); return o; })
+                .filter(o => o.due > 0.5)
+                .sort((a, b) => a.ts - b.ts);
+        }
+        function _cdAutoAlloc(creditorId, amount, beforeTs, extra) {
+            let left = Math.round(amount); const alloc = [];
+            _cdOpenInvoices(creditorId, beforeTs, extra).forEach(o => {
+                if (left <= 0) return;
+                const take = Math.min(left, Math.round(o.due));
+                if (take > 0) { alloc.push({ invoiceId: o.invId, amount: take }); left -= take; }
+            });
+            return alloc;
+        }
+        // One-time: payments received before this feature get allocated to the creditor's older invoices.
+        let _cdBackfillTries = 0, _cdBackfillBusy = false;
+        function _cdBackfillAlloc() {
+            if (_cdBackfillBusy || !window.dbUpdate || !creditTxns.length) return;
+            const legacy = creditTxns.filter(t => t.type === 'payment' && !t.allocDone);
+            if (!legacy.length) return;
+            if (!invoiceHistory.length) { if (_cdBackfillTries++ < 20) setTimeout(_cdBackfillAlloc, 1500); return; }
+            _cdBackfillBusy = true;
+            const extra = {}, patches = [];
+            legacy.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)).forEach(t => {
+                const alloc = _cdAutoAlloc(t.creditorId, t.amount || 0, new Date(t.timestamp), extra);
+                alloc.forEach(a => { extra[a.invoiceId] = (extra[a.invoiceId] || 0) + a.amount; });
+                const patch = { allocDone: true }; if (alloc.length) patch.alloc = alloc;
+                patches.push([t.id, patch]);
+            });
+            patches.forEach(([id, patch]) => window.dbUpdate(_cdRef('creditTxns/' + id), patch).catch(e => console.error('[Credit] backfill failed', e)));
+            setTimeout(() => { _cdBackfillBusy = false; }, 3000);
+        }
+
         function startCreditSync() {
             if (_creditSyncStarted) return;
             if (!window.dbOnValue || !window.firebaseDB) {
@@ -10977,6 +11039,9 @@
             _renderCartCreditorBtn();
             _renderPayCreditorLine();
             _renderInvCreditorUi();
+            _cdBackfillAlloc();
+            const _bm = document.getElementById('inv-bill-modal');
+            if (_bm && _bm.style.display === 'flex' && window._invBillOpenId && window.invOpenBillDetail) window.invOpenBillDetail(window._invBillOpenId);
         }
 
         function openCreditScreen() { renderCreditList(); }
@@ -11062,10 +11127,11 @@
             const txnHtml = txns.length ? txns.map(t => {
                 const isPay = t.type === 'payment';
                 const d = new Date(t.timestamp).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+                const _bills = _cdAllocList(t).map(a => { const iv = invoiceHistory.find(r => r.id === a.invoiceId); const st = creditTxns.find(x => x.type === 'sale' && x.invoiceId === a.invoiceId); return escHtml(String(iv ? iv.billNo : (st && st.billNo != null ? st.billNo : '?'))) + (iv || !invoiceHistory.length ? '' : ' (moved)'); });
                 const label = isPay ? ('Payment received' + (t.method ? ' (' + escHtml(String(t.method).toUpperCase()) + ')' : '')) : 'Credit';
                 return `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:9px 0; border-bottom:1px solid var(--border);">
                     <div style="min-width:0;"><div style="font-size:13px; font-weight:700; color:var(--text);">${label}</div>
-                    <div style="font-size:11.5px; color:var(--text2);">${d}${t.note ? ' · ' + escHtml(t.note) : ''}</div></div>
+                    <div style="font-size:11.5px; color:var(--text2);">${d}${t.note ? ' · ' + escHtml(t.note) : ''}${(t.invoiceId && invoiceHistory.length && !invoiceHistory.some(r => r.id === t.invoiceId)) ? ' (moved)' : ''}${_bills.length ? ' · → ' + _bills.join(', ') : ''}</div></div>
                     <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
                         <span style="font-size:14px; font-weight:800; color:${isPay ? '#2e7d32' : '#c62828'};">${isPay ? '−' : '+'}${_cdFmt(t.amount)}</span>
                         <button onclick="deleteCreditTxn('${t.id}')" style="background:none; border:none; color:#bbb; font-size:14px; padding:2px 4px; margin:0; width:auto; box-shadow:none;">🗑</button>
@@ -11111,8 +11177,30 @@
             document.getElementById('creditor-entry-note').value = '';
             document.getElementById('creditor-entry-status').textContent = '';
             document.getElementById('creditor-entry-paymodes').style.display = mode === 'payment' ? 'flex' : 'none';
+            document.getElementById('creditor-entry-alloc').style.display = mode === 'payment' ? 'block' : 'none';
+            _cdSetAllocMode('auto');
             _cdSetPayMode('cash');
             _cdShow('creditor-entry-modal');
+        }
+        let _cdAllocMode = 'auto';
+        function _cdSetAllocMode(m) {
+            _cdAllocMode = m;
+            ['auto', 'manual'].forEach(k => {
+                const b = document.getElementById('cd-al-' + k);
+                if (!b) return;
+                const on = k === m;
+                b.style.background = on ? '#2e7d32' : '#f0f0f0';
+                b.style.color = on ? '#fff' : '#333';
+            });
+            const list = document.getElementById('creditor-entry-alloc-list');
+            list.style.display = m === 'manual' ? 'block' : 'none';
+            if (m === 'manual') {
+                const open = _cdOpenInvoices(_cdDetailId);
+                list.innerHTML = open.length ? open.map(o => `<div style="display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid #eee;">
+                    <div style="flex:1; min-width:0; font-size:12.5px; font-weight:700;">${escHtml(String(o.billNo))}<div style="font-size:11px; font-weight:400; color:#888;">${o.ts.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} · due ${_cdFmt(o.due)}</div></div>
+                    <input type="number" class="cd-al-in" data-inv="${escHtml(o.invId)}" data-due="${Math.round(o.due)}" min="0" step="1" placeholder="0" style="width:90px; margin:0;"></div>`).join('')
+                    : '<div style="font-size:12px; color:#888; padding:6px 0;">No open invoices for this creditor.</div>';
+            }
         }
         function _cdSetPayMode(m) {
             _cdEntryPayMode = m;
@@ -11137,6 +11225,22 @@
                 const bal = _creditBalance(c.id);
                 if (amount > bal + 0.5 && !confirm('₹' + amount + ' is more than the pending ' + _cdFmt(bal) + '. Save anyway (shows as advance)?')) return;
             }
+            let alloc = [];
+            if (_cdEntryMode === 'payment') {
+                if (_cdAllocMode === 'manual') {
+                    let sum = 0, bad = false;
+                    document.querySelectorAll('#creditor-entry-alloc-list .cd-al-in').forEach(inp => {
+                        const v = Math.round(parseFloat(inp.value) || 0);
+                        if (v <= 0) return;
+                        if (v > Number(inp.dataset.due) + 0.5) bad = true;
+                        sum += v; alloc.push({ invoiceId: inp.dataset.inv, amount: v });
+                    });
+                    if (bad) { statusEl.textContent = 'An invoice amount is more than its due.'; return; }
+                    if (sum > amount) { statusEl.textContent = 'Allocated ' + _cdFmt(sum) + ' is more than the payment.'; return; }
+                } else {
+                    alloc = _cdAutoAlloc(c.id, amount);
+                }
+            }
             const txn = {
                 id: crypto.randomUUID(), creditorId: c.id,
                 type: _cdEntryMode === 'payment' ? 'payment' : 'sale',
@@ -11144,6 +11248,7 @@
                 method: _cdEntryMode === 'payment' ? _cdEntryPayMode : null,
                 note: note || null, invoiceId: null, billNo: null, src: 'manual'
             };
+            if (txn.type === 'payment') { txn.allocDone = true; if (alloc.length) txn.alloc = alloc; }
             _cdSaving = true;
             statusEl.textContent = 'Saving…';
             try {
@@ -18924,6 +19029,7 @@
             const dt = new Date(inv.timestamp).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) + _invTimeSuffix(inv.track, inv.timestamp);
             const t = inv.totals || {};
             document.getElementById('inv-bill-modal-title').textContent = inv.billNo;
+            window._invBillOpenId = id;
 
             // Old jewellery (exchange) value taken against this bill — lives in inv.ogItems,
             // not on inv.totals, so earlier history-detail code never subtracted it.
@@ -18935,6 +19041,14 @@
             // false "Outstanding" balance whenever old jewellery had been exchanged.
             const outstanding = (t.outstanding != null) ? t.outstanding
                 : Math.max(0, (t.rounded||0) - ogTotal - (inv.receipt||0));
+            // Creditor payments received after billing (screen only — printed invoice stays as billed).
+            const _cdPays = _cdInvoicePayments(inv.id);
+            const _cdPaid = _cdPays.reduce((s, p) => s + p.amount, 0);
+            const outstandingNow = Math.max(0, outstanding - _cdPaid);
+            const _cdPayTbl = _cdPays.length ? `<div style="margin:10px 0 6px;"><div style="font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--text2);text-transform:uppercase;margin-bottom:4px;">Payments received</div>
+                <table style="width:100%;border-collapse:collapse;font-size:12.5px;"><tr style="color:#888;font-size:11px;"><th style="text-align:left;padding:3px 0;font-weight:600;">Date</th><th style="text-align:left;font-weight:600;">Mode</th><th style="text-align:right;font-weight:600;">Amount</th></tr>
+                ${_cdPays.map(p => `<tr style="border-top:1px solid #eee;"><td style="padding:4px 0;">${new Date(p.timestamp).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</td><td>${p.method ? invEscH(String(p.method).toUpperCase()) : '—'}</td><td style="text-align:right;font-weight:700;color:var(--green);">₹${p.amount}</td></tr>`).join('')}
+                </table></div>` : '';
             document.getElementById('inv-bill-modal-body').innerHTML = `
                 <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">${dt} · ${invEscH(inv.custName)}</div>
                 <div style="background:#f8f8f8;border-radius:10px;padding:12px;margin-bottom:12px;">
@@ -18947,7 +19061,8 @@
                 ${t.rounded?`<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;margin-bottom:6px;"><span>Net Amount</span><span>₹${t.rounded}</span></div>`:''}
                 ${inv.receipt?`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);"><span>Receipt${_invPaymentLabel(inv)}</span><span>₹${inv.receipt}</span></div>`:''}
                 ${inv.paymentMethod === 'partial' && inv.paymentDetails ? `<div style="font-size:11.5px; color:#888; margin:2px 0 6px;">${['cash','upi','card'].filter(k => inv.paymentDetails[k] > 0).map(k => `${k.toUpperCase()}: ₹${inv.paymentDetails[k].toFixed(0)}`).join(' · ')}</div>` : ''}
-                ${outstanding>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#c00;font-weight:700;"><span>Outstanding</span><span>₹${outstanding}</span></div>`:''}
+                ${_cdPayTbl}
+                ${outstandingNow>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#c00;font-weight:700;"><span>Outstanding</span><span>₹${outstandingNow}</span></div>`:(_cdPaid>0&&outstanding>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);font-weight:700;"><span>Outstanding</span><span>Cleared ✓</span></div>`:'')}
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px;">
                   <button onclick="invPreviewFromHistory('${id}')" style="background:#43A047;color:white;border:none;border-radius:8px;padding:10px 8px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">👁 Preview</button>
                   <button onclick="chooseInvoiceHistoryPrintDestination('${id}')" style="background:#1D6BB5;color:white;border:none;border-radius:8px;padding:10px 8px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🖨 Print</button>
@@ -20739,6 +20854,13 @@
                 <button id="cd-pm-card" onclick="_cdSetPayMode('card')" style="flex:1; margin:0; padding:9px 4px; font-size:13px; border-radius:10px; box-shadow:none;">💳 Card</button>
             </div>
             <input type="text" id="creditor-entry-note" placeholder="Note (optional)" style="margin:0 0 6px;">
+            <div id="creditor-entry-alloc" style="display:none; margin-bottom:4px;">
+                <div style="display:flex; gap:8px; margin-bottom:4px;">
+                    <button id="cd-al-auto" onclick="_cdSetAllocMode('auto')" style="flex:1; margin:0; padding:8px 4px; font-size:12.5px; border-radius:10px; box-shadow:none;">⚡ Auto allocate</button>
+                    <button id="cd-al-manual" onclick="_cdSetAllocMode('manual')" style="flex:1; margin:0; padding:8px 4px; font-size:12.5px; border-radius:10px; box-shadow:none;">✋ Manual allocate</button>
+                </div>
+                <div id="creditor-entry-alloc-list" style="display:none; max-height:170px; overflow-y:auto;"></div>
+            </div>
             <div id="creditor-entry-status" style="font-size:12.5px; font-weight:700; color:#c62828; min-height:18px;"></div>
             <button onclick="saveCreditorEntry()" style="width:100%; margin:4px 0 0; padding:13px; font-size:15px; border-radius:12px;">Save</button>
         </div>
