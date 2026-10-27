@@ -3253,7 +3253,7 @@
         // owner explicitly asks to include them again.
         // ══════════════════════════════════════════════════════════════════
         function _buildBackupData() {
-            return {
+            const _d = {
                 rates: rates,
                 taxRate: taxRate,
                 products: {}, // stock deliberately excluded from ALL backups; key kept because restore/standalone reject files without it
@@ -3280,6 +3280,16 @@
                 reminders: reminders || [],
                 backupTimestamp: new Date().toISOString()
             };
+            // Customer-money data kept outside jewelryData: installment plans, savings plans, creditors.
+            // Included in the full backup + auto backup only (date-range backups strip these again).
+            // Each key is only added once its live listener has delivered data, so a backup taken
+            // during start-up can never contain an empty list that looks like "everything was deleted".
+            if (_bkLoaded.installments) _d.installments = _bkInstallments;
+            if (_bkLoaded.savingsPlans) _d.savingsPlans = _bkSavings;
+            if (_bkLoaded.creditors) _d.creditors = creditors;
+            if (_bkLoaded.creditTxns) _d.creditTxns = creditTxns;
+            if (_bkLoaded.creditorPhotos) _d.creditorPhotos = _creditorPhotos;
+            return _d;
         }
 
         function downloadBackup() {
@@ -3312,6 +3322,7 @@
         function _stripStockFromRangeBackup(data) {
             data.products = {};
             data.presetStock = {};
+            ['installments', 'savingsPlans', 'creditors', 'creditTxns', 'creditorPhotos'].forEach(k => { delete data[k]; }); // date-range backups stay invoice-only
             return data;
         }
         function openDateRangeBackupModal() {
@@ -11027,9 +11038,11 @@
             }
             _creditSyncStarted = true;
             const sub = (path, fn) => window.dbOnValue(_cdRef(path), s => fn(s.val() || {}), err => console.error('[Credit] read error', path, err));
-            sub('creditors',      v => { creditors = Object.values(v); _cdRefresh(); });
-            sub('creditTxns',     v => { creditTxns = Object.values(v); _cdRefresh(); });
-            sub('creditorPhotos', v => { _creditorPhotos = v; _cdRefresh(); });
+            sub('creditors',      v => { creditors = Object.values(v); _bkLoaded.creditors = true; _cdRefresh(); });
+            sub('creditTxns',     v => { creditTxns = Object.values(v); _bkLoaded.creditTxns = true; _cdRefresh(); });
+            sub('creditorPhotos', v => { _creditorPhotos = v; _bkLoaded.creditorPhotos = true; _cdRefresh(); });
+            sub('installments',   v => { _bkInstallments = v; _bkLoaded.installments = true; });
+            sub('savingsPlans',   v => { _bkSavings = v; _bkLoaded.savingsPlans = true; });
         }
 
         function _cdRefresh() {
@@ -11047,6 +11060,9 @@
         function openCreditScreen() { renderCreditList(); }
 
         let _cdShowPaidUp = false;
+        // Live copies used only by the backup (see _buildBackupData).
+        let _bkInstallments = {}, _bkSavings = {};
+        const _bkLoaded = {};
         function _cdToggleShowPaidUp() {
             _cdShowPaidUp = !_cdShowPaidUp;
             renderCreditList();
@@ -11193,12 +11209,13 @@
         let _cdAllocMode = 'auto';
         function _cdSetAllocMode(m) {
             _cdAllocMode = m;
-            ['auto', 'manual'].forEach(k => {
+            ['auto', 'manual', 'none'].forEach(k => {
                 const b = document.getElementById('cd-al-' + k);
                 if (!b) return;
                 const on = k === m;
-                b.style.background = on ? '#2e7d32' : '#f0f0f0';
-                b.style.color = on ? '#fff' : '#333';
+                const col = k === 'none' ? '#c62828' : '#2e7d32';
+                b.style.background = on ? col : '#f0f0f0';
+                b.style.color = on ? '#fff' : (k === 'none' ? '#c62828' : '#333');
             });
             const list = document.getElementById('creditor-entry-alloc-list');
             list.style.display = m === 'manual' ? 'block' : 'none';
@@ -11245,9 +11262,9 @@
                     });
                     if (bad) { statusEl.textContent = 'An invoice amount is more than its due.'; return; }
                     if (sum > amount) { statusEl.textContent = 'Allocated ' + _cdFmt(sum) + ' is more than the payment.'; return; }
-                } else {
+                } else if (_cdAllocMode === 'auto') {
                     alloc = _cdAutoAlloc(c.id, amount);
-                }
+                } // 'none' → alloc stays empty: payment only reduces the creditor balance
             }
             const txn = {
                 id: crypto.randomUUID(), creditorId: c.id,
@@ -20873,6 +20890,7 @@
                 <div style="display:flex; gap:8px; margin-bottom:4px;">
                     <button id="cd-al-auto" onclick="_cdSetAllocMode('auto')" style="flex:1; margin:0; padding:8px 4px; font-size:12.5px; border-radius:10px; box-shadow:none;">⚡ Auto allocate</button>
                     <button id="cd-al-manual" onclick="_cdSetAllocMode('manual')" style="flex:1; margin:0; padding:8px 4px; font-size:12.5px; border-radius:10px; box-shadow:none;">✋ Manual allocate</button>
+                    <button id="cd-al-none" onclick="_cdSetAllocMode('none')" title="Don't attach this payment to any invoice" style="flex:0 0 38px; width:38px; margin:0; padding:8px 0; font-size:13px; border-radius:10px; box-shadow:none;">✖</button>
                 </div>
                 <div id="creditor-entry-alloc-list" style="display:none; max-height:170px; overflow-y:auto;"></div>
             </div>
