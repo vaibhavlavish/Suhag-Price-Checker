@@ -2283,8 +2283,9 @@
         <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; width:100%; min-height:0;">
             <div id="pd-idle" style="font-size:14px; letter-spacing:.08em; color:#8a7f66; text-align:center; padding:0 20px;">Scan or enter a barcode</div>
             <div id="pd-main" style="display:none; flex-direction:column; align-items:center;">
+                <div id="pd-date" style="display:none; font-family:Jost,'Segoe UI',sans-serif; font-weight:600; font-variant-numeric:lining-nums; font-size:min(38px,9.5vw); letter-spacing:.12em; margin:0 0 22px .12em; line-height:1; color:#F5EFE0;"></div>
                 <div style="font-size:12px; font-weight:500; letter-spacing:.5em; margin-left:.5em; color:#B9AD92;">PRICE</div>
-                <div style="display:flex; align-items:flex-start; gap:6px; margin-top:10px; font-family:'Cormorant Garamond',Georgia,serif; font-weight:600; color:#E8C766; line-height:1;">
+                <div style="display:flex; align-items:flex-start; gap:6px; margin-top:10px; font-family:Jost,'Segoe UI',sans-serif; font-weight:500; font-variant-numeric:lining-nums; color:#E8C766; line-height:1;">
                     <span style="font-size:min(40px,10vw); margin-top:min(12px,2vh);">₹</span><span id="pd-price" style="font-size:min(92px,23vw,15vh); letter-spacing:-.01em;"></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:12px; margin-top:18px;"><div style="width:28px; height:1px; background:#5a4a22;"></div><div style="font-size:12px; font-weight:500; letter-spacing:.28em; color:#B9AD92;">ALL TAXES INCLUSIVE</div><div style="width:28px; height:1px; background:#5a4a22;"></div></div>
@@ -2293,14 +2294,14 @@
         </div>
 
         <div id="pd-details" style="display:none; gap:14px; width:100%; max-width:520px; justify-content:center; margin-bottom:22px;">
-            <div id="pd-stamp-tile" style="flex:1; max-width:220px; border:1px solid #5a4a22; padding:16px 0 18px; text-align:center;"><div style="font-size:11px; font-weight:500; letter-spacing:.4em; margin-left:.4em; color:#B9AD92;">STAMP</div><div id="pd-stamp" style="font-family:'Cormorant Garamond',Georgia,serif; font-weight:600; font-size:min(38px,9.5vw); color:#F5EFE0; margin-top:6px; line-height:1;"></div></div>
-            <div id="pd-weight-tile" style="flex:1; max-width:220px; border:1px solid #5a4a22; padding:16px 0 18px; text-align:center;"><div style="font-size:11px; font-weight:500; letter-spacing:.4em; margin-left:.4em; color:#B9AD92;">WEIGHT</div><div style="font-family:'Cormorant Garamond',Georgia,serif; font-weight:600; font-size:min(38px,9.5vw); color:#F5EFE0; margin-top:6px; line-height:1;"><span id="pd-weight"></span> <span style="font-size:20px; color:#B9AD92;">g</span></div></div>
+            <div id="pd-stamp-tile" style="flex:1; max-width:220px; border:1px solid #5a4a22; padding:16px 0 18px; text-align:center;"><div style="font-size:11px; font-weight:500; letter-spacing:.4em; margin-left:.4em; color:#B9AD92;">STAMP</div><div id="pd-stamp" style="font-family:Jost,'Segoe UI',sans-serif; font-weight:500; font-variant-numeric:lining-nums; font-size:min(38px,9.5vw); color:#F5EFE0; margin-top:6px; line-height:1;"></div></div>
+            <div id="pd-weight-tile" style="flex:1; max-width:220px; border:1px solid #5a4a22; padding:16px 0 18px; text-align:center;"><div style="font-size:11px; font-weight:500; letter-spacing:.4em; margin-left:.4em; color:#B9AD92;">WEIGHT</div><div style="font-family:Jost,'Segoe UI',sans-serif; font-weight:500; font-variant-numeric:lining-nums; font-size:min(38px,9.5vw); color:#F5EFE0; margin-top:6px; line-height:1;"><span id="pd-weight"></span> <span style="font-size:20px; color:#B9AD92;">g</span></div></div>
         </div>
 
         <div style="width:100%; max-width:520px; display:flex; gap:6px; align-items:center; padding:10px 0 max(16px,env(safe-area-inset-bottom)); border-top:1px solid #2a2318; opacity:.8;">
             <input type="text" id="pd-input" placeholder="Barcode" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key==='Enter'){pdSubmit();}" style="flex:1; min-width:0; margin:0; padding:9px 10px; font-size:14px; background:#1d1912; color:#F5EFE0; border:1px solid #3a3020; border-radius:8px;">
             <button onclick="pdSubmit()" style="width:auto; margin:0; padding:9px 12px; font-size:13px; background:#8D6E63; color:#fff; border-radius:8px; box-shadow:none;">Show</button>
-            <button onclick="openCamera('pricedisplay')" aria-label="Scan with camera" style="width:auto; margin:0; padding:9px 10px; font-size:14px; background:#2a2318; color:#E8C766; border-radius:8px; box-shadow:none;">📷</button>
+            <button onclick="pdAlterOpen()" aria-label="Alter price" style="width:auto; margin:0; padding:9px 10px; font-size:14px; background:#2a2318; color:#E8C766; border-radius:8px; box-shadow:none;">✏️</button>
             <button onclick="openCustomQuickList()" aria-label="Custom items" style="width:auto; margin:0; padding:9px 10px; font-size:14px; background:#2a2318; color:#E8C766; border-radius:8px; box-shadow:none;">🧩</button>
             <button onclick="openStampDisplaySettings()" aria-label="Stamp display settings" style="width:auto; margin:0; padding:9px 10px; font-size:14px; background:#2a2318; color:#E8C766; border-radius:8px; box-shadow:none;">⚙</button>
             <button onclick="closePriceDisplay()" aria-label="Close" style="width:auto; margin:0; padding:9px 12px; font-size:14px; background:#2a2318; color:#B9AD92; border-radius:8px; box-shadow:none;">✕</button>
@@ -2325,6 +2326,7 @@
             </style>
             <label class="pd-opt"><span>Show Stamp</span><input type="checkbox" id="pd-show-stamp" class="pd-switch"></label>
             <label class="pd-opt"><span>Show Weight</span><input type="checkbox" id="pd-show-weight" class="pd-switch"></label>
+            <label class="pd-opt"><span>Show Date</span><input type="checkbox" id="pd-show-date" class="pd-switch"></label>
             <div class="pd-opt" role="button" tabindex="0" onclick="openStampNamesDialog()"><span>Stamp Display</span><span class="pd-chev">›</span></div>
             <button onclick="savePriceDisplaySettings()" style="width:100%; margin-top:10px;">Save</button>
         </div>
@@ -3273,7 +3275,7 @@
                 customItems: customItems || {},
                 stampDisplayNames: stampDisplayNames || {},
                 pdCustomText: pdCustomText || '',
-                pdShowStamp: pdShowStamp, pdShowWeight: pdShowWeight,
+                pdShowStamp: pdShowStamp, pdShowWeight: pdShowWeight, pdShowDate: pdShowDate,
                 invStampPrintToggle: invStampPrintToggle || {},
                 invTandC: invTandC || '',
                 packagingWeights: packagingWeights || {},
@@ -3881,7 +3883,7 @@
                                 customItems: jsonContent.customItems || {},
                                 stampDisplayNames: jsonContent.stampDisplayNames || {},
                                 pdCustomText: jsonContent.pdCustomText || '',
-                                pdShowStamp: jsonContent.pdShowStamp !== false, pdShowWeight: jsonContent.pdShowWeight !== false,
+                                pdShowStamp: jsonContent.pdShowStamp !== false, pdShowWeight: jsonContent.pdShowWeight !== false, pdShowDate: jsonContent.pdShowDate !== false,
                                 invStampPrintToggle: jsonContent.invStampPrintToggle || {},
                                 invTandC: jsonContent.invTandC || '',
                                 packagingWeights: jsonContent.packagingWeights || {},
@@ -3928,6 +3930,7 @@
                                 restoreUpdate['jewelryData/config/pdCustomText'] = dataToRestore.pdCustomText || null;
                                 restoreUpdate['jewelryData/config/pdShowStamp'] = dataToRestore.pdShowStamp !== false;
                                 restoreUpdate['jewelryData/config/pdShowWeight'] = dataToRestore.pdShowWeight !== false;
+                                restoreUpdate['jewelryData/config/pdShowDate'] = dataToRestore.pdShowDate !== false;
                                 restoreUpdate['jewelryData/products']                = dataToRestore.products || {};
                                 // Invoices
                                 (dataToRestore.invoiceHistory || []).forEach(inv => {
@@ -4367,6 +4370,11 @@
                 localStorage.setItem('pdShowWeight', String(pdShowWeight));
                 if (pdLastState && priceDisplayOpen) pdRender(pdLastState);
             });
+            watch('pdShowDate', v => {
+                pdShowDate = v !== false;
+                localStorage.setItem('pdShowDate', String(pdShowDate));
+                pdApplyDate();
+            });
             watch('pdCustomText', v => {
                 pdCustomText = (typeof v === 'string') ? v : '';
                 localStorage.setItem('pdCustomText', pdCustomText);
@@ -4801,6 +4809,8 @@
             pdCustomText = cloudData.pdCustomText || '';
             pdShowStamp = cloudData.pdShowStamp !== false;
             pdShowWeight = cloudData.pdShowWeight !== false;
+            pdShowDate = cloudData.pdShowDate !== false;
+            localStorage.setItem('pdShowDate', String(pdShowDate));
             localStorage.setItem('pdCustomText', pdCustomText);
             localStorage.setItem('stampDisplayNames', JSON.stringify(stampDisplayNames));
             if (document.getElementById('custom-items-modal') && document.getElementById('custom-items-modal').style.display === 'flex') renderCustomItemsList();
@@ -5122,7 +5132,7 @@
                 customItems: config.customItems || {},
                 stampDisplayNames: config.stampDisplayNames || {},
                 pdCustomText: config.pdCustomText || '',
-                pdShowStamp: config.pdShowStamp !== false, pdShowWeight: config.pdShowWeight !== false,
+                pdShowStamp: config.pdShowStamp !== false, pdShowWeight: config.pdShowWeight !== false, pdShowDate: config.pdShowDate !== false,
                 hallmarkCharge: (config.hallmarkCharge !== undefined && config.hallmarkCharge !== null && !isNaN(parseFloat(config.hallmarkCharge))) ? parseFloat(config.hallmarkCharge) : null,
                 productDataImportedAt: config.productDataImportedAt || 0,
                 products:         val.products            || {},
@@ -6943,7 +6953,7 @@
             currentGrossWeightOverride = grossVal;
             closeModal('alter-modal');
             runPriceCalculation();
-            showDetails();
+            if (!priceDisplayOpen) showDetails();
         }
 
 
@@ -7232,8 +7242,41 @@
         let pdCustomText = (() => { try { return localStorage.getItem('pdCustomText') || ''; } catch (e) { return ''; } })();
         let pdShowStamp = (() => { try { return localStorage.getItem('pdShowStamp') !== 'false'; } catch (e) { return true; } })();
         let pdShowWeight = (() => { try { return localStorage.getItem('pdShowWeight') !== 'false'; } catch (e) { return true; } })();
+        let pdShowDate = (() => { try { return localStorage.getItem('pdShowDate') !== 'false'; } catch (e) { return true; } })();
         let pdLastState = null;
+        let pdLastKey = null;        // barcode currently shown on the Price Display (null for custom items)
+        let pdAlterLoaded = false;   // true once the shown item has been loaded into the main Alter flow
         let priceDisplayOpen = false;
+        // ✏️ Alter from the Price Display: loads the shown item into the normal
+        // Alter dialog (Making / Weight / Final Amount) and mirrors the new price back.
+        function pdAlterOpen() {
+            if (!pdLastKey || !productData[pdLastKey] || !pdLastState || pdLastState.msg) {
+                showCustomAlert('Scan an item first.');
+                return;
+            }
+            if (!pdAlterLoaded) {
+                lookupProduct(pdLastKey);          // fresh load, no leftover overrides
+                pdAlterLoaded = true;
+            }
+            openAlterDialog();
+            const m = document.getElementById('alter-modal');
+            if (m) m.style.zIndex = '1600';        // above the full-screen Price Display
+        }
+        function pdSyncFromMain() {
+            if (!priceDisplayOpen || !pdAlterLoaded || !currentProduct || !pdLastState) return;
+            const w = (currentWeightOverride != null) ? currentWeightOverride : (parseFloat(currentProduct.netWeight) || 0);
+            pdRender({ price: currentFinalPrice, stamp: pdLastState.stamp, weight: w });
+        }
+        // Today's date as DD-MM-YYYY (e.g. 27-10-2026) from the device clock.
+        function pdTodayStr() {
+            const d = new Date();
+            return String(d.getDate()).padStart(2, '0') + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + d.getFullYear();
+        }
+        function pdApplyDate() {
+            const el = document.getElementById('pd-date'); if (!el) return;
+            el.textContent = pdTodayStr();
+            el.style.display = pdShowDate ? 'block' : 'none';
+        }
         function pdApplyCustomText() {
             const el = document.getElementById('pd-offer'); if (!el) return;
             el.textContent = pdCustomText;
@@ -7246,6 +7289,8 @@
         function openPriceDisplay() {
             closeOptions();
             priceDisplayOpen = true;
+            pdLastKey = null; pdAlterLoaded = false;
+            const _cm = document.getElementById('custom-modal'); if (_cm) _cm.style.zIndex = '1700'; // alerts above the display
             pdRender(null);
             document.getElementById('price-display-screen').style.display = 'flex';
             const inp = document.getElementById('pd-input'); inp.value = ''; inp.focus();
@@ -7253,6 +7298,8 @@
         }
         function closePriceDisplay() {
             priceDisplayOpen = false;
+            pdAlterLoaded = false;
+            const _cm = document.getElementById('custom-modal'); if (_cm) _cm.style.zIndex = '';
             document.getElementById('price-display-screen').style.display = 'none';
             pdFireworksStop();
         }
@@ -7328,6 +7375,7 @@
             idle.style.display = 'none'; main.style.display = 'flex';
             document.getElementById('pd-price').textContent = Math.round(st.price).toLocaleString('en-IN');
             pdApplyCustomText();
+            pdApplyDate();
             const hasStamp = pdShowStamp && !!st.stamp, hasWt = pdShowWeight && st.weight > 0;
             document.getElementById('pd-stamp').textContent = st.stamp || '';
             document.getElementById('pd-weight').textContent = hasWt ? Number(st.weight).toFixed(3) : '';
@@ -7340,6 +7388,7 @@
             if (!code) return;
             const key = productData[code] ? code : code.toUpperCase();
             const d = productData[key];
+            pdLastKey = null; pdAlterLoaded = false;
             if (!d) { pdRender({ msg: 'Item not found' }); return; }
             const res = calcProductFinalPriceForActiveProfile(key);
             if (!res || !(res.final > 0)) { pdRender({ msg: 'Price not available' }); return; }
@@ -7348,9 +7397,11 @@
                 stamp: d.stamp ? stampDisplayLabel(d.metal, d.stamp) : '',
                 weight: parseFloat(d.netWeight) || 0
             });
+            pdLastKey = key; pdAlterLoaded = false;   // new item → alter starts fresh
         }
         function pdShowCustom(id) {
             const it = customItems[id];
+            pdLastKey = null; pdAlterLoaded = false;
             if (it) pdRender({ price: it.price, stamp: '', weight: 0 });
         }
         function pdSubmit() {
@@ -7362,18 +7413,21 @@
             document.getElementById('pd-custom-text').value = pdCustomText || '';
             document.getElementById('pd-show-stamp').checked = pdShowStamp;
             document.getElementById('pd-show-weight').checked = pdShowWeight;
+            document.getElementById('pd-show-date').checked = pdShowDate;
             document.getElementById('stamp-display-modal').style.display = 'flex';
         }
         function savePriceDisplaySettings() {
             pdCustomText = document.getElementById('pd-custom-text').value.trim();
             pdShowStamp = document.getElementById('pd-show-stamp').checked;
             pdShowWeight = document.getElementById('pd-show-weight').checked;
+            pdShowDate = document.getElementById('pd-show-date').checked;
+            localStorage.setItem('pdShowDate', String(pdShowDate));
             localStorage.setItem('pdCustomText', pdCustomText);
             localStorage.setItem('pdShowStamp', String(pdShowStamp));
             localStorage.setItem('pdShowWeight', String(pdShowWeight));
             pdApplyCustomText();
             if (pdLastState) pdRender(pdLastState);
-            dbSafeUpdateNotify({ 'jewelryData/config/pdCustomText': pdCustomText || null, 'jewelryData/config/pdShowStamp': pdShowStamp, 'jewelryData/config/pdShowWeight': pdShowWeight }, 'The price display settings');
+            dbSafeUpdateNotify({ 'jewelryData/config/pdCustomText': pdCustomText || null, 'jewelryData/config/pdShowStamp': pdShowStamp, 'jewelryData/config/pdShowWeight': pdShowWeight, 'jewelryData/config/pdShowDate': pdShowDate }, 'The price display settings');
             document.getElementById('stamp-display-modal').style.display = 'none';
         }
         function openStampNamesDialog() {
@@ -7904,6 +7958,7 @@
             }
 
             currentFinalPrice = final;
+            pdSyncFromMain();
             document.getElementById('price-display').textContent = `${final.toFixed(2)}`;
             document.getElementById('price-display').classList.add('show');
             document.getElementById('detail-btn').style.display = 'block';
@@ -7973,6 +8028,7 @@
         // and doesn't need this.
         function openAlterDialog(section) {
             if (!currentProduct) { showCustomAlert('Scan an item first.'); return; }
+            const _am = document.getElementById('alter-modal'); if (_am) _am.style.zIndex = '';
             section = section || 'making';
 
             const hasMaking = currentMakingType !== '' || !!makingOverride;
