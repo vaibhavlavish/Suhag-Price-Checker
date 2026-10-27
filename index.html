@@ -16138,7 +16138,7 @@
         function _supRenderBalance() {
             const box = document.getElementById('sup-balance-box'); if (!box) return;
             const pid = document.getElementById('sup-party').value;
-            if (!pid || pid === '__new') { box.style.display = 'none'; return; }
+            if (!pid || pid === '__new' || pid === '__adhoc') { box.style.display = 'none'; return; }
             const cell = (lbl, val, bad) => `<div style="flex:1; min-width:70px;"><div style="font-size:10px; color:#888; font-weight:700;">${lbl}</div><div style="font-size:14px; font-weight:800; color:${bad ? '#c62828' : '#2e7d32'};">${val}</div></div>`;
             const g = _supOutstanding(pid, 'Gold'), si = _supOutstanding(pid, 'Silver'), c = _supCashOwed(pid), pc = Math.max(0, _supPieceBalance(pid));
             box.innerHTML = '<div style="font-size:11px; font-weight:800; color:#888; margin-bottom:6px;">OWED TO THIS SUPPLIER</div><div style="display:flex; flex-wrap:wrap; gap:8px;">' +
@@ -16156,7 +16156,16 @@
                 pmParties.map(p => `<option value="${_ciEsc(p.id)}">${_ciEsc(p.name)}</option>`).join('') + '<option value="__new">＋ New supplier…</option>';
             document.getElementById('sup-new-party').style.display = 'none';
             document.getElementById('sup-new-party').value = '';
-            if (entry.accountId && pmParties.some(x => x.id === entry.accountId)) document.getElementById('sup-party').value = entry.accountId;
+            const _supSel = document.getElementById('sup-party');
+            _supSel.disabled = false;
+            if (entry.accountId && pmParties.some(x => x.id === entry.accountId)) _supSel.value = entry.accountId;
+            else if (String(entry.accountId || '').indexOf('adhoc:') === 0) {
+                // ＋ name under Supplier: one-off name, not a Purchase Manager supplier — same Metal / Per-piece
+                // window, but nothing is created or looked up in Purchase Manager.
+                _supSel.innerHTML = '<option value="__adhoc">' + _ciEsc(entry.accountName || '') + '</option>';
+                _supSel.value = '__adhoc';
+                _supSel.disabled = true;
+            }
             ['sup-weight', 'sup-rate', 'sup-desc', 'sup-qty', 'sup-bill'].forEach(id => { document.getElementById(id).value = ''; });
             _supSetKind('metal');
             document.getElementById('supplier-pay-modal').style.display = 'flex';
@@ -16191,7 +16200,7 @@
                 const w = parseFloat(document.getElementById('sup-weight').value) || 0;
                 const r = parseFloat(document.getElementById('sup-rate').value) || 0;
                 let t = '';
-                if (pid && pid !== '__new') t += 'Outstanding with this supplier: <b>' + _supOutstanding(pid, metal).toFixed(2) + 'g</b> ' + metal + '<br>';
+                if (pid && pid !== '__new' && pid !== '__adhoc') t += 'Outstanding with this supplier: <b>' + _supOutstanding(pid, metal).toFixed(2) + 'g</b> ' + metal + '<br>';
                 if (w > 0 && r > 0) {
                     const diff = Math.round((w * r - amt) * 100) / 100;
                     t += 'Booked value ₹' + _fmt(w * r) + ' vs paid ₹' + _fmt(amt) + ' → ' +
@@ -16203,7 +16212,7 @@
             } else {
                 const bill = parseFloat(document.getElementById('sup-bill').value) || 0;
                 let t = '';
-                if (pid && pid !== '__new') {
+                if (pid && pid !== '__new' && pid !== '__adhoc') {
                     const bal = _supPieceBalance(pid);
                     t += 'Credit owed to this supplier now: <b>₹' + _fmt(bal) + '</b><br>After this: <b>₹' + _fmt(Math.max(0, bal + bill - amt)) + '</b>';
                 } else if (bill > 0) {
@@ -16218,7 +16227,11 @@
             const extra = {};
             let partyName = '';
             if (!partyId) { showCustomAlert('Select a supplier.'); return; }
-            if (partyId === '__new') {
+            const isAdhoc = partyId === '__adhoc';
+            if (isAdhoc) {
+                partyName = e.accountName || '';
+                partyId = '';
+            } else if (partyId === '__new') {
                 const nm = (document.getElementById('sup-new-party').value || '').trim();
                 if (!nm) { showCustomAlert('Enter the new supplier name.'); return; }
                 const ex = pmParties.find(p => (p.name || '').toLowerCase() === nm.toLowerCase());
@@ -16231,34 +16244,43 @@
             const date = _localDateStr(now);
             const createdAt = new Date(date + 'T12:00:00.000Z').toISOString();
             const sup = { partyId, partyName, kind: _supKind, adjustment: 0 };
+            if (isAdhoc) sup.adhoc = true;
             let autoNote = '';
             if (_supKind === 'metal') {
                 const metal = document.getElementById('sup-metal').value;
                 const weight = parseFloat(document.getElementById('sup-weight').value) || 0;
                 let rate = parseFloat(document.getElementById('sup-rate').value) || 0;
                 if (!(weight > 0)) { showCustomAlert('Enter the weight paid.'); return; }
-                if (!extra['parties/' + partyId]) {
-                    const out = _supOutstanding(partyId, metal);
-                    if (weight > out + 0.001) { showCustomAlert('Weight is more than the ' + out.toFixed(2) + 'g ' + metal + ' outstanding with this supplier.'); return; }
-                } else { showCustomAlert('A new supplier has nothing outstanding yet — add the purchase in Purchase Manager first.'); return; }
+                if (!isAdhoc) {
+                    if (!extra['parties/' + partyId]) {
+                        const out = _supOutstanding(partyId, metal);
+                        if (weight > out + 0.001) { showCustomAlert('Weight is more than the ' + out.toFixed(2) + 'g ' + metal + ' outstanding with this supplier.'); return; }
+                    } else { showCustomAlert('A new supplier has nothing outstanding yet — add the purchase in Purchase Manager first.'); return; }
+                }
                 if (!(rate > 0)) rate = Math.round((e.amount / weight) * 100) / 100;
                 sup.adjustment = Math.round((weight * rate - e.amount) * 100) / 100;
-                const payId = crypto.randomUUID();
-                extra['payments/' + payId] = { id: payId, partyId, track: 'B', metal, weight, rate, note: e.note || '', date, createdAt, source: 'pos', ledgerEntryId: e.id, amountPaid: e.amount };
-                Object.assign(sup, { metal, weight, rate, paymentId: payId });
+                Object.assign(sup, { metal, weight, rate });
+                if (!isAdhoc) {
+                    const payId = crypto.randomUUID();
+                    extra['payments/' + payId] = { id: payId, partyId, track: 'B', metal, weight, rate, note: e.note || '', date, createdAt, source: 'pos', ledgerEntryId: e.id, amountPaid: e.amount };
+                    sup.paymentId = payId;
+                }
                 autoNote = weight + 'g ' + metal + ' @ ₹' + rate;
             } else {
                 const desc = (document.getElementById('sup-desc').value || '').trim();
                 const qty = parseFloat(document.getElementById('sup-qty').value) || 0;
                 const bill = parseFloat(document.getElementById('sup-bill').value) || 0;
-                if (bill > 0) {
+                if (bill > 0 && !isAdhoc) {
                     const billId = crypto.randomUUID();
                     extra['pieceSupplies/' + billId] = { id: billId, partyId, track: 'B', kind: 'bill', desc, qty, amount: bill, date, createdAt, source: 'pos', ledgerEntryId: e.id };
                     sup.pieceBillId = billId;
                 }
-                const pId = crypto.randomUUID();
-                extra['pieceSupplies/' + pId] = { id: pId, partyId, track: 'B', kind: 'payment', desc, qty, amount: e.amount, date, createdAt, source: 'pos', ledgerEntryId: e.id };
-                sup.piecePayId = pId; sup.desc = desc; sup.qty = qty; sup.billAmount = bill;
+                if (!isAdhoc) {
+                    const pId = crypto.randomUUID();
+                    extra['pieceSupplies/' + pId] = { id: pId, partyId, track: 'B', kind: 'payment', desc, qty, amount: e.amount, date, createdAt, source: 'pos', ledgerEntryId: e.id };
+                    sup.piecePayId = pId;
+                }
+                sup.desc = desc; sup.qty = qty; sup.billAmount = bill;
                 autoNote = desc || 'per-piece supplies';
             }
             e.supplier = sup;
@@ -16328,7 +16350,7 @@
                 accountId: acctSel.a.id, accountName: acctSel.a.name,
                 categoryId: acctSel.c.id, categoryName: acctSel.c.name
             });
-            if (acctSel.c.system === 'supplier' && !acctSel.a.adhoc) { _openSupplierPayDialog(entry); return; }
+            if (acctSel.c.system === 'supplier') { _openSupplierPayDialog(entry); return; }  // also for ＋ names (adhoc)
             ledgerEntries.push(entry);
             _saveLedgerLocal();
             _saveLedgerRecord(entry); // single-record Firebase write
