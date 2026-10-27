@@ -2198,7 +2198,7 @@
             <div id="cart-customer-panel" style="background:#f5f5f5; border-radius:12px; padding:12px; margin-bottom:10px; border:1.5px solid #e0e0e0;">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
                     <div style="font-size:11px; font-weight:700; letter-spacing:.06em; color:#888; text-transform:uppercase;">Customer (optional)</div>
-                    <button id="cart-creditor-btn" onclick="openCreditorPicker()" style="width:auto; margin:0; padding:5px 11px; font-size:12px; font-weight:700; border-radius:8px; border:1.5px solid #c62828; background:#fff; color:#c62828; box-shadow:none; max-width:58%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🧾 Creditor</button>
+                    <button id="cart-creditor-btn" onclick="_cartCreditorBtnClick(event)" style="width:auto; margin:0; padding:5px 11px; font-size:12px; font-weight:700; border-radius:8px; border:1.5px solid #c62828; background:#fff; color:#c62828; box-shadow:none; max-width:58%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🧾 Creditor</button>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:7px;">
                     <input type="text" id="cart-cust-name" placeholder="Customer Name" oninput="syncCartCustomer()" style="margin:0;">
@@ -10900,11 +10900,12 @@
         }
 
         function clearCart() {
-            if (cart.length === 0) {
+            const _hasCust = !!(cartCreditorId || (cartCustomer && (cartCustomer.name || cartCustomer.mobile || cartCustomer.address)));
+            if (cart.length === 0 && !_hasCust) {
                 showCustomAlert('Cart is already empty.');
                 return;
             }
-            showCustomConfirm('Clear the entire cart? This cannot be undone.', 'Confirm Clear Cart', () => {
+            showCustomConfirm(cart.length ? 'Clear the entire cart? This cannot be undone.' : 'Clear the selected creditor and customer details?', 'Confirm Clear Cart', () => {
                 cart = [];
                 cartAdjustment = 0;
                 _resetAdjustFields();
@@ -11372,12 +11373,21 @@
             if (!b) return;
             const c = cartCreditorId ? creditors.find(x => x.id === cartCreditorId) : null;
             if (c) {
-                b.textContent = '🧾 ' + c.name;
+                // name truncates with "…", the ✕ always stays visible at the end
+                b.innerHTML = '<span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🧾 ' + _ciEsc(c.name) + '</span>' +
+                    '<span class="cart-cred-x" role="button" aria-label="Remove creditor" title="Remove creditor" style="flex-shrink:0; font-size:12px; font-weight:800; line-height:1; padding:2px 5px; margin-right:-4px; border-radius:50%; background:rgba(255,255,255,.28);">✕</span>';
+                b.style.display = 'inline-flex'; b.style.alignItems = 'center'; b.style.gap = '7px';
                 b.style.background = '#2e7d32'; b.style.color = '#fff'; b.style.borderColor = '#2e7d32';
             } else {
                 b.textContent = '🧾 Creditor';
+                b.style.display = ''; b.style.alignItems = ''; b.style.gap = '';
                 b.style.background = '#fff'; b.style.color = '#c62828'; b.style.borderColor = '#c62828';
             }
+        }
+        // Tap the name → change creditor; tap the ✕ → just unlink the creditor (customer fields are left as typed).
+        function _cartCreditorBtnClick(ev) {
+            if (ev && ev.target && ev.target.closest && ev.target.closest('.cart-cred-x')) { _setCartCreditor(null); return; }
+            openCreditorPicker();
         }
 
         function _renderPayCreditorLine() {
