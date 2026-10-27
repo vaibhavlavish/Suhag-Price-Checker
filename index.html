@@ -2197,7 +2197,7 @@
             <!-- Customer Details (carried through to checkout + invoice) -->
             <div id="cart-customer-panel" style="background:#f5f5f5; border-radius:12px; padding:12px; margin-bottom:10px; border:1.5px solid #e0e0e0;">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
-                    <div style="font-size:11px; font-weight:700; letter-spacing:.06em; color:#888; text-transform:uppercase;">Customer (optional)</div>
+                    <div style="font-size:11px; font-weight:700; letter-spacing:.06em; color:#888; text-transform:uppercase;">Customer</div>
                     <button id="cart-creditor-btn" onclick="_cartCreditorBtnClick(event)" style="width:auto; margin:0; padding:5px 11px; font-size:12px; font-weight:700; border-radius:8px; border:1.5px solid #c62828; background:#fff; color:#c62828; box-shadow:none; max-width:58%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🧾 Creditor</button>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:7px;">
@@ -11046,6 +11046,11 @@
 
         function openCreditScreen() { renderCreditList(); }
 
+        let _cdShowPaidUp = false;
+        function _cdToggleShowPaidUp() {
+            _cdShowPaidUp = !_cdShowPaidUp;
+            renderCreditList();
+        }
         function renderCreditList() {
             const listEl = document.getElementById('credit-list');
             const sumEl = document.getElementById('credit-summary');
@@ -11061,11 +11066,14 @@
                     <div style="text-align:right;"><div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">Creditors</div>
                     <div style="font-size:22px; font-weight:800; color:var(--text);">${dueCount}<span style="font-size:13px; font-weight:600; color:var(--text2);"> / ${creditors.length}</span></div></div>`;
             }
+            const eye = document.getElementById('credit-eye-btn');
+            if (eye) { eye.style.background = _cdShowPaidUp ? '#2e7d32' : '#f0f0f0'; eye.style.color = _cdShowPaidUp ? '#fff' : '#333'; eye.title = _cdShowPaidUp ? 'Hide paid-up accounts' : 'Show paid-up accounts'; }
             const rows = all
+                .filter(r => _cdShowPaidUp || q || Math.abs(r.bal) >= 1) // paid-up accounts hidden unless 👁 is on or searching
                 .filter(r => !q || (r.c.name || '').toLowerCase().includes(q) || (r.c.mobile || '').includes(q))
                 .sort((a, b) => (b.bal - a.bal) || (a.c.name || '').localeCompare(b.c.name || ''));
             if (!rows.length) {
-                listEl.innerHTML = `<p class="note" style="font-size:13px; color:var(--text2); text-align:center; padding:24px 0;">${creditors.length ? 'No match.' : 'No creditor accounts yet. Tap ➕ New to add one.'}</p>`;
+                listEl.innerHTML = `<p class="note" style="font-size:13px; color:var(--text2); text-align:center; padding:24px 0;">${creditors.length ? (q ? 'No match.' : 'All accounts are paid up. Tap 👁 to see them.') : 'No creditor accounts yet. Tap ➕ New to add one.'}</p>`;
                 return;
             }
             listEl.innerHTML = rows.map(({ c, bal }) => `
@@ -11489,9 +11497,15 @@
                 b.style.background = '#fff'; b.style.color = '#c62828'; b.style.borderColor = '#c62828';
             }
         }
-        // Tap the name → change creditor; tap the ✕ → just unlink the creditor (customer fields are left as typed).
+        // Tap the name → change creditor; tap the ✕ → unlink the creditor and clear the customer fields.
         function _cartCreditorBtnClick(ev) {
-            if (ev && ev.target && ev.target.closest && ev.target.closest('.cart-cred-x')) { _setCartCreditor(null); return; }
+            if (ev && ev.target && ev.target.closest && ev.target.closest('.cart-cred-x')) {
+                _setCartCreditor(null);
+                cartCustomer = { name: '', mobile: '', address: '' };
+                try { localStorage.setItem('suhagPriceCheckerCartCustomer', JSON.stringify(cartCustomer)); } catch (e) {}
+                ['cart-cust-name', 'cart-cust-mob', 'cart-cust-addr'].forEach(i => { const el = document.getElementById(i); if (el) el.value = ''; });
+                return;
+            }
             openCreditorPicker();
         }
 
@@ -20793,6 +20807,7 @@
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
             <button onclick="showSection('main')" style="background:none; border:none; font-size:20px; color:var(--text2); cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">←</button>
             <h2 style="margin:0; font-size:18px; font-weight:800; color:var(--text); flex:1;">🧾 Credit</h2>
+            <button id="credit-eye-btn" onclick="_cdToggleShowPaidUp()" title="Show paid-up accounts" style="width:auto; margin:0; padding:8px 12px; font-size:14px; font-weight:700; border-radius:10px; background:#f0f0f0; color:#333; box-shadow:none;">👁</button>
             <button onclick="_cdNewFromPicker=false; openCreditorForm(null)" style="width:auto; margin:0; padding:8px 14px; font-size:13px; font-weight:700; border-radius:10px;">➕ New</button>
         </div>
         <div id="credit-summary" style="display:flex; gap:12px; background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);"></div>
