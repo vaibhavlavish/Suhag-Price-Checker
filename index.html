@@ -15747,6 +15747,22 @@
             b.setFullYear(pr[0], pr[1] - 1, pr[2]);
             return b.toISOString();
         }
+        // Timestamp that makes an entry the NEWEST of the chosen day (so it appears first in that day's
+        // newest-first list). Today → right now. Older day → 1 second after that day's latest entry.
+        function _ledgerTsNewestOfDay(dateVal, excludeId) {
+            const pr = (dateVal || '').split('-').map(Number);
+            const now = new Date();
+            if (pr.length !== 3 || pr.some(isNaN) || _localDateStr(now) === dateVal) return now.toISOString();
+            let latest = 0;
+            ledgerEntries.forEach(x => {
+                if (excludeId != null && String(x.id) === String(excludeId)) return;
+                const t = new Date(x.timestamp);
+                if (!isNaN(t) && _localDateStr(t) === dateVal && t.getTime() > latest) latest = t.getTime();
+            });
+            const dayEnd = new Date(pr[0], pr[1] - 1, pr[2], 23, 59, 59).getTime();
+            const base = new Date(now); base.setFullYear(pr[0], pr[1] - 1, pr[2]);
+            return new Date(Math.min(latest ? latest + 1000 : base.getTime(), dayEnd)).toISOString();
+        }
         function _ledgerEditFull(e) { return e.source === 'manual' && !e.supplier && (e.type === 'in' || e.type === 'expense'); }
         function _ledgerModalLock(full) {
             document.getElementById('ledger-type-row').style.display = full ? 'flex' : 'none';
@@ -15796,7 +15812,7 @@
                 if (!acctSel) { showCustomAlert('Select an account first.'); return; }
                 if (acctSel.c.system === 'supplier' && !acctSel.a.adhoc) { showCustomAlert('Supplier payments need the supplier dialog — delete this entry and add a new one for that.'); return; }
                 Object.assign(e, { type: _ledgerEntryType, amount: amt, mode: _ledgerMode, accountId: acctSel.a.id, accountName: acctSel.a.name, categoryId: acctSel.c.id, categoryName: acctSel.c.name });
-                if (dateVal) e.timestamp = _ledgerTsFor(dateVal, e.timestamp);
+                if (dateVal && dateVal !== _localDateStr(new Date(e.timestamp))) e.timestamp = _ledgerTsNewestOfDay(dateVal, e.id);
             }
             e.note = document.getElementById('ledger-entry-note').value.trim();
             _saveLedgerLocal();
@@ -16022,7 +16038,7 @@
                 type: _ledgerEntryType,
                 amount: amt,
                 note,
-                timestamp: _ledgerTsFor(_entryDate, null),
+                timestamp: _ledgerTsNewestOfDay(_entryDate, null),
                 source: 'manual'
             };
             Object.assign(entry, {
