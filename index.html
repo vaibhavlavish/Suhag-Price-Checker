@@ -1338,6 +1338,35 @@
         .ledger-action-btn.cash-out { background: #ffebee !important; color: #c62828 !important; }
         .ledger-action-btn.expense  { background: #fbe9e7 !important; color: #d84315 !important; }
 
+        /* Ledger home: large quick-action tiles */
+        #ledger .ledger-action-row { gap: 12px; padding: 20px 16px 6px; }
+        #ledger .ledger-action-btn { padding: 28px 8px; border-radius: 18px; font-size: 16px; gap: 8px; box-shadow: 0 3px 12px rgba(0,0,0,0.10); }
+        #ledger .ledger-action-btn .btn-icon { font-size: 38px; line-height: 1; }
+        #ledger .ledger-add-pay { width: calc(100% - 32px); margin: 6px 16px 0; padding: 26px 8px; border: none; border-radius: 18px; background: var(--gold); color: #fff;
+            font-size: 16px; font-weight: 800; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 8px; box-shadow: 0 3px 12px rgba(0,0,0,0.12); }
+        #ledger .ledger-add-pay .btn-icon { font-size: 38px; line-height: 1; }
+        #ledger .ledger-add-pay:active { transform: translateY(1px); }
+
+        /* Ledger LOCKED state (entries hidden): Cash In / Expense / Add Payment as 3 equal full-width tiles, stacked */
+        #ledger:not(.ledger-revealed) #ledger-actions { display: flex; flex-direction: column; gap: 14px; padding: 20px 16px 16px; }
+        #ledger:not(.ledger-revealed) #ledger-actions .ledger-action-row { display: contents; }
+        #ledger:not(.ledger-revealed) #ledger-actions .ledger-action-btn,
+        #ledger:not(.ledger-revealed) #ledger-actions .ledger-add-pay {
+            width: 100%; margin: 0; flex: 1 1 0; min-height: 110px; padding: 24px 8px; box-sizing: border-box;
+        }
+        #ledger:not(.ledger-revealed) #ledger-actions .ledger-action-btn { font-size: 18px; }
+        #ledger:not(.ledger-revealed) #ledger-actions .ledger-add-pay { font-size: 18px; }
+        #ledger:not(.ledger-revealed) #ledger-actions .btn-icon { font-size: 40px; }
+
+        /* Ledger REVEALED state (entries visible): original compact layout */
+        #ledger.ledger-revealed #ledger-actions { display: block; }
+        #ledger.ledger-revealed #ledger-actions .ledger-action-row { display: flex; gap: 10px; padding: 14px 14px 4px; }
+        #ledger.ledger-revealed #ledger-actions .ledger-action-btn { flex: 1; padding: 11px 6px; border-radius: 12px; font-size: 13px; gap: 3px; box-shadow: 0 2px 8px rgba(0,0,0,0.10); }
+        #ledger.ledger-revealed #ledger-actions .ledger-action-btn .btn-icon { font-size: 20px; }
+        #ledger.ledger-revealed #ledger-actions .ledger-add-pay { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 4px;
+            width: calc(100% - 28px) !important; max-width: none !important; margin: 6px 14px 4px !important; padding: 13px !important; border-radius: 12px; font-size: 14px; font-weight: 800; box-shadow: 0 2px 8px rgba(0,0,0,0.10); box-sizing: border-box; }
+        #ledger.ledger-revealed #ledger-actions .ledger-add-pay .btn-icon { font-size: inherit; }
+
         .ledger-tabs {
             display: flex;
             gap: 0;
@@ -5487,6 +5516,26 @@
             }
         }
 
+        // Ledger entries stay hidden until the cash-in-shop amount is tapped 5 times (taps reset after 2s idle)
+        let _lbTaps = 0, _lbTimer = null;
+        function _ledgerHideEntries() {
+            _lbTaps = 0; clearTimeout(_lbTimer);
+            const w = document.getElementById('ledger-entries-wrap'); if (w) w.style.display = 'none';
+            const l = document.getElementById('ledger'); if (l) l.classList.remove('ledger-revealed');
+        }
+        function _ledgerBannerTap() {
+            clearTimeout(_lbTimer);
+            const _w = document.getElementById('ledger-entries-wrap');
+            if (_w && _w.style.display !== 'none') { _ledgerHideEntries(); return; }   // one tap hides again
+            if (++_lbTaps >= 5) {
+                _lbTaps = 0;
+                const w = document.getElementById('ledger-entries-wrap'); if (w) w.style.display = 'block';
+                const l = document.getElementById('ledger'); if (l) l.classList.add('ledger-revealed');
+                return;
+            }
+            _lbTimer = setTimeout(() => { _lbTaps = 0; }, 2000);
+        }
+        window._ledgerBannerTap = _ledgerBannerTap;
         function showSection(section) {
             document.getElementById('main-screen').style.display = 'none';
             document.getElementById('update-rates').style.display = 'none';
@@ -5549,6 +5598,7 @@
             if (section === 'ledger') {
                 // Don't call loadLedger() here — it resets ledgerEntries to []
                 // every tab switch, causing ₹0 flash. loadLedger runs once at startup.
+                _ledgerHideEntries();
                 renderLedger();
                 document.getElementById('ledger-nav-btn').classList.add('active');
             }
@@ -20487,11 +20537,12 @@
         <!-- Cash Banner -->
         <div id="ledger-cash-banner">
             <div class="banner-label">Cash in Shop</div>
-            <div class="banner-amount" id="ledger-banner-amount">₹0</div>
+            <div class="banner-amount" id="ledger-banner-amount" onclick="_ledgerBannerTap()">₹0</div>
             <div class="banner-sub" id="ledger-banner-sub">Opening balance + receipts − expenses</div>
         </div>
 
         <!-- Quick Action Buttons -->
+        <div id="ledger-actions">
         <div class="ledger-action-row">
             <button class="ledger-action-btn cash-in"  onclick="openLedgerEntryModal('in')">
                 <span class="btn-icon">💵</span> Cash In
@@ -20501,10 +20552,11 @@
             </button>
         </div>
 
-        <div style="padding:0 14px 4px;">
-            <button onclick="openLedgerAddPaymentChoice()" style="width:100%; background:var(--gold); color:#fff; border:none; border-radius:12px; padding:13px; font-size:14px; font-weight:800; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.10); margin:0;">＋ Add Payment</button>
-        </div>
+        <button class="ledger-add-pay" onclick="openLedgerAddPaymentChoice()"><span class="btn-icon">＋</span>Add Payment</button>
+        </div><!-- /ledger-actions -->
 
+        <!-- Everything below Add Payment is hidden until the cash amount above is tapped 5 times -->
+        <div id="ledger-entries-wrap" style="display:none;">
         <!-- Tabs -->
         <div class="ledger-tabs">
             <button class="ledger-tab active" onclick="switchLedgerTab('all')"       id="ltab-all">All Entries</button>
@@ -20539,6 +20591,7 @@
             <div id="ledger-expenses-list"></div>
             <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:10px; padding:10px 18px; font-size:13px; font-weight:700; cursor:pointer; margin-top:8px; width:100%; box-shadow:none;">← Back to Main</button>
         </div>
+        </div><!-- /ledger-entries-wrap -->
     </div>
 
     <!-- Ledger Entry Modal -->
