@@ -11406,7 +11406,10 @@
             document.getElementById('creditor-entry-sub').textContent = mode === 'payment'
                 ? 'Cash/UPI/Card received from ' + c.name + ' — also logged in the Cash Ledger.'
                 : 'Goods given on credit outside the cart (or an old balance). No cash ledger entry.';
-            document.getElementById('creditor-entry-amount').value = (mode === 'payment' && bal >= 1) ? Math.round(bal) : '';
+            document.getElementById('creditor-entry-amount').value = '';
+            _cdRemainBase = bal;
+            document.getElementById('creditor-entry-remain').style.display = mode === 'payment' ? 'block' : 'none';
+            _cdUpdateRemain();
             document.getElementById('creditor-entry-note').value = '';
             document.getElementById('creditor-entry-status').textContent = '';
             document.getElementById('creditor-entry-paymodes').style.display = mode === 'payment' ? 'flex' : 'none';
@@ -11414,6 +11417,15 @@
             _cdSetAllocMode('auto');
             _cdSetPayMode('cash');
             _cdShow('creditor-entry-modal');
+        }
+        // Remaining balance shown above the amount box; updates live as the amount is typed
+        let _cdRemainBase = 0;
+        function _cdUpdateRemain() {
+            const el = document.getElementById('creditor-entry-remain-amt'); if (!el) return;
+            const amt = Math.round(parseFloat(document.getElementById('creditor-entry-amount').value) || 0);
+            const rem = Math.round(_cdRemainBase) - amt;
+            if (rem < 0) { el.textContent = '₹' + Math.abs(rem).toLocaleString('en-IN') + ' advance'; el.style.color = '#2e7d32'; }
+            else { el.textContent = '₹' + rem.toLocaleString('en-IN'); el.style.color = rem === 0 ? '#2e7d32' : '#c62828'; }
         }
         let _cdAllocMode = 'auto';
         function _cdSetAllocMode(m) {
@@ -21376,7 +21388,11 @@
                 <button onclick="_cdHide('creditor-entry-modal')" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
             <div id="creditor-entry-sub" style="font-size:12px; color:#888; margin-bottom:10px;"></div>
-            <input type="number" id="creditor-entry-amount" placeholder="Amount (₹)" min="0" step="1" style="margin:0 0 8px;">
+            <div id="creditor-entry-remain" style="display:none; background:#fff8e1; border:1.5px solid #f0d98a; border-radius:12px; padding:10px 12px; margin-bottom:10px; text-align:center;">
+                <div style="font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#8a6d1a;">Remaining Balance</div>
+                <div id="creditor-entry-remain-amt" style="font-size:26px; font-weight:800; color:#c62828; line-height:1.2;"></div>
+            </div>
+            <input type="number" id="creditor-entry-amount" placeholder="Amount (₹)" min="0" step="1" oninput="_cdUpdateRemain()" style="margin:0 0 8px;">
             <div id="creditor-entry-paymodes" style="display:flex; gap:8px; margin-bottom:8px;">
                 <button id="cd-pm-cash" onclick="_cdSetPayMode('cash')" style="flex:1; margin:0; padding:9px 4px; font-size:13px; border-radius:10px; box-shadow:none;">💵 Cash</button>
                 <button id="cd-pm-upi" onclick="_cdSetPayMode('upi')" style="flex:1; margin:0; padding:9px 4px; font-size:13px; border-radius:10px; box-shadow:none;">📱 UPI</button>
