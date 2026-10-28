@@ -1259,6 +1259,15 @@
             min-height: 0;
         }
 
+        /* Item Issue + Returns pages: same independent scrolling as the sections above */
+        #issue, #returns {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            width: 100%;
+            min-height: 0 !important;
+        }
+
         /* --- Ledger Styles --- */
         #ledger {
             flex: 1;
@@ -19798,6 +19807,30 @@
                 });
             });
 
+            // Item Issue (damaged / lost / other) barcodes also leave stock, so list them too, in the same
+            // Vou Type / Vou No. / item-name groups. Issues carry no track, so they show on whichever track is open.
+            const _issued = window._issuedBarcodes || {};
+            Object.keys(_issued).forEach(code => {
+                const rec = _issued[code] || {};
+                const d = new Date(rec.ts || (rec.date ? rec.date + 'T12:00:00' : NaN));
+                if (isNaN(d)) return;
+                const dOnly = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                if (fromV && dOnly < fromV) return;
+                if (toV && dOnly > toV) return;
+                const bc = String(code).trim().toUpperCase();
+                const prod = productData[code] || productData[bc] || {};
+                const voucherType = (prod.voucherType || '').toString().trim() || '—';
+                const vouchNo = (prod.vouchNo || '').toString().trim() || '—';
+                if (!types[voucherType]) types[voucherType] = {};
+                if (!types[voucherType][vouchNo]) types[voucherType][vouchNo] = new Map();
+                const itemNameRaw = (prod.itemName || '').toString().trim();
+                const nameKey = itemNameRaw.toUpperCase() || '—';
+                const byName = types[voucherType][vouchNo];
+                if (!byName.has(nameKey)) byName.set(nameKey, []);
+                byName.get(nameKey).push({ barcode: bc, itemName: itemNameRaw, billNo: '', issued: true, reason: rec.reason || 'Issue' });
+                totalBarcodes++;
+            });
+
             const typeArr = Object.keys(types).sort((a, b) => a.localeCompare(b)).map(voucherType => ({
                 voucherType,
                 vouchNoGroups: Object.keys(types[voucherType])
@@ -19806,7 +19839,7 @@
                         vouchNo,
                         barcodes: Array.from(types[voucherType][vouchNo].entries())
                             .sort((a, b) => a[0].localeCompare(b[0]))
-                            .map(([, items]) => items.sort((x, y) => String(x.billNo || '').localeCompare(String(y.billNo || ''), undefined, { numeric: true })))
+                            .map(([, items]) => items.sort((x, y) => String(x.barcode).localeCompare(String(y.barcode), undefined, { numeric: true }) || String(x.billNo || '').localeCompare(String(y.billNo || ''), undefined, { numeric: true })))
                             .flat()
                     }))
             }));
@@ -19828,7 +19861,7 @@
                                 <div style="display:flex; justify-content:space-between; align-items:baseline; font-size:12px; padding:3px 0 3px 6px; border-bottom:1px solid #f2f2f2; gap:8px;">
                                     <span class="inv-bcl-copytag" onclick="invCopyBarcodeTag('${invEscAttr(b.barcode)}')" title="Tap to copy" style="font-weight:700; white-space:nowrap; cursor:pointer; padding:6px 2px; margin:-6px -2px; display:inline-block;">${invEscH(b.barcode)}</span>
                                     <span style="color:#666; flex:1; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${invEscH(b.itemName || '')}</span>
-                                    <span style="color:#999; white-space:nowrap;">${invEscH(b.billNo || '')}</span>
+                                    <span style="color:${b.issued ? '#e65100' : '#999'}; white-space:nowrap;">${b.issued ? '⚠️ ' + invEscH(b.reason) : invEscH(b.billNo || '')}</span>
                                 </div>
                             `).join('')}
                         </div>
