@@ -1347,25 +1347,14 @@
         #ledger .ledger-add-pay .btn-icon { font-size: 38px; line-height: 1; }
         #ledger .ledger-add-pay:active { transform: translateY(1px); }
 
-        /* Ledger LOCKED state (entries hidden): Cash In / Expense / Add Payment as 3 equal full-width tiles, stacked */
-        #ledger:not(.ledger-revealed) #ledger-actions { display: flex; flex-direction: column; gap: 14px; padding: 20px 16px 16px; }
-        #ledger:not(.ledger-revealed) #ledger-actions .ledger-action-row { display: contents; }
-        #ledger:not(.ledger-revealed) #ledger-actions .ledger-action-btn,
-        #ledger:not(.ledger-revealed) #ledger-actions .ledger-add-pay {
-            width: 100%; margin: 0; flex: 1 1 0; min-height: 110px; padding: 24px 8px; box-sizing: border-box;
-        }
-        #ledger:not(.ledger-revealed) #ledger-actions .ledger-action-btn { font-size: 18px; }
-        #ledger:not(.ledger-revealed) #ledger-actions .ledger-add-pay { font-size: 18px; }
-        #ledger:not(.ledger-revealed) #ledger-actions .btn-icon { font-size: 40px; }
-
-        /* Ledger REVEALED state (entries visible): original compact layout */
-        #ledger.ledger-revealed #ledger-actions { display: block; }
-        #ledger.ledger-revealed #ledger-actions .ledger-action-row { display: flex; gap: 10px; padding: 14px 14px 4px; }
-        #ledger.ledger-revealed #ledger-actions .ledger-action-btn { flex: 1; padding: 11px 6px; border-radius: 12px; font-size: 13px; gap: 3px; box-shadow: 0 2px 8px rgba(0,0,0,0.10); }
-        #ledger.ledger-revealed #ledger-actions .ledger-action-btn .btn-icon { font-size: 20px; }
-        #ledger.ledger-revealed #ledger-actions .ledger-add-pay { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 4px;
+        /* Ledger action buttons: compact layout in both states (rates table fills the space when entries are hidden) */
+        #ledger #ledger-actions { display: block; }
+        #ledger #ledger-actions .ledger-action-row { display: flex; gap: 10px; padding: 14px 14px 4px; }
+        #ledger #ledger-actions .ledger-action-btn { flex: 1; padding: 11px 6px; border-radius: 12px; font-size: 13px; gap: 3px; box-shadow: 0 2px 8px rgba(0,0,0,0.10); }
+        #ledger #ledger-actions .ledger-action-btn .btn-icon { font-size: 20px; }
+        #ledger #ledger-actions .ledger-add-pay { display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 4px;
             width: calc(100% - 28px) !important; max-width: none !important; margin: 6px 14px 4px !important; padding: 13px !important; border-radius: 12px; font-size: 14px; font-weight: 800; box-shadow: 0 2px 8px rgba(0,0,0,0.10); box-sizing: border-box; }
-        #ledger.ledger-revealed #ledger-actions .ledger-add-pay .btn-icon { font-size: inherit; }
+        #ledger #ledger-actions .ledger-add-pay .btn-icon { font-size: inherit; }
 
         .ledger-tabs {
             display: flex;
@@ -1470,6 +1459,24 @@
             box-shadow: 0 -8px 32px rgba(0,0,0,0.15);
             max-height: 85vh; overflow-y: auto;
         }
+        /* Ledger rates card (view-only, styled) */
+        #ledger-rates-table .lr-title { display:flex; align-items:center; gap:8px; margin:16px 2px 10px; font-size:13px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:var(--text2); }
+        #ledger-rates-table .lr-title::after { content:''; flex:1; height:1px; background:linear-gradient(90deg, var(--border), transparent); }
+        #ledger-rates-table .lr-card { background:var(--surface); border-radius:18px; overflow:hidden; box-shadow:0 4px 18px rgba(0,0,0,0.09); border:1px solid var(--border); }
+        #ledger-rates-table .lr-head, #ledger-rates-table .lr-row { display:grid; grid-template-columns:1.2fr 1fr 1.2fr; align-items:center; padding:0 16px; }
+        #ledger-rates-table .lr-head { background:linear-gradient(135deg, #1C1C1E 0%, #1E7A3E 100%); color:rgba(255,255,255,.85); font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; padding-top:11px; padding-bottom:11px; }
+        #ledger-rates-table .lr-head span:last-child, #ledger-rates-table .lr-rate { text-align:right; }
+        #ledger-rates-table .lr-row { padding-top:13px; padding-bottom:13px; border-bottom:1px solid var(--border); }
+        #ledger-rates-table .lr-row:last-child { border-bottom:none; }
+        #ledger-rates-table .lr-row:nth-child(even) { background:rgba(0,0,0,0.025); }
+        #ledger-rates-table .lr-metal { display:flex; align-items:center; gap:9px; font-size:14px; font-weight:700; color:var(--text); }
+        #ledger-rates-table .lr-dot { width:14px; height:14px; border-radius:50%; flex-shrink:0; box-shadow:inset 0 -2px 3px rgba(0,0,0,.18), 0 1px 3px rgba(0,0,0,.2); }
+        #ledger-rates-table .lr-dot.gold { background:radial-gradient(circle at 30% 30%, #FFE58A, #D4AF37 60%, #A67C00); }
+        #ledger-rates-table .lr-dot.silver { background:radial-gradient(circle at 30% 30%, #FFFFFF, #C0C6CC 60%, #8A9299); }
+        #ledger-rates-table .lr-dot.other { background:radial-gradient(circle at 30% 30%, #eee, #bbb); }
+        #ledger-rates-table .lr-stamp { display:inline-block; justify-self:start; font-size:13px; font-weight:700; color:var(--text); background:var(--gold-lt, #E8F5E9); border-radius:8px; padding:3px 10px; }
+        #ledger-rates-table .lr-rate { font-size:17px; font-weight:800; color:var(--text); font-variant-numeric:tabular-nums; letter-spacing:-.2px; }
+        #ledger-rates-table .lr-rate small { font-size:11px; font-weight:600; color:var(--text2); margin-right:2px; }
         /* --- End Ledger Styles --- */
 
         /* --- Reminders --- */
@@ -5518,10 +5525,22 @@
 
         // Ledger entries stay hidden until the cash-in-shop amount is tapped 5 times (taps reset after 2s idle)
         let _lbTaps = 0, _lbTimer = null;
+        // Cash-in-shop amount stays masked (XXXXX) until the eye button is tapped
+        let _ledgerAmtShown = false;
+        function _ledgerApplyAmt() {
+            const el = document.getElementById('ledger-banner-amount'); if (!el) return;
+            el.textContent = _ledgerAmtShown ? (window._ledgerBannerText || '₹0') : 'XXXXX';
+            const eye = document.getElementById('ledger-amt-eye'); if (eye) eye.textContent = _ledgerAmtShown ? '🙈' : '👁️';
+        }
+        function _ledgerToggleAmt() { _ledgerAmtShown = !_ledgerAmtShown; _ledgerApplyAmt(); }
+        window._ledgerToggleAmt = _ledgerToggleAmt;
         function _ledgerHideEntries() {
             _lbTaps = 0; clearTimeout(_lbTimer);
+            _ledgerAmtShown = false; _ledgerApplyAmt();
             const w = document.getElementById('ledger-entries-wrap'); if (w) w.style.display = 'none';
+            const rw = document.getElementById('ledger-rates-wrap'); if (rw) rw.style.display = 'block';
             const l = document.getElementById('ledger'); if (l) l.classList.remove('ledger-revealed');
+            if (typeof renderRatesTable === 'function') renderRatesTable();
         }
         function _ledgerBannerTap() {
             clearTimeout(_lbTimer);
@@ -5530,6 +5549,7 @@
             if (++_lbTaps >= 5) {
                 _lbTaps = 0;
                 const w = document.getElementById('ledger-entries-wrap'); if (w) w.style.display = 'block';
+                const rw = document.getElementById('ledger-rates-wrap'); if (rw) rw.style.display = 'none';
                 const l = document.getElementById('ledger'); if (l) l.classList.add('ledger-revealed');
                 return;
             }
@@ -6834,7 +6854,17 @@
             html += '</table>';
             if (editing) html += '<p style="font-size:12px; color:#666; margin-top:8px;">Hidden stamps are only removed from this list — they still work everywhere else.</p>';
             html += '<p style="margin-top:12px;"><strong>Tax:</strong> ' + taxRate + '%</p>';
-            document.getElementById('rates-table').innerHTML = html;
+            const _rt = document.getElementById('rates-table'); if (_rt) _rt.innerHTML = html;
+            // Ledger page: view-only list (no Edit list button, no Tax line), same order/hidden stamps as set in Update Rates
+            let lhtml = '<div class="lr-title">Current Rates</div><div class="lr-card"><div class="lr-head"><span>Metal</span><span>Stamp</span><span>Rate / g</span></div>';
+            rows.forEach(r => {
+                if (hidden.has(r.key)) return;
+                const m = r.metal.charAt(0).toUpperCase() + r.metal.slice(1);
+                const dot = /gold/i.test(r.metal) ? 'gold' : /silver/i.test(r.metal) ? 'silver' : 'other';
+                lhtml += `<div class="lr-row"><div class="lr-metal"><span class="lr-dot ${dot}"></span>${m}</div><div><span class="lr-stamp">${r.stamp}</span></div><div class="lr-rate"><small>₹</small>${rates[r.metal][r.stamp].toFixed(2)}</div></div>`;
+            });
+            lhtml += '</div>';
+            const _lrt = document.getElementById('ledger-rates-table'); if (_lrt) _lrt.innerHTML = lhtml;
         }
 
         function populateStamps(selectId, metal) {
@@ -14905,8 +14935,9 @@
 
         function renderLedger() {
             const total = ledgerCashTotal();
-            document.getElementById('ledger-banner-amount').textContent = '₹' + Math.abs(total).toLocaleString('en-IN', {maximumFractionDigits:0}) + (total < 0 ? ' (deficit)' : '');
+            window._ledgerBannerText = '₹' + Math.abs(total).toLocaleString('en-IN', {maximumFractionDigits:0}) + (total < 0 ? ' (deficit)' : '');
             document.getElementById('ledger-banner-amount').style.color = total < 0 ? '#ef9a9a' : 'white';
+            _ledgerApplyAmt();
 
             // Summary cards
             const totalSales    = ledgerEntries.filter(e => e.type === 'sale').reduce((s,e) => s + e.amount, 0);
@@ -20536,8 +20567,11 @@
     <div id="ledger" style="display:none;">
         <!-- Cash Banner -->
         <div id="ledger-cash-banner">
-            <div class="banner-label">Cash in Shop</div>
-            <div class="banner-amount" id="ledger-banner-amount" onclick="_ledgerBannerTap()">₹0</div>
+            <div class="banner-label">Balance</div>
+            <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+                <div class="banner-amount" id="ledger-banner-amount" onclick="_ledgerBannerTap()">XXXXX</div>
+                <button id="ledger-amt-eye" type="button" onclick="event.stopPropagation(); _ledgerToggleAmt();" aria-label="Show/hide amount" style="width:auto; margin:0; padding:6px 8px; background:rgba(255,255,255,0.18); border:none; border-radius:10px; box-shadow:none; font-size:22px; line-height:1; color:white; cursor:pointer;">👁️</button>
+            </div>
             <div class="banner-sub" id="ledger-banner-sub">Opening balance + receipts − expenses</div>
         </div>
 
@@ -20554,6 +20588,11 @@
 
         <button class="ledger-add-pay" onclick="openLedgerAddPaymentChoice()"><span class="btn-icon">＋</span>Add Payment</button>
         </div><!-- /ledger-actions -->
+
+        <!-- Default view: Current Rates (replaced by the entries after 5 taps on the cash amount) -->
+        <div id="ledger-rates-wrap" style="padding:4px 14px 16px;">
+            <div id="ledger-rates-table"></div>
+        </div>
 
         <!-- Everything below Add Payment is hidden until the cash amount above is tapped 5 times -->
         <div id="ledger-entries-wrap" style="display:none;">
