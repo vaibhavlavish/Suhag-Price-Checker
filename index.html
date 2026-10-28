@@ -5330,6 +5330,7 @@
                 if (_gone.supplier.pieceBillId) update[`pieceSupplies/${_gone.supplier.pieceBillId}`] = null;
                 if (_gone.supplier.piecePayId)  update[`pieceSupplies/${_gone.supplier.piecePayId}`] = null;
             }
+            if (_gone && _gone.oldJewellery && _gone.oldJewellery.purchaseId) update[`purchases/${_gone.oldJewellery.purchaseId}`] = null;
             window.dbSafeUpdate(update)
                 .then(() => { if (onDone) onDone(); })
                 .catch(e => { console.error('[Ledger] delete failed', e); if (onDone) onDone(); });
@@ -15805,6 +15806,7 @@
             _acctView = 'create';
             if (!_acctAllCats().some(c => c.id === _acctSelCat)) _acctSelCat = ACCT_BUILTIN_CATS[0].id;
             const n = document.getElementById('acct-new-acct-name'); if (n) n.value = '';
+            _acctNewType = '';
             renderAccountsList();
             setTimeout(() => { const n2 = document.getElementById('acct-new-acct-name'); if (n2) n2.focus(); }, 60);
         }
@@ -15822,6 +15824,8 @@
                 </div>`;
             }).join('');
             const sel = _acctAllCats().find(c => c.id === _acctSelCat);
+            const tb = document.getElementById('acct-new-type-box');
+            if (tb) { const isSup = !!(sel && sel.id === 'cat_supplier'); tb.style.display = isSup ? 'block' : 'none'; if (isSup) document.getElementById('acct-new-type').innerHTML = _supTypeBtnsHtml(_acctNewType, '_acctSetNewType'); }
             const note = document.getElementById('acct-cat-note');
             if (note) note.textContent = (sel && sel.id === 'cat_supplier') ? 'Supplier accounts are the same list as the Purchase Manager suppliers. Entries ask for metal / per-piece details.' : '';
         }
@@ -15836,8 +15840,9 @@
             const id = crypto.randomUUID();
             if (cat.id === 'cat_supplier') {
                 // A supplier account IS a Purchase Manager supplier (party) — shared list.
-                pmParties.push({ id, name });
-                window.dbSafeUpdate({ ['parties/' + id]: { id, name } }).catch(e => { console.error(e); showCustomAlert('Could not save the supplier — open the POS from the official link.'); });
+                if (!_acctNewType) { showCustomAlert('Choose what this supplier supplies: Gold, Silver or 1G.'); return; }
+                pmParties.push({ id, name, metalType: _acctNewType });
+                window.dbSafeUpdate({ ['parties/' + id]: { id, name, metalType: _acctNewType } }).catch(e => { console.error(e); showCustomAlert('Could not save the supplier — open the POS from the official link.'); });
             } else {
                 acctAccounts.push({ id, name, categoryId: cat.id });   // show instantly; Firebase listener replaces it
                 window.dbSafeUpdate({ ['acctAccounts/' + id]: { id, name, categoryId: cat.id } }).catch(e => console.error(e));
@@ -15847,6 +15852,7 @@
         }
         function acctRenameAccount(id) {
             const party = pmParties.find(x => x.id === id);
+            if (party) { openSupEdit(id); return; }              // suppliers: name + type (shared with Purchase Manager)
             const a = party || acctAccounts.find(x => x.id === id); if (!a) return;
             const name = (prompt(party ? 'Rename supplier (also renames it in Purchase Manager):' : 'Rename account:', a.name) || '').trim();
             if (!name || name === a.name) return;
@@ -15891,6 +15897,7 @@
             if (e.mode) rec.mode = e.mode;
             if (e.accountId) { rec.accountId = e.accountId; rec.accountName = e.accountName || ''; rec.categoryId = e.categoryId || ''; rec.categoryName = e.categoryName || ''; }
             if (e.supplier) rec.supplier = e.supplier;
+            if (e.oldJewellery) rec.oldJewellery = e.oldJewellery;
             if (e.invoiceId) rec.invoiceId = e.invoiceId;
             return rec;
         }
@@ -15898,6 +15905,7 @@
             let t = '';
             if (e.accountName) t += ' · ' + _ciEsc(e.accountName);
             if (e.supplier && e.supplier.partyName) t += ' · ' + _ciEsc(e.supplier.partyName);
+            if (e.oldJewellery && e.oldJewellery.weight > 0) t += ' · ' + _ciEsc(e.oldJewellery.weight + 'g ' + e.oldJewellery.metal);
             if (e.mode === 'upi') t += ' · UPI';
             return t;
         }
@@ -15984,7 +15992,7 @@
                     const open = _acctPickSupOpen || !!term;
                     html += `<button onclick="acctPickToggleSup()" style="grid-column:1/-1; display:flex; justify-content:space-between; align-items:center; width:100%; margin:8px 0 0; padding:11px 14px; background:#faf7ef; color:#222; border:1.5px solid #e6dcc3; border-radius:12px; box-shadow:none; font-size:13px; font-weight:800; text-transform:uppercase; letter-spacing:.04em;"><span>${_ciEsc(c.name)}</span><span style="color:#888;">${list.length} &nbsp;${open ? '▴' : '▾'}</span></button>`;
                     if (open) html += list.map(tile).join('');
-                    if (plusCat) html += plusTile(c);
+                    if (plusCat && open) html += plusTile(c);      // ＋ only once the Supplier list is dropped down
                 } else {
                     html += head(c) + list.map(tile).join('') + (plusCat ? plusTile(c) : '');
                 }
@@ -16045,7 +16053,7 @@
             const base = new Date(now); base.setFullYear(pr[0], pr[1] - 1, pr[2]);
             return new Date(Math.min(latest ? latest + 1000 : base.getTime(), dayEnd)).toISOString();
         }
-        function _ledgerEditFull(e) { return e.source === 'manual' && !e.supplier && (e.type === 'in' || e.type === 'expense'); }
+        function _ledgerEditFull(e) { return e.source === 'manual' && !e.supplier && !e.oldJewellery && (e.type === 'in' || e.type === 'expense'); }
         function _ledgerModalLock(full) {
             document.getElementById('ledger-type-row').style.display = full ? 'flex' : 'none';
             document.getElementById('ledger-b-fields').style.display = full ? 'block' : 'none';
@@ -16077,6 +16085,7 @@
             document.getElementById('ledger-entry-date').value = _localDateStr(new Date(e.timestamp));
             document.getElementById('ledger-entry-date').max = _localDateStr(new Date());
             _ledgerModalLock(full);
+            if (!full && e.oldJewellery) document.getElementById('ledger-edit-hint').textContent = 'This old jewellery purchase also feeds the Purchase Manager (weight, rate), so only the note can be edited here. To change anything else, delete it and add it again.';
             document.getElementById('ledger-save-btn').textContent = '✓ Save Changes';
             document.getElementById('ledger-entry-modal').classList.add('show');
         }
@@ -16093,6 +16102,7 @@
                 const acctSel = aid ? _acctFind(aid, _ledgerEntryType === 'in' ? 'in' : 'out') : null;
                 if (!acctSel) { showCustomAlert('Select an account first.'); return; }
                 if (acctSel.c.system === 'supplier' && !acctSel.a.adhoc) { showCustomAlert('Supplier payments need the supplier dialog — delete this entry and add a new one for that.'); return; }
+                if (acctSel.c.id === 'cat_oldjewellery' && e.categoryId !== 'cat_oldjewellery') { showCustomAlert('Old jewellery purchases need the weight / rate dialog — delete this entry and add a new one for that.'); return; }
                 Object.assign(e, { type: _ledgerEntryType, amount: amt, mode: _ledgerMode, accountId: acctSel.a.id, accountName: acctSel.a.name, categoryId: acctSel.c.id, categoryName: acctSel.c.name });
                 if (dateVal && dateVal !== _localDateStr(new Date(e.timestamp))) e.timestamp = _ledgerTsNewestOfDay(dateVal, e.id);
             }
@@ -16142,8 +16152,112 @@
             const cell = (lbl, val, bad) => `<div style="flex:1; min-width:70px;"><div style="font-size:10px; color:#888; font-weight:700;">${lbl}</div><div style="font-size:14px; font-weight:800; color:${bad ? '#c62828' : '#2e7d32'};">${val}</div></div>`;
             const g = _supOutstanding(pid, 'Gold'), si = _supOutstanding(pid, 'Silver'), c = _supCashOwed(pid), pc = Math.max(0, _supPieceBalance(pid));
             box.innerHTML = '<div style="font-size:11px; font-weight:800; color:#888; margin-bottom:6px;">OWED TO THIS SUPPLIER</div><div style="display:flex; flex-wrap:wrap; gap:8px;">' +
-                cell('CASH', '₹' + _fmt(c), c > 0.5) + cell('GOLD', g.toFixed(2) + 'g', g > 0.001) + cell('SILVER', si.toFixed(2) + 'g', si > 0.001) + cell('PER-PIECE', '₹' + _fmt(pc), pc > 0.5) + '</div>';
+                cell('AMOUNT', '₹' + _fmt(c + pc), (c + pc) > 0.5) + cell('GOLD', g.toFixed(2) + 'g', g > 0.001) + cell('SILVER', si.toFixed(2) + 'g', si > 0.001) + '</div>';   // cash + per-piece are both just money owed
             box.style.display = 'block';
+        }
+        // ── Supplier type: what a supplier supplies — 'Gold' | 'Silver' | '1G' (per-piece only) | '' (not set) ──
+        // Stored on the shared `parties/{id}.metalType`, so the Purchase Manager reads/writes the same value.
+        function _supTypeBtnsHtml(cur, fn) {
+            return ['Gold', 'Silver', '1G'].map(v => `<button type="button" onclick="${fn}('${v}')" style="flex:1; margin:0; padding:9px 4px; font-size:13px; font-weight:700; border-radius:10px; box-shadow:none; border:2px solid ${cur === v ? '#1565C0' : '#e0e0e0'}; background:${cur === v ? '#e3f2fd' : 'white'}; color:#333;">${v}</button>`).join('');
+        }
+        let _seId = null, _seType = '', _seDone = null, _supNewType = '', _acctNewType = '';
+        function openSupEdit(id, done) {
+            const p = pmParties.find(x => x.id === id); if (!p) return;
+            _seId = id; _seDone = done || null; _seType = p.metalType || '';
+            document.getElementById('se-name').value = p.name || '';
+            document.getElementById('se-err').textContent = '';
+            document.getElementById('se-types').innerHTML = _supTypeBtnsHtml(_seType, '_seSetType');
+            document.getElementById('sup-edit-modal').style.display = 'flex';
+        }
+        function _seSetType(t) { _seType = (_seType === t) ? '' : t; document.getElementById('se-types').innerHTML = _supTypeBtnsHtml(_seType, '_seSetType'); }
+        function closeSupEdit() { document.getElementById('sup-edit-modal').style.display = 'none'; _seId = null; _seDone = null; }
+        function saveSupEdit() {
+            const p = pmParties.find(x => x.id === _seId); if (!p) { closeSupEdit(); return; }
+            const name = (document.getElementById('se-name').value || '').trim();
+            const err = document.getElementById('se-err');
+            if (!name) { err.textContent = 'Enter the supplier name.'; return; }
+            if (pmParties.some(x => x.id !== p.id && (x.name || '').toLowerCase() === name.toLowerCase())) { err.textContent = 'Another supplier already has that name.'; return; }
+            p.name = name; p.metalType = _seType || null;                  // show instantly; the listener confirms it
+            const upd = {}; upd['parties/' + p.id + '/name'] = name; upd['parties/' + p.id + '/metalType'] = _seType || null;
+            window.dbSafeUpdate(upd).catch(e => { console.error(e); showCustomAlert('Could not save the supplier — open the POS from the official link.'); });
+            const done = _seDone; closeSupEdit();
+            try { if (typeof renderAccountsList === 'function') renderAccountsList(); } catch (e) { }
+            if (done) done();
+        }
+        function _supEditParty() {
+            const sel = document.getElementById('sup-party'); const id = sel.value;
+            if (!id || id === '__new' || id === '__adhoc') return;
+            openSupEdit(id, () => {
+                const p = pmParties.find(x => x.id === id);
+                if (p && sel.selectedIndex >= 0) sel.options[sel.selectedIndex].textContent = p.name;
+                _supApplyPartyMetal(false);
+            });
+        }
+        function _supSetNewType(t) {
+            _supNewType = (_supNewType === t) ? '' : t;
+            document.getElementById('sup-new-type').innerHTML = _supTypeBtnsHtml(_supNewType, '_supSetNewType');
+            _supApplyPartyMetal(false);
+        }
+        function _acctSetNewType(t) {
+            _acctNewType = (_acctNewType === t) ? '' : t;
+            document.getElementById('acct-new-type').innerHTML = _supTypeBtnsHtml(_acctNewType, '_acctSetNewType');
+        }
+
+        // Which metal(s) does this supplier deal in? Read from their Purchase Manager history, so a gold supplier
+        // only ever offers Gold (and a silver supplier only Silver). `def` = the metal to preselect — when a
+        // supplier has both, the one with the larger amount outstanding (₹ value at their latest rate when known).
+        function _supMetalInfo(pid) {
+            const info = { metals: [], def: 'Gold', hasPiece: false, oneG: false };
+            if (pid === '__new') {                                   // type picked in the new-supplier box
+                if (_supNewType === '1G') info.oneG = true;
+                else if (_supNewType) { info.metals = [_supNewType]; info.def = _supNewType; }
+                return info;
+            }
+            if (!pid || pid === '__adhoc') return info;
+            const party = pmParties.find(x => x.id === pid);
+            const mt = party && party.metalType;                     // explicit setting beats guessing from history
+            info.hasPiece = pmPieceSupplies.some(r => r.partyId === pid && r.track === 'B');
+            if (mt === 'Gold' || mt === 'Silver') { info.metals = [mt]; info.def = mt; return info; }
+            if (mt === '1G') { info.oneG = true; return info; }
+            const seen = {}, rate = {};
+            const recs = pmPurchases.filter(p => p.partyId === pid && p.track === 'B')
+                .concat(pmPayments.filter(p => p.partyId === pid && p.track === 'B' && p.payType !== 'amount'))
+                .sort((a, b) => new Date(a.createdAt || 0) - new Date(b.createdAt || 0));
+            recs.forEach(p => {
+                if (p.metal !== 'Gold' && p.metal !== 'Silver') return;
+                seen[p.metal] = true;
+                if ((p.rate || 0) > 0) rate[p.metal] = p.rate;      // latest rate wins
+            });
+            info.metals = ['Gold', 'Silver'].filter(m => seen[m]);
+            info.hasPiece = pmPieceSupplies.some(r => r.partyId === pid && r.track === 'B');
+            if (info.metals.length === 1) info.def = info.metals[0];
+            else if (info.metals.length === 2) {
+                const og = _supOutstanding(pid, 'Gold'), os = _supOutstanding(pid, 'Silver');
+                if (rate.Gold && rate.Silver) info.def = (os * rate.Silver > og * rate.Gold) ? 'Silver' : 'Gold';
+                else if (og <= 0.001 && os > 0.001) info.def = 'Silver';
+                else info.def = 'Gold';
+            }
+            return info;
+        }
+        // Fill the Metal dropdown for the chosen supplier and pick the starting tab.
+        function _supApplyPartyMetal(initial) {
+            const pid = document.getElementById('sup-party').value;
+            const info = _supMetalInfo(pid);
+            const sel = document.getElementById('sup-metal');
+            const list = info.metals.length ? info.metals : ['Gold', 'Silver'];
+            sel.innerHTML = list.map(m => '<option value="' + m + '">' + m + '</option>').join('');
+            sel.value = list.indexOf(info.def) >= 0 ? info.def : list[0];
+            // Single-metal supplier: no dropdown at all — the metal is shown on the tab itself, e.g. "Metal (Gold)".
+            const single = list.length === 1;
+            sel.style.display = single ? 'none' : '';
+            const ml = document.getElementById('sup-metal-label'); if (ml) ml.style.display = single ? 'none' : '';
+            document.getElementById('sup-kind-metal').textContent = '⚖️ Metal' + (single ? ' (' + sel.value + ')' : '');
+            // 1G suppliers (and suppliers who have only ever supplied per-piece items) work on the Per-piece tab.
+            const real = pid && pid !== '__new' && pid !== '__adhoc';
+            const pieceOnly = info.oneG || (real && !info.metals.length && info.hasPiece);
+            document.getElementById('sup-kind-metal').style.display = info.oneG ? 'none' : '';
+            const eb = document.getElementById('sup-party-edit'); if (eb) eb.style.display = real ? 'block' : 'none';
+            _supSetKind(pieceOnly ? 'piece' : (initial ? 'metal' : _supKind));
         }
         function _supPieceBalance(partyId) {
             return pmPieceSupplies.filter(r => r.partyId === partyId && r.track === 'B')
@@ -16156,6 +16270,7 @@
                 pmParties.map(p => `<option value="${_ciEsc(p.id)}">${_ciEsc(p.name)}</option>`).join('') + '<option value="__new">＋ New supplier…</option>';
             document.getElementById('sup-new-party').style.display = 'none';
             document.getElementById('sup-new-party').value = '';
+            _supNewType = ''; document.getElementById('sup-new-type-box').style.display = 'none';
             const _supSel = document.getElementById('sup-party');
             _supSel.disabled = false;
             if (entry.accountId && pmParties.some(x => x.id === entry.accountId)) _supSel.value = entry.accountId;
@@ -16167,7 +16282,7 @@
                 _supSel.disabled = true;
             }
             ['sup-weight', 'sup-rate', 'sup-desc', 'sup-qty', 'sup-bill'].forEach(id => { document.getElementById(id).value = ''; });
-            _supSetKind('metal');
+            _supApplyPartyMetal(true);      // metal list + starting tab follow the supplier
             document.getElementById('supplier-pay-modal').style.display = 'flex';
         }
         function closeSupplierPayDialog() {
@@ -16177,7 +16292,9 @@
         function _supPartyChanged() {
             const isNew = document.getElementById('sup-party').value === '__new';
             document.getElementById('sup-new-party').style.display = isNew ? 'block' : 'none';
-            _supRecalc();
+            document.getElementById('sup-new-type-box').style.display = isNew ? 'block' : 'none';
+            if (isNew) document.getElementById('sup-new-type').innerHTML = _supTypeBtnsHtml(_supNewType, '_supSetNewType');
+            _supApplyPartyMetal(false);
         }
         function _supSetKind(k) {
             _supKind = (k === 'piece') ? 'piece' : 'metal';
@@ -16236,7 +16353,10 @@
                 if (!nm) { showCustomAlert('Enter the new supplier name.'); return; }
                 const ex = pmParties.find(p => (p.name || '').toLowerCase() === nm.toLowerCase());
                 if (ex) { partyId = ex.id; partyName = ex.name; }
-                else { partyId = crypto.randomUUID(); partyName = nm; extra['parties/' + partyId] = { id: partyId, name: nm }; }
+                else {
+                    if (!_supNewType) { showCustomAlert('Choose what this supplier supplies: Gold, Silver or 1G.'); return; }
+                    partyId = crypto.randomUUID(); partyName = nm; extra['parties/' + partyId] = { id: partyId, name: nm, metalType: _supNewType };
+                }
             } else {
                 const p = pmParties.find(x => x.id === partyId); partyName = p ? p.name : '';
             }
@@ -16289,6 +16409,69 @@
             closeSupplierPayDialog();
             closeLedgerEntryModal();
         }
+        // ── Old jewellery bought through the ledger: metal + weight + rate, booked as a Purchase Manager purchase ──
+        // The ledger AMOUNT is final. If weight x rate disagrees with it, the rate is re-derived from the amount.
+        let _pendingOjEntry = null, _ojMetal = '';
+        function _ojSetMetal(m) {
+            _ojMetal = (m === 'Gold' || m === 'Silver') ? m : '';
+            ['Gold', 'Silver'].forEach(x => {
+                const b = document.getElementById('oj-metal-' + x); if (!b) return;
+                b.style.border = x === _ojMetal ? '2.5px solid #1565C0' : '2px solid #e0e0e0';
+                b.style.background = x === _ojMetal ? '#e3f2fd' : 'white';
+            });
+        }
+        function _openOldJewDialog(entry) {
+            _pendingOjEntry = entry;
+            document.getElementById('oj-amount-line').textContent = 'Paying ₹' + _fmt(entry.amount) + ' via ' + (entry.mode === 'upi' ? 'UPI' : 'Cash') + (entry.accountName ? ' · ' + entry.accountName : '');
+            ['oj-weight', 'oj-rate'].forEach(id => { document.getElementById(id).value = ''; });
+            _ojSetMetal('');
+            _ojRecalc();
+            document.getElementById('oj-modal').style.display = 'flex';
+        }
+        function closeOldJewDialog() {
+            document.getElementById('oj-modal').style.display = 'none';
+            _pendingOjEntry = null;
+        }
+        function _ojFinalRate(amt, w, r) {
+            // amount wins: keep the typed rate only when weight x rate already equals the amount
+            if (r > 0 && Math.abs(w * r - amt) < 0.005) return r;
+            return Math.round((amt / w) * 1e6) / 1e6;
+        }
+        function _ojRecalc() {
+            const e = _pendingOjEntry, box = document.getElementById('oj-info'); if (!e || !box) return;
+            const w = parseFloat(document.getElementById('oj-weight').value) || 0;
+            const r = parseFloat(document.getElementById('oj-rate').value) || 0;
+            let t = '';
+            if (w > 0) {
+                const fr = _ojFinalRate(e.amount, w, r);
+                if (r > 0 && Math.abs(w * r - e.amount) < 0.005) t = 'Weight × rate matches the amount ✓';
+                else if (r > 0) t = 'Weight × rate = ₹' + _fmt(w * r) + ' but amount paid is ₹' + _fmt(e.amount) + '.<br><b style="color:#e65100;">Amount is final — rate will be recorded as ₹' + fr.toFixed(2) + '/g.</b>';
+                else t = 'No rate entered — rate will be recorded as <b>₹' + fr.toFixed(2) + '/g</b> (amount ÷ weight).';
+            }
+            box.innerHTML = t;
+        }
+        function _confirmOldJew() {
+            const e = _pendingOjEntry; if (!e) return;
+            if (!_ojMetal) { showCustomAlert('Choose Gold or Silver.'); return; }
+            const weight = parseFloat(document.getElementById('oj-weight').value) || 0;
+            if (!(weight > 0)) { showCustomAlert('Enter the metal weight.'); return; }
+            const typed = parseFloat(document.getElementById('oj-rate').value) || 0;
+            const rate = _ojFinalRate(e.amount, weight, typed);
+            const date = _localDateStr(new Date(e.timestamp || Date.now()));
+            const createdAt = new Date(date + 'T12:00:00.000Z').toISOString();
+            const purId = crypto.randomUUID();
+            const extra = {};
+            // Same shape as a Purchase Manager "paid" purchase (Track B, no supplier, no plan) so it counts as metal bought.
+            extra['purchases/' + purId] = { id: purId, track: 'B', metal: _ojMetal, weight, rate, date, createdAt, status: 'paid',
+                note: e.note || null, source: 'pos-oj', acctName: e.accountName || null, ledgerEntryId: e.id, amountPaid: e.amount };
+            e.oldJewellery = { metal: _ojMetal, weight, rate, purchaseId: purId };
+            if (!e.note) e.note = (e.accountName || 'Old jewellery') + ' — ' + weight + 'g ' + _ojMetal + ' @ ₹' + rate.toFixed(2);
+            extra['purchases/' + purId].note = e.note;
+            ledgerEntries.push(e); _saveLedgerLocal(); _saveLedgerRecord(e, extra); renderLedger();
+            closeOldJewDialog();
+            closeLedgerEntryModal();
+        }
+        window._ojSetMetal = _ojSetMetal; window.closeOldJewDialog = closeOldJewDialog; window._ojRecalc = _ojRecalc; window._confirmOldJew = _confirmOldJew;
         function closeLedgerEntryModal() {
             _ledgerEditId = null;
             document.getElementById('ledger-entry-modal').classList.remove('show');
@@ -16351,6 +16534,7 @@
                 categoryId: acctSel.c.id, categoryName: acctSel.c.name
             });
             if (acctSel.c.system === 'supplier') { _openSupplierPayDialog(entry); return; }  // also for ＋ names (adhoc)
+            if (acctSel.c.id === 'cat_oldjewellery') { _openOldJewDialog(entry); return; }   // metal + weight + rate -> Purchase Manager purchase
             ledgerEntries.push(entry);
             _saveLedgerLocal();
             _saveLedgerRecord(entry); // single-record Firebase write
@@ -20418,12 +20602,34 @@
                 </div>
                 <div style="font-size:11px; font-weight:700; color:#888; margin:14px 0 6px;">ACCOUNT NAME</div>
                 <input type="text" id="acct-new-acct-name" placeholder="e.g. Shop rent" maxlength="40" style="width:100%; margin:0 0 12px; padding:10px 12px; font-size:14px; box-sizing:border-box;">
+                <div id="acct-new-type-box" style="display:none; margin-bottom:12px;">
+                    <div style="font-size:11px; font-weight:700; color:#888; margin:0 0 6px;">SUPPLIES</div>
+                    <div id="acct-new-type" style="display:flex; gap:6px;"></div>
+                </div>
                 <div style="display:flex; gap:8px;">
                     <button onclick="acctBackToList()" style="flex:1; margin:0; padding:11px; font-size:14px; background:#eee; color:#333; box-shadow:none;">Cancel</button>
                     <button onclick="acctCreateAccount()" style="flex:2; margin:0; padding:11px; font-size:14px; background:#4CAF50; color:white;">✓ Create account</button>
                 </div>
             </div>
             <button id="acct-new-btn" onclick="acctShowCreate()" style="width:100%; margin:10px 0 0; padding:11px; font-size:14px; font-weight:800; background:#4CAF50; color:white;">＋ New account</button>
+        </div>
+    </div>
+
+    <!-- Edit a supplier (name + what it supplies). Suppliers live in the shared `parties` node, so the
+         Purchase Manager sees every change live. -->
+    <div id="sup-edit-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1800; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; padding:18px; box-sizing:border-box;">
+            <h4 style="margin:0 0 12px; font-size:16px;">Edit supplier</h4>
+            <div style="font-size:11px; font-weight:700; color:#888; margin:0 0 4px;">NAME</div>
+            <input type="text" id="se-name" maxlength="40" style="width:100%; margin:0 0 12px; padding:10px 12px; font-size:14px; box-sizing:border-box;">
+            <div style="font-size:11px; font-weight:700; color:#888; margin:0 0 4px;">SUPPLIES</div>
+            <div id="se-types" style="display:flex; gap:6px; margin-bottom:6px;"></div>
+            <div style="font-size:11px; color:#888; margin-bottom:10px; line-height:1.4;">Tap the selected one again to clear it. 1G = 1-gram ornaments, bought by the piece (no metal weight).</div>
+            <div id="se-err" style="font-size:12px; font-weight:700; color:#c62828; min-height:16px; margin-bottom:8px;"></div>
+            <div style="display:flex; gap:8px;">
+                <button onclick="closeSupEdit()" style="flex:1; margin:0; padding:11px; font-size:14px; background:#eee; color:#333; box-shadow:none;">Cancel</button>
+                <button onclick="saveSupEdit()" style="flex:2; margin:0; padding:11px; font-size:14px; background:#4CAF50; color:white;">✓ Save</button>
+            </div>
         </div>
     </div>
 
@@ -20436,15 +20642,16 @@
             </div>
             <div id="sup-amount-line" style="font-size:13px; font-weight:700; color:#2e7d32; margin-bottom:10px;"></div>
             <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">SUPPLIER</label>
-            <select id="sup-party" onchange="_supPartyChanged()" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:8px; box-sizing:border-box;"></select>
+            <div style="display:flex; gap:6px; margin-bottom:8px;"><select id="sup-party" onchange="_supPartyChanged()" style="flex:1; min-width:0; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; font-size:14px; margin:0; box-sizing:border-box;"></select><button id="sup-party-edit" onclick="_supEditParty()" title="Edit supplier" style="display:none; width:auto; margin:0; padding:0 14px; background:#eee; color:#333; box-shadow:none; border-radius:10px; font-size:15px;">✎</button></div>
             <input type="text" id="sup-new-party" placeholder="New supplier name" style="display:none; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:8px; box-sizing:border-box;">
+            <div id="sup-new-type-box" style="display:none; margin-bottom:8px;"><div style="font-size:11px; font-weight:700; color:#888; margin:0 0 4px;">SUPPLIES</div><div id="sup-new-type" style="display:flex; gap:6px;"></div></div>
             <div id="sup-balance-box" style="display:none; background:#F7F7F5; border-radius:10px; padding:10px 12px; margin:2px 0 6px;"></div>
             <div style="display:flex; gap:8px; margin:6px 0 12px;">
                 <button onclick="_supSetKind('metal')" id="sup-kind-metal" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">⚖️ Metal</button>
                 <button onclick="_supSetKind('piece')" id="sup-kind-piece" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">🧩 Per-piece</button>
             </div>
             <div id="sup-metal-box">
-                <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">METAL</label>
+                <label id="sup-metal-label" style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">METAL</label>
                 <select id="sup-metal" onchange="_supRecalc()" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"><option value="Gold">Gold</option><option value="Silver">Silver</option></select>
                 <div style="display:flex; gap:8px;">
                     <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">WEIGHT (g, pure)</label>
@@ -20466,6 +20673,30 @@
                 <div id="sup-piece-info" style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.5;"></div>
             </div>
             <button onclick="_confirmSupplierPay()" style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">✓ Save Payment</button>
+        </div>
+    </div>
+
+    <!-- Old jewellery bought via the ledger: metal / weight / rate -> Purchase Manager purchase -->
+    <div id="oj-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1600; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:400px; width:100%; max-height:90vh; overflow-y:auto; padding:18px; box-sizing:border-box;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <h4 style="margin:0; font-size:16px;">Old Jewellery Purchase</h4>
+                <button onclick="closeOldJewDialog()" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
+            </div>
+            <div id="oj-amount-line" style="font-size:13px; font-weight:700; color:#2e7d32; margin-bottom:10px;"></div>
+            <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">METAL</label>
+            <div style="display:flex; gap:8px; margin-bottom:10px;">
+                <button id="oj-metal-Gold" onclick="_ojSetMetal('Gold')" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer; margin:0;">🟡 Gold</button>
+                <button id="oj-metal-Silver" onclick="_ojSetMetal('Silver')" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer; margin:0;">⚪ Silver</button>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">WEIGHT (g, pure)</label>
+                <input type="number" id="oj-weight" oninput="_ojRecalc()" step="0.001" min="0" placeholder="0" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
+                <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">RATE (₹/g)</label>
+                <input type="number" id="oj-rate" oninput="_ojRecalc()" step="0.01" min="0" placeholder="optional" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
+            </div>
+            <div id="oj-info" style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.5;"></div>
+            <button onclick="_confirmOldJew()" style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">✓ Save Entry</button>
         </div>
     </div>
 
