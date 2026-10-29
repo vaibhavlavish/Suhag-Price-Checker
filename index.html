@@ -18860,10 +18860,45 @@
 
         // Turns a finalized (non-draft) manual Invoice record into the matching
         // Ledger entry via the same shared helper checkout uses — see _recordSaleLedgerEntry.
-        function _invLedgerFromRecord(rec) {
+        function _invLedgerFromRecord(rec, isEdit) {
             const ogTotal = (rec.ogItems || []).reduce((s,i) => s + (i.value || 0), 0);
             const netAfterOG = ((rec.totals && rec.totals.rounded) || 0) - ogTotal;
             const receipt = (rec.totals && rec.totals.receipt) || 0;
+            if (isEdit) {
+                // Editing an invoice must also edit its ledger entry (found by invoiceId),
+                // in place — same id and original date — so the ledger/cash totals follow
+                // the corrected amount instead of keeping the old one.
+                const ex = ledgerEntries.find(e => e.invoiceId === rec.id && (e.type === 'sale' || e.type === 'out') && !e.installmentPaymentId && !e.creditPaymentId);
+                // Same amount/cash/note rules as _recordSaleLedgerEntry
+                let want = null;
+                if (netAfterOG < 0) {
+                    const amt = Math.round(Math.abs(netAfterOG));
+                    want = { type: 'out', amount: amt, cashPortion: amt, note: 'Refund to customer' };
+                } else if (receipt > 0) {
+                    const method = rec.paymentMethod, d = rec.paymentDetails || {};
+                    let cashPortion = 0, note = 'Sale';
+                    if (method === 'partial') {
+                        cashPortion = d.cash || 0;
+                        const parts = [];
+                        if (d.cash > 0) parts.push('Cash ₹' + d.cash.toFixed(0));
+                        if (d.upi  > 0) parts.push('UPI ₹'  + d.upi.toFixed(0));
+                        if (d.card > 0) parts.push('Card ₹' + d.card.toFixed(0));
+                        note = 'Split — ' + parts.join(' + ');
+                    } else if (method === 'cash') { cashPortion = receipt; note = 'Cash sale'; }
+                    else if (method === 'upi')    { note = 'UPI sale'; }
+                    else if (method === 'card')   { note = 'Card sale'; }
+                    want = { type: 'sale', amount: Math.round(receipt), cashPortion: Math.round(cashPortion), note };
+                }
+                if (ex && want) {
+                    Object.assign(ex, want, { editedAt: new Date().toISOString() });
+                    _saveLedgerLocal(); _saveLedgerRecord(ex); renderLedger();
+                } else if (ex && !want) {
+                    _deleteLedgerRecord(ex.id); renderLedger();   // nothing collected anymore — no cash movement to keep
+                } else if (!ex && want) {
+                    _recordSaleLedgerEntry(netAfterOG, receipt, rec.paymentMethod, rec.paymentDetails, 'invoice', { invoiceId: rec.id });
+                }
+                return;
+            }
             _recordSaleLedgerEntry(netAfterOG, receipt, rec.paymentMethod, rec.paymentDetails, 'invoice', { invoiceId: rec.id });
         }
 
@@ -18908,9 +18943,8 @@
                     } else {
                         _saveInvoiceRecord(rec);
                     }
-                    // Only log a ledger entry for brand-new invoices — an edit would
-                    // otherwise double-count the sale in the cash ledger.
-                    if (!isEdit) _invLedgerFromRecord(rec);
+                    // New invoice → new ledger entry; edit → update its existing entry in place.
+                    _invLedgerFromRecord(rec, isEdit);
                     _invCreditFromRecord(rec, isEdit);
                     invRenderHistory();
                     invReset(); // clear the form so the next invoice starts fresh
@@ -18976,7 +19010,7 @@
             } else {
                 _saveInvoiceRecord(rec);
             }
-            if (!isEdit) _invLedgerFromRecord(rec);
+            _invLedgerFromRecord(rec, isEdit);
             _invCreditFromRecord(rec, isEdit);
             invRenderHistory();
 
@@ -19118,9 +19152,8 @@
             }
             _saveInvoiceLocal();
             _saveInvoiceRecord(record);
-            // Only log a ledger entry for brand-new invoices — an edit would otherwise
-            // double-count the sale (and possibly the payment) in the cash ledger.
-            if (!isEdit) _invLedgerFromRecord(record);
+            // New invoice → new ledger entry; edit → update its existing entry in place.
+            _invLedgerFromRecord(record, isEdit);
             _invCreditFromRecord(record, isEdit);
             invToast(isEdit ? '✅ Invoice updated — ' + billNo : '✅ Invoice saved — ' + billNo);
             invReset();
