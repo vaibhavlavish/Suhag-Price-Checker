@@ -15745,11 +15745,13 @@
         const ACCT_BUILTIN_CATS = [
             { id: 'cat_supplier', name: 'Supplier',     dir: 'out', system: 'supplier' },
             { id: 'cat_expense',  name: 'Expense',      dir: 'out' },
-            { id: 'cat_oldjewellery', name: 'Old Jewellery', dir: 'out' }
+            { id: 'cat_oldjewellery', name: 'Customer', dir: 'out' }   // accounts: "Old Jewellery" (weight/rate dialog -> Purchase Manager purchase) and "Returns" (plain entry)
         ];
         // Old default category — no longer offered for new accounts, but kept visible
         // while it still holds accounts so existing "money in" accounts keep working.
         const ACCT_LEGACY_INCOME = { id: 'cat_income', name: 'Other Income', dir: 'in', legacy: true };
+        // A "Returns" account (name contains 'return') under the Customer category is a plain expense: no weight/rate dialog, no Purchase Manager purchase
+        function _isReturnsAcct(a) { return /return/i.test((a && a.name) || ''); }
         let acctCustomCats = [], acctAccounts = [];
         let pmParties = [], pmPurchases = [], pmPayments = [], pmPieceSupplies = [];
         let _acctSyncStarted = false, _acctSyncRetries = 0;
@@ -16207,7 +16209,7 @@
                 const acctSel = aid ? _acctFind(aid, _ledgerEntryType === 'in' ? 'in' : 'out') : null;
                 if (!acctSel) { showCustomAlert('Select an account first.'); return; }
                 if (acctSel.c.system === 'supplier' && !acctSel.a.adhoc) { showCustomAlert('Supplier payments need the supplier dialog — delete this entry and add a new one for that.'); return; }
-                if (acctSel.c.id === 'cat_oldjewellery' && e.categoryId !== 'cat_oldjewellery') { showCustomAlert('Old jewellery purchases need the weight / rate dialog — delete this entry and add a new one for that.'); return; }
+                if (acctSel.c.id === 'cat_oldjewellery' && !_isReturnsAcct(acctSel.a) && e.categoryId !== 'cat_oldjewellery') { showCustomAlert('Old jewellery purchases need the weight / rate dialog — delete this entry and add a new one for that.'); return; }
                 Object.assign(e, { type: _ledgerEntryType, amount: amt, mode: _ledgerMode, accountId: acctSel.a.id, accountName: acctSel.a.name, categoryId: acctSel.c.id, categoryName: acctSel.c.name });
                 if (dateVal && dateVal !== _localDateStr(new Date(e.timestamp))) e.timestamp = _ledgerTsNewestOfDay(dateVal, e.id);
             }
@@ -16645,7 +16647,7 @@
                 categoryId: acctSel.c.id, categoryName: acctSel.c.name
             });
             if (acctSel.c.system === 'supplier') { _openSupplierPayDialog(entry); return; }  // also for ＋ names (adhoc)
-            if (acctSel.c.id === 'cat_oldjewellery') { _openOldJewDialog(entry); return; }   // metal + weight + rate -> Purchase Manager purchase
+            if (acctSel.c.id === 'cat_oldjewellery' && !_isReturnsAcct(acctSel.a)) { _openOldJewDialog(entry); return; }   // metal + weight + rate -> Purchase Manager purchase
             ledgerEntries.push(entry);
             _saveLedgerLocal();
             _saveLedgerRecord(entry); // single-record Firebase write
