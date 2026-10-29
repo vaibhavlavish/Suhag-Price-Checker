@@ -18869,6 +18869,8 @@
                 // in place — same id and original date — so the ledger/cash totals follow
                 // the corrected amount instead of keeping the old one.
                 const ex = ledgerEntries.find(e => e.invoiceId === rec.id && (e.type === 'sale' || e.type === 'out') && !e.installmentPaymentId && !e.creditPaymentId);
+                // Today's entries only: editing an older invoice never touches the ledger.
+                if (!ex || _localDateStr(new Date(ex.timestamp)) !== _localDateStr(new Date())) return;
                 // Same amount/cash/note rules as _recordSaleLedgerEntry
                 let want = null;
                 if (netAfterOG < 0) {
@@ -18894,9 +18896,9 @@
                     _saveLedgerLocal(); _saveLedgerRecord(ex); renderLedger();
                 } else if (ex && !want) {
                     _deleteLedgerRecord(ex.id); renderLedger();   // nothing collected anymore — no cash movement to keep
-                } else if (!ex && want) {
-                    _recordSaleLedgerEntry(netAfterOG, receipt, rec.paymentMethod, rec.paymentDetails, 'invoice', { invoiceId: rec.id });
                 }
+                // No linked entry (cleared/pruned, or saved before entries carried invoiceId):
+                // do nothing — creating one now would add a new entry dated today.
                 return;
             }
             _recordSaleLedgerEntry(netAfterOG, receipt, rec.paymentMethod, rec.paymentDetails, 'invoice', { invoiceId: rec.id });
