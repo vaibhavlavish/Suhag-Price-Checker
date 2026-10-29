@@ -6418,6 +6418,13 @@
             return !!(d && d.mrp > 0 && !d.stamp);
         }
 
+        // Silver items priced on "Making %" and under 15 g show the item's total making
+        // as ₹/pc instead of the percentage. DISPLAY/PRINT ONLY — pricing is unchanged.
+        const SILVER_PC_MAKING_BELOW_G = 15;
+        function _silverPcMakingApplies(metal, makingType, weight) {
+            return String(metal || '').toLowerCase() === 'silver' && makingType === '%' && weight > 0 && weight < SILVER_PC_MAKING_BELOW_G;
+        }
+
         function calcProductFinalPrice(barcode) {
             const d = productData[barcode];
             if (!d) return null;
@@ -6529,7 +6536,7 @@
 
             const total = metalVal + making + otherCharge;
             final = total + total * (taxRate / 100) + productHmCharge(d);
-            return { final, makingType, makingInput };
+            return { final, makingType, makingInput, makingAmt: making };
         }
 
         // Computes the price using a catalogue-only making override instead
@@ -8247,7 +8254,7 @@
             }
 
             let makingStr = '0';
-            if (activeMakingType === '%') makingStr = `${makingInput}%`;
+            if (activeMakingType === '%') makingStr = _silverPcMakingApplies(d.metal, '%', weight) ? `₹${currentMakingAmount.toFixed(2)}/pc` : `${makingInput}%`;
             else if (activeMakingType === 'wastage') makingStr = `₹${currentMakingAmount.toFixed(2)}/pc`;
             else if (activeMakingType === 'per g') makingStr = `₹${makingInput.toFixed(2)}/g`;
             else if (activeMakingType === 'per pc') makingStr = `₹${makingInput.toFixed(2)}/pc`;
@@ -8364,7 +8371,7 @@
             const taxAmount = d.subtotal * (d.taxRateApplied / 100);
 
             let makingStr = '0';
-            if (makingType === '%') makingStr = `${makingValue}%`;
+            if (makingType === '%') makingStr = _silverPcMakingApplies(d.metal, '%', d.weight) ? `₹${making.toFixed(2)}/pc` : `${makingValue}%`;
             else if (makingType === 'wastage') makingStr = `₹${making.toFixed(2)}/pc`;
             else if (makingType === 'per_g') makingStr = `₹${makingValue.toFixed(2)}/g`;
             else if (makingType === 'per_pc') makingStr = `₹${makingValue.toFixed(2)}/pc`;
@@ -8489,7 +8496,8 @@
                 }
 
                 if (activeMakingType === '%') {
-                    makingStr = `${makingInput}%`;
+                    const _wt = (currentWeightOverride != null) ? currentWeightOverride : d.netWeight;
+                    makingStr = _silverPcMakingApplies(d.metal, '%', _wt) ? `${currentMakingAmount.toFixed(2)} (per pc)` : `${makingInput}%`;
                 } else if (activeMakingType === 'wastage') {
                     makingStr = `${currentMakingAmount.toFixed(2)} (per pc)`;
                 } else if (activeMakingType === 'per g') {
@@ -17960,6 +17968,11 @@
             // No making charge on this item (0, or the field was never set at all) —
             // leave the cell blank rather than printing an unsavory "0%"/"₹0/g".
             if (!val) return '';
+            // Silver on "Making %" and under 15 g per piece: print the per-piece making
+            // amount instead of the percentage. Print-only; invMakingAmt() math unchanged.
+            if (type === '%' && _silverPcMakingApplies(r.metal, '%', (r.nlWt || 0) / (r.pc || 1))) {
+                return '₹' + Math.round(invMakingAmt(r) / (r.pc || 1)) + '/pc';
+            }
             if (type === 'wastage') {
                 const weight = r.nlWt || 0;
                 if (weight > 0 && weight < 1) {
