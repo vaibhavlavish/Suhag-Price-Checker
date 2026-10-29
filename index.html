@@ -16473,12 +16473,6 @@
                 const weight = parseFloat(document.getElementById('sup-weight').value) || 0;
                 let rate = parseFloat(document.getElementById('sup-rate').value) || 0;
                 if (!(weight > 0)) { showCustomAlert('Enter the weight paid.'); return; }
-                if (!isAdhoc) {
-                    if (!extra['parties/' + partyId]) {
-                        const out = _supOutstanding(partyId, metal);
-                        if (weight > out + 0.001) { showCustomAlert('Weight is more than the ' + out.toFixed(2) + 'g ' + metal + ' outstanding with this supplier.'); return; }
-                    } else { showCustomAlert('A new supplier has nothing outstanding yet — add the purchase in Purchase Manager first.'); return; }
-                }
                 if (!(rate > 0)) rate = Math.round((e.amount / weight) * 100) / 100;
                 sup.adjustment = Math.round((weight * rate - e.amount) * 100) / 100;
                 Object.assign(sup, { metal, weight, rate });
