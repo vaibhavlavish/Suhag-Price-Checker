@@ -5357,6 +5357,8 @@
             // Manager's report — the POS bulk-clear never touches this node.
             try { update[`cashbook/${entry.id}`] = _cashbookFromEntry(entry); } catch (err) { console.error('[Cashbook] copy failed', err); }
             if (extraUpdates) Object.assign(update, extraUpdates);
+            // Entries that also write to the Purchase Manager (old jewellery / supplier payment) must not fail silently
+            if (extraUpdates) { dbSafeUpdateNotify(update, 'This entry (and its Purchase Manager record)'); return; }
             window.dbSafeUpdate(update).catch(e => console.error('[Ledger] save failed', e));
         }
 
@@ -5372,6 +5374,7 @@
             update[`cashbook/${id}`] = null;
             if (_gone && _gone.supplier) {
                 if (_gone.supplier.paymentId)   update[`payments/${_gone.supplier.paymentId}`] = null;
+                if (_gone.supplier.purchaseId)  update[`purchases/${_gone.supplier.purchaseId}`] = null;
                 if (_gone.supplier.pieceBillId) update[`pieceSupplies/${_gone.supplier.pieceBillId}`] = null;
                 if (_gone.supplier.piecePayId)  update[`pieceSupplies/${_gone.supplier.piecePayId}`] = null;
             }
@@ -16477,9 +16480,21 @@
                 sup.adjustment = Math.round((weight * rate - e.amount) * 100) / 100;
                 Object.assign(sup, { metal, weight, rate });
                 if (!isAdhoc) {
-                    const payId = crypto.randomUUID();
-                    extra['payments/' + payId] = { id: payId, partyId, track: 'B', metal, weight, rate, note: e.note || '', date, createdAt, source: 'pos', ledgerEntryId: e.id, amountPaid: e.amount };
-                    sup.paymentId = payId;
+                    // Grams that settle credit already owed = supplier PAYMENT; any grams beyond that (or all of them when
+                    // nothing is owed) = a new PAID PURCHASE, so it also shows in the Purchase Manager's purchase log.
+                    const out = extra['parties/' + partyId] ? 0 : _supOutstanding(partyId, metal);
+                    const payW = Math.min(weight, out), purW = weight - payW;
+                    const share = w => Math.round(e.amount * (w / weight) * 100) / 100;
+                    if (payW > 0.0005) {
+                        const payId = crypto.randomUUID();
+                        extra['payments/' + payId] = { id: payId, partyId, track: 'B', metal, weight: payW, rate, note: e.note || '', date, createdAt, source: 'pos', ledgerEntryId: e.id, amountPaid: share(payW) };
+                        sup.paymentId = payId;
+                    }
+                    if (purW > 0.0005) {
+                        const purId = crypto.randomUUID();
+                        extra['purchases/' + purId] = { id: purId, partyId, planId: null, track: 'B', metal, weight: purW, rate, date, createdAt, status: 'paid', note: e.note || null, source: 'pos', ledgerEntryId: e.id, amountPaid: share(purW) };
+                        sup.purchaseId = purId;
+                    }
                 }
                 autoNote = weight + 'g ' + metal + ' @ ₹' + rate;
             } else {
