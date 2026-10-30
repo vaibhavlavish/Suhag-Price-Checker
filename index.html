@@ -12431,6 +12431,7 @@
             startSavingsSync();
             startCreditSync();
             startAcctSync();
+            startAreaAliasSync();
             initPrintServerIfEnabled();
             initBackupTriggerListenerIfEnabled();
             // Load ledger from cache immediately (Firebase will overwrite shortly)
@@ -13487,7 +13488,7 @@
                     billNo, timestamp: new Date().toISOString(),
                     custName: (cartCustomer && cartCustomer.name) || '—',
                     custMob: (cartCustomer && cartCustomer.mobile) || '',
-                    custAddr: (cartCustomer && cartCustomer.address) || '',
+                    custAddr: areaCorrectAddress((cartCustomer && cartCustomer.address) || ''),
                     state: invoiceSettings.homeStateCode,
                     items: rows,
                     ogItems: (oldGoldItems || []).map(i => ({...i})),
@@ -13772,7 +13773,7 @@
 
             const custName = (cartCustomer && cartCustomer.name) || '—';
             const custMob = (cartCustomer && cartCustomer.mobile) || '';
-            const custAddr = (cartCustomer && cartCustomer.address) || '';
+            const custAddr = areaCorrectAddress((cartCustomer && cartCustomer.address) || '');
             const homeState = INV_STATES.find(s => s[0] === invoiceSettings.homeStateCode);
             const state = homeState ? `${homeState[1]} (${homeState[0]})` : invoiceSettings.homeStateCode;
 
@@ -15925,6 +15926,56 @@
                 return (typeof invGetCheckoutTrack === 'function') ? invGetCheckoutTrack() : 'A';
             } catch (e) { return 'A'; }
         }
+        // ── AREA ALIASES (shared with Purchase Manager) ─────────────────
+        // areaAliases/{normalizedSpelling} = { area: "Chikhli" }. Built in the Purchase
+        // Manager's "Area-wise Sales → Fix addresses". When the address typed while billing
+        // matches a spelling that was already linked to a correct area, it is silently
+        // changed to the correct spelling. Unknown spellings are left exactly as typed.
+        let areaAliases = {};
+        function areaNorm(s) { return String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim(); }
+        let _areaSyncRetries = 0;
+        function startAreaAliasSync() {
+            if (!window.dbOnValue || !window.firebaseDB) {
+                if (_areaSyncRetries++ < 20) setTimeout(startAreaAliasSync, 500);
+                return;
+            }
+            window.dbOnValue(window.dbRef(window.firebaseDB, 'areaAliases'),
+                s => { areaAliases = s.val() || {}; },
+                err => console.error('[AreaAliases] read error', err));
+        }
+        function areaCorrectAddress(addr) {
+            const raw = String(addr || '').trim();
+            if (!raw || !Object.keys(areaAliases).length) return raw;
+            let changed = false;
+            const out = raw.split(',').map(seg => {
+                const t = seg.trim();
+                if (!t) return seg;
+                const hit = areaAliases[areaNorm(t)];
+                if (hit && hit.area) {                       // whole part is a known spelling
+                    if (t === hit.area) return seg;
+                    changed = true; return seg.replace(t, () => hit.area);
+                }
+                let segChanged = false;                      // a single misspelled word inside the part
+                const words = t.split(/\s+/).map(w => {
+                    const wk = areaNorm(w), h = wk && areaAliases[wk];
+                    if (h && h.area && wk !== areaNorm(h.area) && w !== h.area) { segChanged = true; return h.area; }
+                    return w;
+                });
+                if (!segChanged) return seg;
+                changed = true; return seg.replace(t, () => words.join(' '));
+            });
+            return changed ? out.join(',').trim() : raw;
+        }
+        // Correct the field as soon as the staff leaves it
+        document.addEventListener('focusout', e => {
+            const el = e.target;
+            if (!el || !['cart-cust-addr', 'inv-cust-addr', 'inst-cust-addr'].includes(el.id)) return;
+            const fixed = areaCorrectAddress(el.value);
+            if (fixed !== String(el.value || '').trim()) {
+                el.value = fixed;
+                if (el.id === 'cart-cust-addr' && typeof syncCartCustomer === 'function') syncCartCustomer();
+            }
+        });
         function startAcctSync() {
             if (_acctSyncStarted) return;
             if (!window.dbOnValue || !window.firebaseDB) {
@@ -18762,7 +18813,7 @@
             localStorage.setItem('invPrintColPref', JSON.stringify({ showRate: showRatePref, showMaking: showMakingPref }));
             const custName = document.getElementById('inv-cust-name').value.trim() || '—';
             const custMob = document.getElementById('inv-cust-mob').value.trim();
-            const custAddr = document.getElementById('inv-cust-addr').value.trim();
+            const custAddr = areaCorrectAddress(document.getElementById('inv-cust-addr').value.trim());
             const custGstin = (document.getElementById('inv-cust-gstin') ? document.getElementById('inv-cust-gstin').value.trim().toUpperCase() : '');
             const billNo = document.getElementById('inv-bill-no').value.trim() || _invNextBillNo(currentInvTrack);
             const dateRaw = document.getElementById('inv-date').value || '';
@@ -19462,7 +19513,7 @@
             const billNo = document.getElementById('inv-bill-no').value.trim() || _invNextBillNo(currentInvTrack);
             const custName = document.getElementById('inv-cust-name').value.trim() || '—';
             const custMob = document.getElementById('inv-cust-mob').value.trim();
-            const custAddr = document.getElementById('inv-cust-addr').value.trim();
+            const custAddr = areaCorrectAddress(document.getElementById('inv-cust-addr').value.trim());
             const state = document.getElementById('inv-state')?.value || invoiceSettings.homeStateCode;
             const finalAmt = _invFinalAmtGross();
             const receipt = parseFloat(document.getElementById('inv-receipt').value) || 0;
