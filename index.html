@@ -1820,8 +1820,8 @@
                 <span class="menu-icon" style="background:#f3e5f5;">🔔</span> Reminders
                 <span id="reminder-menu-badge">0</span>
             </button>
-            <button onclick="reprintLastInvoice()" data-menu-key="reprint-last">
-                <span class="menu-icon" style="background:#E3F2FD;">🖨️</span> Reprint Last Invoice
+            <button onclick="editLastInvoice()" data-menu-key="reprint-last">
+                <span class="menu-icon" style="background:#FFF3E0;">✏️</span> Edit Last Invoice
             </button>
             <button onclick="showSection('installments-screen')" data-menu-key="installments">
                 <span class="menu-icon" style="background:#FCE4EC;">📆</span> Installment Plans
@@ -4042,12 +4042,18 @@
         };
 
         const FACTORY_PRESETS = [
-            { id: '195d4d46-8c33-44fd-85b5-7ee90933d060', name: 'Latkan', metal: 'Gold', stamp: '18K', makingType: 'wastage', makingValue: 25 },
-            { id: 'a2696c69-16cb-4b75-8faa-35db2cf5c75a', name: 'Taar', metal: 'Gold', stamp: '18K', makingType: '%', makingValue: 27 },
-            { id: 'aac8982a-09ef-4f2e-9b7f-41522523a01c', name: 'Silver tawij', metal: 'Silver', stamp: 'S7', makingType: '%', makingValue: 50 },
-            { id: 'e0719c7c-ccf5-4186-a3d3-92adec09f519', name: 'Murti', metal: 'Silver', stamp: 'S7', makingType: '%', makingValue: 35 },
+            { id: '195d4d46-8c33-44fd-85b5-7ee90933d060', name: 'Gold Latkan(18K)', metal: 'Gold', stamp: '18K', makingType: 'wastage', makingValue: 25 },
+            { id: '1b9711ed-442d-4bd2-8912-67c59447beae', name: 'Gold Bali(18K)', metal: 'Gold', stamp: '18K', makingType: 'wastage', makingValue: 27 },
+            { id: '8f0d063d-8b83-43fe-bffe-8a8a33f6d7e4', name: 'Silver payal', metal: 'Silver', stamp: 'S7', makingType: 'per_g', makingValue: 120 },
+            { id: '9bf294eb-f7fb-4a8b-9136-db8ae34d1667', name: 'Silver pendant', metal: 'Silver', stamp: 'S7', makingType: 'wastage', makingValue: 35 },
+            { id: 'a2696c69-16cb-4b75-8faa-35db2cf5c75a', name: 'Gold Taar', metal: 'Gold', stamp: '18K', makingType: 'wastage', makingValue: 27 },
+            { id: 'a7d8ccd6-1faa-4b9c-8b0d-f93fcc43becb', name: 'Gold bugdi (18k)', metal: 'Gold', stamp: '18K', makingType: 'wastage', makingValue: 25 },
+            { id: 'aac8982a-09ef-4f2e-9b7f-41522523a01c', name: 'Silver tawij', metal: 'Silver', stamp: 'S7', makingType: 'per_g', makingValue: 100 },
+            { id: 'b076b425-bfdb-4495-a1cf-3c88c8f7751e', name: 'Gold vaadi', metal: 'Gold', stamp: '18K', makingType: 'wastage', makingValue: 27 },
+            { id: 'de794925-9b39-47f3-8a1a-8c91e9aeec4d', name: 'Silver aankdo', metal: 'Silver', stamp: 'S7', makingType: 'per_g', makingValue: 100 },
+            { id: 'e0719c7c-ccf5-4186-a3d3-92adec09f519', name: 'Silver Murti', metal: 'Silver', stamp: 'S7', makingType: '%', makingValue: 37 },
             { id: 'e0e1ed20-8e07-4d6d-af81-85654430051f', name: 'Nosepin', metal: 'Gold', stamp: '18K', makingType: '%', makingValue: 35 },
-            { id: 'preset_veetla', name: 'Veetla', metal: 'Silver', stamp: 'S7', makingType: '%', makingValue: 50 }
+            { id: 'preset_veetla', name: 'Silver Veetla', metal: 'Silver', stamp: 'S7', makingType: 'per_g', makingValue: 110 }
         ];
 
         // Invoice: Terms & Conditions footer text
@@ -4071,6 +4077,8 @@
             "clear-all-data": false,
             "clear-cart": false,
             "clear-screen": false,
+            "credit": true,
+            "custom-items": false,
             "device-access": false,
             "installments": false,
             "ledger": false,
@@ -4090,16 +4098,16 @@
         // reflected here. Re-export a backup and refresh this block
         // periodically if you want the tick history to stay current.
         const FACTORY_REMINDERS = [
-            { id: '16ad02f0-2e43-4019-a689-7280523cdc69', title: 'ઉપ્પર ના કચરા-પોતા', repeat: 'weekly', weeklyDays: [2], active: true, createdAt: '2026-07-11T18:05:32.324Z', completedDates: ["2026-07-14", "2026-07-21", "2026-07-28", "2026-08-04", "2026-08-11", "2026-08-18", "2026-08-25"] },
-            { id: '321e7add-90cc-4f8e-a853-b5eba72aeece', title: 'સ્લાઇડર નીચે સફાઈ', repeat: 'weekly', weeklyDays: [0], active: true, createdAt: '2026-07-11T18:08:25.349Z', completedDates: ["2026-07-12", "2026-07-19", "2026-07-26", "2026-08-02", "2026-08-09", "2026-08-16", "2026-08-23"] },
-            { id: '708ebf4a-f439-4412-9f97-14e9f7663148', title: 'A/c ફિલ્ટર', repeat: 'twice-monthly', monthlyDates: [10, 20], active: true, createdAt: '2026-07-12T05:02:09.621Z', completedDates: ["2026-07-20", "2026-08-10", "2026-08-20"] },
-            { id: '827acb07-8587-4612-a6e1-432014058986', title: 'ચોકડી', repeat: 'weekly', weeklyDays: [3], active: true, createdAt: '2026-07-11T18:03:57.045Z', completedDates: ["2026-07-15", "2026-07-22", "2026-07-29", "2026-08-05", "2026-08-12", "2026-08-19", "2026-08-26"] },
-            { id: 'a0bce942-46bf-4af2-8122-687c6fefe5ec', title: 'ટ્રે સાફ', repeat: 'twice-monthly', monthlyDates: [15, 30], active: true, createdAt: '2026-07-11T18:04:30.244Z', completedDates: ["2026-07-15", "2026-07-30", "2026-08-15"] },
-            { id: 'c280c571-9c9f-4736-9d05-8ea93eb5df3c', title: 'સ્ટોક', repeat: 'daily', active: true, createdAt: '2026-07-11T18:03:32.994Z', completedDates: ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-29", "2026-08-30"] },
-            { id: 'c32b4ef2-a17b-4f34-9434-a7bcbdd1f591', title: 'A/c ફિલ્ટર', repeat: 'monthly', monthlyDates: [30], active: true, createdAt: '2026-07-12T05:02:22.643Z', completedDates: ["2026-07-30"] },
-            { id: 'd1ad12a7-79b2-498d-9d37-4603eccb2ad4', title: 'ડિસ્પ્લે સાફ વ્હાઇટ+કાચ', repeat: 'weekly', weeklyDays: [6], active: true, createdAt: '2026-07-11T18:07:40.880Z', completedDates: ["2026-07-11", "2026-07-18", "2026-07-25", "2026-08-01", "2026-08-08", "2026-08-15", "2026-08-22", "2026-08-29"] },
-            { id: 'd1c35dd0-558e-473e-ba37-961724adb790', title: 'પુથ્થા', repeat: 'twice-monthly', monthlyDates: [14, 28], active: true, createdAt: '2026-07-11T18:10:38.350Z', completedDates: ["2026-07-14", "2026-07-28", "2026-08-14"] },
-            { id: 'd1fc545f-f5d4-4773-a9f2-c7cb6c5c7266', title: 'ભાવ નાખો.', repeat: 'daily', active: true, createdAt: '2026-08-18T04:01:27.720Z', completedDates: ["2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-29", "2026-08-30", "2026-08-31"] },
+            {"active": true, "completedDates": ["2026-07-14", "2026-07-21", "2026-07-28", "2026-08-04", "2026-08-11", "2026-08-18", "2026-08-25", "2026-09-01", "2026-09-08", "2026-09-15", "2026-09-22", "2026-09-29", "2026-10-06", "2026-10-13", "2026-10-20", "2026-10-27"], "createdAt": "2026-07-11T18:05:32.324Z", "id": "16ad02f0-2e43-4019-a689-7280523cdc69", "repeat": "weekly", "title": "ઉપ્પર ના કચરા-પોતા", "weeklyDays": [2]},
+            {"active": true, "completedDates": ["2026-07-12", "2026-07-19", "2026-07-26", "2026-08-02", "2026-08-09", "2026-08-16", "2026-08-23", "2026-09-06", "2026-09-13", "2026-09-20", "2026-09-27", "2026-10-04", "2026-10-11", "2026-10-18", "2026-10-25"], "createdAt": "2026-07-11T18:08:25.349Z", "id": "321e7add-90cc-4f8e-a853-b5eba72aeece", "repeat": "weekly", "title": "સ્લાઇડર નીચે સફાઈ", "weeklyDays": [0]},
+            {"active": true, "completedDates": ["2026-09-30"], "createdAt": "2026-09-02T10:39:28.758Z", "id": "684e2326-2670-4fe1-8a8d-ad6cc4cb948c", "monthlyDates": [31], "repeat": "monthly", "title": "CLEAR DATA SEPTEMBER"},
+            {"active": true, "completedDates": ["2026-07-20", "2026-08-10", "2026-08-20", "2026-09-10", "2026-09-20", "2026-10-10", "2026-10-20"], "createdAt": "2026-07-12T05:02:09.621Z", "id": "708ebf4a-f439-4412-9f97-14e9f7663148", "monthlyDates": [10, 20], "repeat": "twice-monthly", "title": "A/c ફિલ્ટર"},
+            {"active": true, "completedDates": ["2026-07-15", "2026-07-22", "2026-07-29", "2026-08-05", "2026-08-12", "2026-08-19", "2026-08-26", "2026-09-02", "2026-09-09", "2026-09-16", "2026-09-23", "2026-09-30", "2026-10-07", "2026-10-14", "2026-10-21", "2026-10-28"], "createdAt": "2026-07-11T18:03:57.045Z", "id": "827acb07-8587-4612-a6e1-432014058986", "repeat": "weekly", "title": "ચોકડી", "weeklyDays": [3]},
+            {"active": true, "completedDates": ["2026-07-15", "2026-07-30", "2026-08-15", "2026-09-15", "2026-09-30", "2026-10-15"], "createdAt": "2026-07-11T18:04:30.244Z", "id": "a0bce942-46bf-4af2-8122-687c6fefe5ec", "monthlyDates": [15, 30], "repeat": "twice-monthly", "title": "ટ્રે સાફ"},
+            {"active": true, "completedDates": ["2026-07-11", "2026-07-12", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-25", "2026-07-26", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-01", "2026-08-02", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-29", "2026-08-30", "2026-09-01", "2026-08-31", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-05", "2026-09-06", "2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-12", "2026-09-13", "2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-19", "2026-09-20", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-27", "2026-09-28", "2026-09-29", "2026-09-30", "2026-10-02", "2026-10-01", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10", "2026-10-11", "2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16", "2026-10-17", "2026-10-18", "2026-10-19", "2026-10-21", "2026-10-20", "2026-10-22", "2026-10-23", "2026-10-24", "2026-10-25", "2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29"], "createdAt": "2026-07-11T18:03:32.994Z", "id": "c280c571-9c9f-4736-9d05-8ea93eb5df3c", "repeat": "daily", "title": "સ્ટોક"},
+            {"active": true, "completedDates": ["2026-07-30", "2026-09-30"], "createdAt": "2026-07-12T05:02:22.643Z", "id": "c32b4ef2-a17b-4f34-9434-a7bcbdd1f591", "monthlyDates": [30], "repeat": "monthly", "title": "A/c ફિલ્ટર"},
+            {"active": true, "completedDates": ["2026-07-11", "2026-07-18", "2026-07-25", "2026-08-01", "2026-08-08", "2026-08-15", "2026-08-22", "2026-08-29", "2026-09-05", "2026-09-12", "2026-09-19", "2026-09-26", "2026-10-03", "2026-10-10", "2026-10-17", "2026-10-24"], "createdAt": "2026-07-11T18:07:40.880Z", "id": "d1ad12a7-79b2-498d-9d37-4603eccb2ad4", "repeat": "weekly", "title": "ડિસ્પ્લે સાફ વ્હાઇટ+કાચ", "weeklyDays": [6]},
+            {"active": true, "completedDates": ["2026-07-14", "2026-07-28", "2026-08-14", "2026-09-28", "2026-10-14", "2026-10-28"], "createdAt": "2026-07-11T18:10:38.350Z", "id": "d1c35dd0-558e-473e-ba37-961724adb790", "monthlyDates": [14, 28], "repeat": "twice-monthly", "title": "પુથ્થા"}
         ];
 
         // Payment: UPI IDs for checkout QR (up to 4, first is default)
@@ -4158,7 +4166,31 @@
             "S PAYAL H": { hsn: "", printName: "Silver Payal" },
             "S PENDANT": { hsn: "", printName: "Silver Pendant" },
             "S RING": { hsn: "", printName: "Silver Ring" },
-            "S SANKDI": { hsn: "", printName: "Silver Sankdi" }
+            "S SANKDI": { hsn: "", printName: "Silver Sankdi" },
+            "2 ser": { hsn: "7117", printName: "1G ORNAMENT" },
+            "3 ser": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Bangles1": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Bangles2": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Bangles3": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Bracelet": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Bracelet heavy": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Earrings": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Earrings big": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Patta heavy": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Patta heavy1": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Patta medium": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Set1": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Set2": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Set3": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Set4": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Set5": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Set6": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Set7": { hsn: "7117", printName: "1G ORNAMENT" },
+            "Silver mala": { hsn: "7113", printName: "" },
+            "chain": { hsn: "7117", printName: "1G ORNAMENT" },
+            "chain heavy": { hsn: "7117", printName: "1G ORNAMENT" },
+            "dokya": { hsn: "7117", printName: "1G ORNAMENT" },
+            "dokya heavy": { hsn: "7117", printName: "1G ORNAMENT" }
         };
 
         // Stock Weight Calc: per-item packaging weight settings
@@ -4185,11 +4217,11 @@
             "S BANGLE": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
             "S BRACELET A": { pWeight: 3.66, bWeight: 140, extraBag: 0, hidden: false },
             "S BRACELET B": { pWeight: 3.66, bWeight: 271, extraBag: 0, hidden: false },
-            "S BRACELET C": { pWeight: 3.66, bWeight: 239, extraBag: 0, hidden: false },
+            "S BRACELET C": { pWeight: 3.66, bWeight: 376, extraBag: 0, hidden: false },
             "S BRACELET D": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
             "S BRACELET E": { pWeight: 3.66, bWeight: 270, extraBag: 0, hidden: false },
             "S CHAIN A": { pWeight: 7.94, bWeight: 412, extraBag: 0, hidden: false },
-            "S CHAIN B": { pWeight: 7.94, bWeight: 361, extraBag: 8, hidden: false },
+            "S CHAIN B": { pWeight: 7.94, bWeight: 361, extraBag: 21, hidden: false },
             "S CHAIN C": { pWeight: 7.94, bWeight: 370, extraBag: 0, hidden: false },
             "S CHAIN D": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
             "S DOKYA": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
@@ -4205,16 +4237,16 @@
             "S PAYAL 6_5": { pWeight: 5.85, bWeight: 259, extraBag: 0, hidden: false },
             "S PAYAL 7": { pWeight: 5.85, bWeight: 264, extraBag: 0, hidden: false },
             "S PAYAL 7_5": { pWeight: 5.85, bWeight: 258, extraBag: 0, hidden: false },
-            "S PAYAL 8_8_5_9": { pWeight: 11.55, bWeight: 0, extraBag: 24, hidden: false },
+            "S PAYAL 8_8_5_9": { pWeight: 11.55, bWeight: 371, extraBag: 0, hidden: false },
             "S RAKHI": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
             "S PAYAL A": { pWeight: 11.55, bWeight: 377, extraBag: 0, hidden: false },
             "S PAYAL B": { pWeight: 11.55, bWeight: 348, extraBag: 0, hidden: false },
-            "S PAYAL C": { pWeight: 11.55, bWeight: 422, extraBag: 0, hidden: false },
+            "S PAYAL C": { pWeight: 11.55, bWeight: 422, extraBag: 32, hidden: false },
             "S PAYAL D": { pWeight: 11.55, bWeight: 366, extraBag: 0, hidden: false },
             "S PAYAL E": { pWeight: 11.55, bWeight: 0, extraBag: 0, hidden: true },
             "S PAYAL F": { pWeight: 11.55, bWeight: 0, extraBag: 8, hidden: false },
             "S PAYAL FANCY": { pWeight: 11.55, bWeight: 0, extraBag: 8, hidden: false },
-            "S PAYAL G": { pWeight: 11.55, bWeight: 374, extraBag: 0, hidden: false },
+            "S PAYAL G": { pWeight: 11.55, bWeight: 0, extraBag: 16, hidden: false },
             "S PAYAL H": { pWeight: 11.55, bWeight: 389, extraBag: 0, hidden: false },
             "S PENDANT": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
             "S RING": { pWeight: 0, bWeight: 0, extraBag: 0, hidden: true },
@@ -4225,35 +4257,113 @@
             { id: 'default', name: 'Default', wastage: 0, perGram: 0, percent: 0, perPc: 0 },
             {
                 id: 'prof_1', name: 'V1',
-                gold:   { wastage: 0, perGram: 0,  percent: 0, perPc: 0   },
-                silver: { wastage: 3, perGram: 20, percent: 0, perPc: 50  }
+                gold:   { wastage: 0, perGram: 0, percent: 0, perPc: 0 },
+                silver: { wastage: 0, perGram: 10, percent: 2, perPc: 50 }
             },
             {
                 id: 'prof_2961516d-58e5-48bd-ba3c-dde9dfcead66', name: 'V1.1',
-                gold:   { wastage: 2, perGram: 0,  percent: 0, perPc: 100 },
-                silver: { wastage: 3, perGram: 20, percent: 0, perPc: 50  }
-            },
-            {
-                id: 'prof_61d5c204-14ba-45b6-bc1f-493ad902376b', name: 'V2',
-                gold:   { wastage: 0, perGram: 0,  percent: 0, perPc: 0   },
-                silver: { wastage: 5, perGram: 40, percent: 0, perPc: 100 }
-            },
-            {
-                id: 'prof_8edeec66-f1b9-4790-82a3-66cf3b9f360a', name: 'V2.1',
-                gold:   { wastage: 4, perGram: 0,  percent: 0, perPc: 200 },
-                silver: { wastage: 5, perGram: 40, percent: 0, perPc: 100 }
-            },
-            {
-                id: 'prof_ad5c4429-e241-4f50-a960-f749a2746262', name: 'V3',
-                gold:   { wastage: 0, perGram: 0,  percent: 0, perPc: 0   },
-                silver: { wastage: 7, perGram: 60, percent: 0, perPc: 200 }
+                gold:   { wastage: 2, perGram: 0, percent: 2, perPc: 100 },
+                silver: { wastage: 2, perGram: 20, percent: 2, perPc: 50 }
             },
             {
                 id: 'prof_3683e339-fc77-4b13-99fe-f3917130575f', name: 'V3.1',
-                gold:   { wastage: 6, perGram: 0,  percent: 0, perPc: 300 },
-                silver: { wastage: 7, perGram: 60, percent: 0, perPc: 200 }
+                gold:   { wastage: 6, perGram: 0, percent: 6, perPc: 300 },
+                silver: { wastage: 7, perGram: 60, percent: 7, perPc: 200 }
+            },
+            {
+                id: 'prof_61d5c204-14ba-45b6-bc1f-493ad902376b', name: 'V2',
+                gold:   { wastage: 0, perGram: 0, percent: 0, perPc: 0 },
+                silver: { wastage: 5, perGram: 40, percent: 5, perPc: 100 }
+            },
+            {
+                id: 'prof_8edeec66-f1b9-4790-82a3-66cf3b9f360a', name: 'V2.1',
+                gold:   { wastage: 4, perGram: 0, percent: 4, perPc: 200 },
+                silver: { wastage: 5, perGram: 40, percent: 5, perPc: 100 }
+            },
+            {
+                id: 'prof_ad5c4429-e241-4f50-a960-f749a2746262', name: 'V3',
+                gold:   { wastage: 0, perGram: 0, percent: 0, perPc: 0 },
+                silver: { wastage: 7, perGram: 60, percent: 7, perPc: 200 }
             }
         ];
+
+        // Custom items (Set1–7, Bangles, Chain, etc.) — keyed by id. Seeded ONLY on a fresh install /
+        // after a data wipe (when no print-name settings and no custom items exist).
+        const FACTORY_CUSTOM_ITEMS = {
+            '085f5ebd-b59e-4208-b59f-90f6aa8eb0c9': { id: '085f5ebd-b59e-4208-b59f-90f6aa8eb0c9', name: 'Set6', price: 3500 },
+            '0cf09054-765f-4fc1-8579-7b8570a7ddda': { id: '0cf09054-765f-4fc1-8579-7b8570a7ddda', name: 'Set4', price: 2500 },
+            '17b2dcfd-eaed-4d5d-8d79-e5631375f80e': { id: '17b2dcfd-eaed-4d5d-8d79-e5631375f80e', name: 'Set5', price: 3000 },
+            '3044ce0b-0909-4329-9d53-c0e75d5807a8': { id: '3044ce0b-0909-4329-9d53-c0e75d5807a8', name: '3 ser', price: 2000 },
+            '3713694f-3614-4cef-9702-d56fc5a9a158': { id: '3713694f-3614-4cef-9702-d56fc5a9a158', name: 'Bangles1', price: 1000 },
+            '42725e8f-fcf7-4954-8f0d-a239d6715c8c': { id: '42725e8f-fcf7-4954-8f0d-a239d6715c8c', name: 'Set1', price: 1000 },
+            '563247f6-bd44-4ec2-aa5f-6d55afb14814': { id: '563247f6-bd44-4ec2-aa5f-6d55afb14814', name: 'Set2', price: 1500 },
+            '59f26be4-5472-4ed7-96c4-7eb2f9f43752': { id: '59f26be4-5472-4ed7-96c4-7eb2f9f43752', name: 'Set3', price: 2000 },
+            '68dd570e-7e1b-4704-a4d2-c93a4f5f97bb': { id: '68dd570e-7e1b-4704-a4d2-c93a4f5f97bb', name: 'dokya', price: 1000 },
+            '6aa49e8e-bc73-4adb-844a-3c67d0af6e92': { id: '6aa49e8e-bc73-4adb-844a-3c67d0af6e92', name: 'Silver mala', price: 2000 },
+            '78829fae-4783-4713-bc5b-31a8cc6eaf9e': { id: '78829fae-4783-4713-bc5b-31a8cc6eaf9e', name: 'Bracelet heavy', price: 1500 },
+            '79dc2d2b-7f92-4d40-a51b-be9c908510fb': { id: '79dc2d2b-7f92-4d40-a51b-be9c908510fb', name: 'Patta heavy', price: 4500 },
+            '7a3a2054-2636-4b97-9466-e91029da66ec': { id: '7a3a2054-2636-4b97-9466-e91029da66ec', name: 'Bangles2', price: 1500 },
+            '7d54c6b9-89b6-4272-8874-fc0e93771e83': { id: '7d54c6b9-89b6-4272-8874-fc0e93771e83', name: '2 ser', price: 1500 },
+            '7eadbbe7-7baa-408c-8ddc-30974c378903': { id: '7eadbbe7-7baa-408c-8ddc-30974c378903', name: 'chain heavy', price: 1500 },
+            '8a2bad8c-769e-4881-99df-82d47e1b255e': { id: '8a2bad8c-769e-4881-99df-82d47e1b255e', name: 'Bracelet', price: 1000 },
+            '9ac2e1ad-c496-4b08-8429-361cd5b55766': { id: '9ac2e1ad-c496-4b08-8429-361cd5b55766', name: 'Bangles3', price: 2000 },
+            'ba5b877a-b013-43d6-864b-781c64238658': { id: 'ba5b877a-b013-43d6-864b-781c64238658', name: 'Set7', price: 4500 },
+            'bdb94e66-6250-4cfd-a96c-f26c8e3604a5': { id: 'bdb94e66-6250-4cfd-a96c-f26c8e3604a5', name: 'chain', price: 1000 },
+            'c2b3e11d-6b55-48d5-8fd8-6f48bb365e21': { id: 'c2b3e11d-6b55-48d5-8fd8-6f48bb365e21', name: 'Earrings big', price: 1000 },
+            'c37ec519-9701-4bc0-ad65-d28cbba283bb': { id: 'c37ec519-9701-4bc0-ad65-d28cbba283bb', name: 'Patta heavy1', price: 4000 },
+            'e658ce02-e106-4bb0-bf5f-874ddedbd972': { id: 'e658ce02-e106-4bb0-bf5f-874ddedbd972', name: 'Patta medium', price: 3000 },
+            'f381058f-4fcb-4b27-900b-e4846dd4f83d': { id: 'f381058f-4fcb-4b27-900b-e4846dd4f83d', name: 'dokya heavy', price: 1500 },
+            'faebc9dc-5178-4497-a5f1-cec4dfb8dc51': { id: 'faebc9dc-5178-4497-a5f1-cec4dfb8dc51', name: 'Earrings', price: 500 }
+        };
+
+        // Price display: stamp text shown to customers (keys are URL-encoded "metal|stamp")
+        const FACTORY_STAMP_DISPLAY_NAMES = {
+            "gold%7C18K": '18 carat HUID',
+            "gold%7C22K": '22 carat 916'
+        };
+
+        // Price display: footer text + which details are shown
+        const FACTORY_PD_SETTINGS = {
+            customText: "Special Offer Price\nShop now!!!",
+            showStamp: true,
+            showWeight: false,
+            showDate: true
+        };
+
+        // Seeds custom items / stamp display names / price-display settings. Called only from the
+        // "invItemSettings is empty" branch below (fresh install or post-wipe), and each part still
+        // only fills what is empty — so it can never bring back items deleted on a live shop.
+        function _seedFactoryExtras() {
+            try {
+                const upd = {};
+                if (!customItems || Object.keys(customItems).length === 0) {
+                    customItems = JSON.parse(JSON.stringify(FACTORY_CUSTOM_ITEMS));
+                    for (const id in customItems) upd['jewelryData/config/customItems/' + id] = customItems[id];
+                }
+                if (!stampDisplayNames || Object.keys(stampDisplayNames).length === 0) {
+                    stampDisplayNames = JSON.parse(JSON.stringify(FACTORY_STAMP_DISPLAY_NAMES));
+                    localStorage.setItem('stampDisplayNames', JSON.stringify(stampDisplayNames));
+                    upd['jewelryData/config/stampDisplayNames'] = stampDisplayNames;
+                }
+                if (!pdCustomText) {
+                    pdCustomText = FACTORY_PD_SETTINGS.customText;
+                    pdShowStamp = FACTORY_PD_SETTINGS.showStamp;
+                    pdShowWeight = FACTORY_PD_SETTINGS.showWeight;
+                    pdShowDate = FACTORY_PD_SETTINGS.showDate;
+                    localStorage.setItem('pdCustomText', pdCustomText);
+                    localStorage.setItem('pdShowStamp', String(pdShowStamp));
+                    localStorage.setItem('pdShowWeight', String(pdShowWeight));
+                    localStorage.setItem('pdShowDate', String(pdShowDate));
+                    upd['jewelryData/config/pdCustomText'] = pdCustomText;
+                    upd['jewelryData/config/pdShowStamp'] = pdShowStamp;
+                    upd['jewelryData/config/pdShowWeight'] = pdShowWeight;
+                    upd['jewelryData/config/pdShowDate'] = pdShowDate;
+                    if (typeof pdApplyCustomText === 'function') pdApplyCustomText();
+                    if (typeof pdApplyDate === 'function') pdApplyDate();
+                }
+                if (window._writeAllowed && Object.keys(upd).length) window.dbSafeUpdate(upd);
+            } catch (e) { console.warn('[factory extras]', e); }
+        }
 
         function applyFactoryDefaults() {
             // Only fill fields that are empty/missing — never overwrite real data
@@ -4312,6 +4422,7 @@
                     for (const k in invItemSettings) encoded[invFirebaseKey(k)] = invItemSettings[k];
                     window.dbSafeUpdate({ 'jewelryData/config/invItemSettings': encoded });
                 }
+                _seedFactoryExtras();
             }
             // Stamp print toggle (which stamps print beside the item name)
             if (!invStampPrintToggle || Object.keys(invStampPrintToggle).length === 0) {
@@ -5707,7 +5818,7 @@
             { key: 'returns',        label: 'Item Returns',        icon: '↩️', action: () => showSection('returns') },
             { key: 'issue',          label: 'Item Issue',          icon: '⚠️', action: () => showSection('issue') },
             { key: 'reminders',      label: 'Reminders',          icon: '🔔', action: () => showSection('reminders') },
-            { key: 'reprint-last',   label: 'Reprint Last Invoice', icon: '🖨️', action: () => reprintLastInvoice() },
+            { key: 'reprint-last',   label: 'Edit Last Invoice',  icon: '✏️', action: () => editLastInvoice() },
             { key: 'print-server',   label: 'Print Server',       icon: '🖨️', action: () => openPrintServerModal() },
             { key: 'backup',         label: 'Download Backup',    icon: '💾', action: () => downloadBackup() },
             { key: 'backup-date-range', label: 'Backup by Date Range', icon: '📅', action: () => openDateRangeBackupModal() },
@@ -9268,6 +9379,7 @@
                 cart = [];
                 oldGoldItems = [];
                 cartAdjustment = 0;
+                _cartEditClear();
                 localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
                 updateCartIcon();
                 document.getElementById('inst-cust-name').value = '';
@@ -11080,7 +11192,7 @@
                 </div>
             `;
 
-            cartTotalSummaryDiv.innerHTML = summaryHtml;
+            cartTotalSummaryDiv.innerHTML = _cartEditBannerHtml() + summaryHtml;
             // --- REFACTORED CART LOGIC END ---
 
             modal.style.display = 'flex';
@@ -11142,6 +11254,7 @@
                 _resetAdjustFields();
                 cartCustomer = { name: '', mobile: '', address: '' };
                 _clearCartCreditorState();
+                _cartEditClear();
                 localStorage.setItem('suhagPriceCheckerCartCustomer', JSON.stringify(cartCustomer));
                 localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
                 updateCartIcon();
@@ -12293,6 +12406,8 @@
                 cartCustomer = { name: '', mobile: '', address: '' };
             }
             try { cartCreditorId = localStorage.getItem('suhagPriceCheckerCartCreditor') || null; } catch (e) { cartCreditorId = null; }
+            // Resume an "Edit Last Invoice" session across a page reload (only while the cart still has items)
+            try { _cartEditLoad(); if (window._cartEditInv && (!cart || !cart.length)) _cartEditClear(); } catch (e) {}
 
             // --- Load Old Gold from Local Storage ---
             try {
@@ -13096,6 +13211,8 @@
             if (net <= 0) {
                 selectPayMode('cash');
             }
+            // Editing the last invoice: pre-select the payment it was originally made with
+            try { _cartEditApplyPayPrefill(net); } catch (e) { console.warn('[edit prefill]', e); }
             document.getElementById('payment-modal').style.display = 'flex';
         }
 
@@ -13378,8 +13495,13 @@
                     receipt, draft: false,
                     paymentMethod: paymentMode || 'none', paymentDetails,
                     source: 'checkout',
+                    cartSnapshot: JSON.parse(JSON.stringify({ items: cartItems, adjustment: cartAdjustment, adjustmentAuto: cartAdjustmentAuto })),
                     ...(_crAmt > 0 && cartCreditorId ? { creditorId: cartCreditorId, creditAmount: _crAmt } : {})
                 };
+                if (_applyCartEditToRecord(record)) {   // editing the last invoice from the cart → update it, don't create a new one
+                    _commitEditedCheckoutRecord(record);
+                    return { ok: true, invoiceId: record.id, edited: true };
+                }
                 invoiceHistory.unshift(record);
                 _saveInvoiceLocal();
                 _saveInvoiceRecord(record);
@@ -13491,7 +13613,7 @@
             copy.id = crypto.randomUUID();
             copy.track = 'A';
             copy.mirrorOf = rec.id;
-            delete copy.creditorId; delete copy.creditAmount;
+            delete copy.creditorId; delete copy.creditAmount; delete copy.cartSnapshot;
             invoiceHistory.unshift(copy);
             _saveInvoiceLocal();
             _saveInvoiceRecord(copy);
@@ -13659,10 +13781,11 @@
             // number + 1 (can repeat across multiple Track B bills until Track A
             // moves forward) — see _invNextBillNo.
             const checkoutTrackC = invGetCheckoutTrack();
-            const billNo = _invNextBillNo(checkoutTrackC);
+            const _editEx = _cartEditExisting(); // editing an existing invoice from the cart → keep its bill no. and date
+            const billNo = _editEx ? _editEx.billNo : _invNextBillNo(checkoutTrackC);
 
-            const d = new Date();
-            const dateDisp = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}` + _invTimeSuffix(checkoutTrackC, d.toISOString());
+            const d = (_editEx && _editEx.timestamp && !isNaN(new Date(_editEx.timestamp))) ? new Date(_editEx.timestamp) : new Date();
+            const dateDisp = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}` + _invTimeSuffix(_editEx ? (_editEx.track || checkoutTrackC) : checkoutTrackC, d.toISOString());
 
             const paymentMethod = paymentMode || 'none';
             const paymentDetails = paymentMode === 'partial' ? (paymentSplit || {}) : {};
@@ -13881,6 +14004,7 @@
                 receipt, draft: false,
                 paymentMethod, paymentDetails,
                 source: 'checkout',
+                cartSnapshot: JSON.parse(JSON.stringify({ items: cartItems, adjustment: cartAdjustment, adjustmentAuto: cartAdjustmentAuto })),
                 ...(_crAmt > 0 && cartCreditorId ? { creditorId: cartCreditorId, creditAmount: _crAmt } : {})
             };
 
@@ -14017,11 +14141,18 @@
             // --- Save to Invoice (Track B) — the sole record of this sale ---
             let invoiceSaveOk = true;
             let _savedInvoiceId = null;
+            let _wasEdit = false;           // true when this checkout UPDATED an existing invoice (Edit Last Invoice)
+            const _editOrig = window._cartEditInv ? (window._cartEditInv.origItems || []) : [];
             if (invoiceRecordOverride) {
-                invoiceHistory.unshift(invoiceRecordOverride);
-                _saveInvoiceLocal();
-                _saveInvoiceRecord(invoiceRecordOverride);
-                _invSaveTrackACopy(invoiceRecordOverride);
+                if (_applyCartEditToRecord(invoiceRecordOverride)) {
+                    _commitEditedCheckoutRecord(invoiceRecordOverride);
+                    _wasEdit = true;
+                } else {
+                    invoiceHistory.unshift(invoiceRecordOverride);
+                    _saveInvoiceLocal();
+                    _saveInvoiceRecord(invoiceRecordOverride);
+                    _invSaveTrackACopy(invoiceRecordOverride);
+                }
                 _savedInvoiceId = invoiceRecordOverride.id;
             } else {
                 const _saveResult = _invAutoSaveFromCheckout(
@@ -14030,6 +14161,7 @@
                 );
                 invoiceSaveOk = _saveResult.ok;
                 _savedInvoiceId = _saveResult.invoiceId;
+                _wasEdit = !!_saveResult.edited;
             }
 
             // --- Record in ledger — single unified sale-entry write ---
@@ -14043,13 +14175,23 @@
             // the credit part is booked to the creditor and hits the ledger when they pay.
             const _creditAmt = (mode === 'partial' && payment && payment.credit > 0) ? Math.round(payment.credit) : 0;
             const _creditCid = _creditAmt > 0 ? cartCreditorId : null;
-            _recordSaleLedgerEntry(netPayable, Math.max(0, netPayable) - _creditAmt, mode, payment, 'checkout', { invoiceId: _savedInvoiceId });
-            if (_creditCid) _recordCreditSale(_creditCid, _creditAmt, _savedInvoiceId);
+            // When an existing invoice was edited, its ledger + credit entries were already updated
+            // in place by _commitEditedCheckoutRecord — don't book the sale a second time.
+            if (!_wasEdit) {
+                _recordSaleLedgerEntry(netPayable, Math.max(0, netPayable) - _creditAmt, mode, payment, 'checkout', { invoiceId: _savedInvoiceId });
+                if (_creditCid) _recordCreditSale(_creditCid, _creditAmt, _savedInvoiceId);
+            }
 
             // --- Deduct tracked loose-preset stock (e.g. Nosepin) for this sale ---
             // Only decrements presets that are actively tracked (someone has used
             // "+ Add Stock" on them at least once). Untracked presets are ignored,
             // so this never surprises the owner with a stray counter appearing.
+            // Edit: first give back what the original sale deducted, then deduct the edited cart.
+            if (_wasEdit) {
+                _editOrig.forEach(o => {
+                    if (o && o.presetName && isPresetStockTracked(o.presetName)) adjustPresetStock(o.presetName, (o.pieceCount || 1));
+                });
+            }
             cart.forEach(item => {
                 if (item && item.type === 'loose' && item.presetName && isPresetStockTracked(item.presetName)) {
                     adjustPresetStock(item.presetName, -(item.pieceCount || 1));
@@ -14060,6 +14202,7 @@
             cart = []; oldGoldItems = []; cartAdjustment = 0;
             cartCustomer = { name: '', mobile: '', address: '' };
             _resetAdjustFields();
+            _cartEditClear(); // edit (if any) is finished
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
             localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
             localStorage.setItem('suhagPriceCheckerCartCustomer', JSON.stringify(cartCustomer));
@@ -14078,7 +14221,7 @@
             } else {
                 const _crObj = _creditCid ? creditors.find(x => x.id === _creditCid) : null;
                 const _crMsg = _creditCid ? '<br>' + _cdFmt(_creditAmt) + ' added to ' + escHtml(_crObj ? _crObj.name : 'creditor') + '\'s credit.' : '';
-                showCustomAlert((hadInvoice ? 'Completed✅!' : 'Sale recorded!') + _crMsg);
+                showCustomAlert(_wasEdit ? 'Invoice updated✅!' + _crMsg : (hadInvoice ? 'Completed✅!' : 'Sale recorded!') + _crMsg);
             }
         }
 
@@ -19094,6 +19237,210 @@
             if (!last) { showCustomAlert('No invoices found yet.'); return; }
             window._invForceFormat = invGetCheckoutFormat();
             chooseInvoiceHistoryPrintDestination(last.id);
+        }
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // EDIT LAST INVOICE (from the checkout shopping cart)
+        // Puts the most recently generated invoice (any track, drafts and Track-A mirror
+        // copies ignored) back into the CART exactly as it was at checkout: items, old
+        // jewellery, customer, creditor, discount — and the payment method/split is
+        // pre-selected when you tap Checkout. Checkout then UPDATES that same invoice
+        // (same id, bill number and date) instead of creating a new one, and its ledger /
+        // credit entries / Track-A mirror are updated in step.
+        // ═══════════════════════════════════════════════════════════════════════
+        function _cartEditSave() {
+            try {
+                if (window._cartEditInv) localStorage.setItem('suhagCartEditInv', JSON.stringify(window._cartEditInv));
+                else localStorage.removeItem('suhagCartEditInv');
+            } catch (e) {}
+        }
+        function _cartEditLoad() {
+            try {
+                const v = JSON.parse(localStorage.getItem('suhagCartEditInv') || 'null');
+                window._cartEditInv = (v && v.id) ? v : null;
+            } catch (e) { window._cartEditInv = null; }
+        }
+        function _cartEditClear() {
+            window._cartEditInv = null;
+            window._cartEditPayPrefill = null;
+            _cartEditSave();
+        }
+        // The invoice currently being edited from the cart (null if none / it was deleted meanwhile)
+        function _cartEditExisting() {
+            const e = window._cartEditInv;
+            if (!e || !e.id) return null;
+            return (invoiceHistory || []).find(i => i.id === e.id) || null;
+        }
+        function _cartEditBannerHtml() {
+            const ex = _cartEditExisting();
+            if (!ex) return '';
+            return `<div style="background:#FFF3E0;border:1px solid #FFB74D;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:#E65100;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                <span>✏️ Editing invoice <b>${escHtml(ex.billNo || '')}</b> — Checkout updates it (no new bill).</span>
+                <span onclick="_cartEditCancel()" style="cursor:pointer;font-weight:800;text-decoration:underline;white-space:nowrap;">Cancel edit</span>
+            </div>`;
+        }
+        function _cartEditCancel() {
+            if (!confirm('Cancel editing and empty the cart? The invoice itself stays exactly as it was.')) return;
+            cart = []; oldGoldItems = []; cartAdjustment = 0;
+            cartCustomer = { name: '', mobile: '', address: '' };
+            _resetAdjustFields();
+            _clearCartCreditorState();
+            _cartEditClear();
+            localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
+            localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
+            localStorage.setItem('suhagPriceCheckerCartCustomer', JSON.stringify(cartCustomer));
+            updateCartIcon();
+            openCart();
+        }
+
+        // Rebuilds cart items from a saved invoice. Invoices saved from now on carry an exact
+        // cartSnapshot; older ones are rebuilt from their printed rows (prices re-derived from
+        // the invoice's own frozen rate/weight/making, so they match to within ₹1).
+        function _cartFromInvoice(inv) {
+            const og = (inv.ogItems || []).reduce((a, i) => a + (i.value || 0), 0);
+            const snap = inv.cartSnapshot;
+            if (snap && Array.isArray(snap.items) && snap.items.length) {
+                return { items: JSON.parse(JSON.stringify(snap.items)), adjustment: parseFloat(snap.adjustment) || 0,
+                         adjustmentAuto: snap.adjustmentAuto !== false, flat: 0 };
+            }
+            const tax = invoiceSettings.taxRate || 0;
+            const revType = { wastage: 'wastage', per_g: 'per g', '%': '%', per_pc: 'per pc', mrp: 'MRP' };
+            let flat = 0;
+            const items = (inv.items || []).map(r => {
+                const taxable = invTaxableVal(r);
+                const hm = parseFloat(r.hm) || 0;
+                const price = parseFloat(((r.taxInclusive ? taxable : taxable * (1 + tax / 100)) + hm).toFixed(2));
+                const id = crypto.randomUUID();
+                if (r.isCustom) {
+                    return { type: 'custom', id, customItemId: r.customItemId || null, itemName: r.itemName || r.desc || 'Custom Item', finalPrice: price };
+                }
+                if (r.isLoose) {
+                    const pre = (typeof loosePresets !== 'undefined' && loosePresets || []).find(pp => pp && pp.name === r.desc);
+                    return { type: 'loose', id, itemName: r.desc || 'Loose Jewellery', presetName: pre ? pre.name : null,
+                             weight: r.nlWt || 0, metal: r.metal || '', stamp: r.stamp || '',
+                             rate: r.rate || 0, makingType: r.makingType || '%', makingValue: r.makingPct || 0,
+                             subtotal: parseFloat(taxable.toFixed(2)), taxRateApplied: tax,
+                             finalPrice: price, pieceCount: r.pc || 1 };
+                }
+                if (r.barcode && productData[r.barcode]) {
+                    return { id, barcode: r.barcode, itemName: r.itemName || r.desc || r.barcode, finalPrice: price, hmAmount: hm,
+                             makingOverride: (r.makingType && r.makingType !== 'mrp') ? { type: revType[r.makingType] || '%', input: r.makingPct || 0 } : null,
+                             weightOverride: (r.nlWt != null) ? r.nlWt : null,
+                             grossWeightOverride: (r.grWt != null) ? r.grWt : null };
+                }
+                // Anything else (flat jewellery amount, tagged piece no longer in stock, manual-invoice row):
+                // carried as a flat-amount item so the money still adds up.
+                if (!(r.makingType === 'mrp' && !r.barcode)) flat++;
+                return { type: 'repair', id, itemName: r.desc || r.itemName || 'Jewellery', finalPrice: price };
+            });
+            const sum = items.reduce((a, i) => a + i.finalPrice, 0);
+            const rounded = (inv.totals && inv.totals.rounded != null) ? inv.totals.rounded : null;
+            let adjustment = (rounded != null) ? Math.max(0, parseFloat((sum - rounded).toFixed(2))) : 0;
+            const base = sum - og;
+            const auto = base > 0 ? (base - Math.floor(base / 10) * 10) : 0;
+            return { items, adjustment, adjustmentAuto: Math.abs(auto - adjustment) < 1, flat };
+        }
+
+        function editLastInvoice(){
+            closeOptions();
+            const pool = (invoiceHistory || []).filter(inv => inv && !inv.draft && !inv.mirrorOf);
+            if (!pool.length) { showCustomAlert('No invoices found yet.'); return; }
+            const last = pool.reduce((latest, inv) =>
+                (!latest || new Date(inv.timestamp || 0) > new Date(latest.timestamp || 0)) ? inv : latest
+            , null);
+            if (!last) { showCustomAlert('No invoices found yet.'); return; }
+
+            const alreadyEditingThis = window._cartEditInv && window._cartEditInv.id === last.id;
+            if ((cart.length || oldGoldItems.length) && !alreadyEditingThis &&
+                !confirm('Your cart has items. Replace them with the last invoice (' + (last.billNo || '') + ') for editing?')) return;
+
+            const conv = _cartFromInvoice(last);
+            cart = conv.items;
+            oldGoldItems = (last.ogItems || []).map(i => ({...i}));
+            cartCustomer = {
+                name: (last.custName && last.custName !== '—') ? last.custName : '',
+                mobile: last.custMob || '', address: last.custAddr || ''
+            };
+            cartCreditorId = last.creditorId || null;
+            try {
+                if (cartCreditorId) localStorage.setItem(CART_CREDITOR_KEY, cartCreditorId);
+                else localStorage.removeItem(CART_CREDITOR_KEY);
+            } catch (e) {}
+            cartAdjustment = conv.adjustment;
+            cartAdjustmentAuto = conv.adjustmentAuto;
+            _exactDiscFromFinal = null;
+
+            window._cartEditInv = {
+                id: last.id, billNo: last.billNo, timestamp: last.timestamp, track: last.track || 'A',
+                origItems: cart.filter(i => i && i.type === 'loose' && i.presetName).map(i => ({ presetName: i.presetName, pieceCount: i.pieceCount || 1 }))
+            };
+            window._cartEditPayPrefill = { method: last.paymentMethod || '', details: last.paymentDetails || {} };
+            _cartEditSave();
+
+            localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
+            localStorage.setItem('suhagPriceCheckerOldGold', JSON.stringify(oldGoldItems));
+            localStorage.setItem('suhagPriceCheckerCartCustomer', JSON.stringify(cartCustomer));
+            updateCartIcon();
+            openCart();
+            if (conv.flat > 0) {
+                showCustomAlert('ℹ️ ' + conv.flat + ' item(s) of this older invoice could not be matched to stock and were loaded as flat amounts (totals still match).');
+            }
+        }
+        window.editLastInvoice = editLastInvoice;
+
+        // Pre-selects the payment method/split the invoice originally had (when Checkout is tapped).
+        function _cartEditApplyPayPrefill(net) {
+            const pf = window._cartEditPayPrefill;
+            if (!pf || !_cartEditExisting() || !(net > 0)) return;
+            const m = pf.method;
+            if (!['cash', 'upi', 'card', 'partial'].includes(m) || !document.getElementById('pay-btn-' + m)) return;
+            const d = pf.details || {};
+            if (m === 'partial') {
+                const sum = (d.cash || 0) + (d.upi || 0) + (d.card || 0) + (d.credit || 0);
+                selectPayMode('partial');
+                if (Math.abs(sum - Math.round(net)) <= 1) {   // only reuse the old split if the amount is unchanged
+                    document.getElementById('pay-cash-amt').value = d.cash || '';
+                    document.getElementById('pay-upi-amt').value = d.upi || '';
+                    document.getElementById('pay-card-amt').value = d.card || '';
+                    document.getElementById('pay-credit-amt').value = d.credit || '';
+                    syncPartialPayment('cash');
+                }
+            } else {
+                selectPayMode(m);
+            }
+        }
+
+        // Saves an edited checkout invoice IN PLACE (same id / bill no. / date), then keeps the
+        // Track-A mirror copy, ledger entry and credit entry in step with it.
+        function _invUpdateMirrors(record) {
+            const mirrors = (invoiceHistory || []).filter(i => i.mirrorOf === record.id);
+            mirrors.forEach(m => {
+                const c = JSON.parse(JSON.stringify(record));
+                c.id = m.id; c.track = m.track || 'A'; c.mirrorOf = record.id;
+                delete c.creditorId; delete c.creditAmount; delete c.cartSnapshot;
+                invoiceHistory = invoiceHistory.map(i => i.id === m.id ? c : i);
+                _saveInvoiceRecord(c);
+            });
+        }
+        function _applyCartEditToRecord(record) {
+            const ex = _cartEditExisting();
+            if (!ex || !record) return false;
+            record.id = ex.id;
+            record.billNo = ex.billNo;
+            record.timestamp = ex.timestamp;
+            record.track = ex.track || record.track;
+            if (ex.source) record.source = ex.source;
+            record.editedAt = new Date().toISOString();
+            return true;
+        }
+        function _commitEditedCheckoutRecord(record) {
+            invoiceHistory = invoiceHistory.map(i => i.id === record.id ? record : i);
+            _saveInvoiceLocal();
+            _saveInvoiceRecord(record);
+            _invUpdateMirrors(record);
+            _saveInvoiceLocal();
+            _invLedgerFromRecord(record, true);
+            _invCreditFromRecord(record, true);
         }
 
         function invPrint() {
