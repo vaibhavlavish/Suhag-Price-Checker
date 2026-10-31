@@ -12130,7 +12130,17 @@
                 const workbook = XLSX.read(data, {type: 'array'});
                 const sheet = workbook.Sheets[workbook.SheetNames[0]];
                 const json = XLSX.utils.sheet_to_json(sheet, {header: 1});
-                 const headers = (json[0] || []).map(h => (h || '').toString().trim().toLowerCase());
+                // Raw barcode-software exports start with a title row ("Tag Stock") and blank lines before the
+                // headings, so look for the real heading row instead of assuming it is the first line.
+                const _normH = h => (h == null ? '' : String(h)).trim().toLowerCase();
+                let headerRow = 0, _bestCells = 0;
+                for (let r = 0; r < Math.min(json.length, 30); r++) {
+                    const cells = (json[r] || []).map(_normH);
+                    if (!cells.some(c => ['tag no', 'tagno', 'barcode'].includes(c))) continue;
+                    const n = cells.filter(c => c).length;
+                    if (n > _bestCells) { _bestCells = n; headerRow = r; }
+                }
+                const headers = (json[headerRow] || []).map(_normH);
                 const cols = {
                     tagNo: findColumn(headers, ['tag no', 'tagno', 'barcode']),
                     itemName: findColumn(headers, ['item name', 'name', 'product name', 'item']),
@@ -12157,10 +12167,35 @@
                 }
                 let count = 0;
                 let newProductData = {};
-                for (let i = 1; i < json.length; i++) {
-                    const row = json[i];
+                let skippedTotals = 0, mrpCleared = 0, metalAuto = 0;
+                const unknownStamps = new Set();
+                const _cellTxt = (row, c) => (c !== -1 && row[c] != null) ? row[c].toString().trim() : '';
+                // Fallback only when a stamp is not in the rates tables (the rates tables are checked first)
+                const _guessMetal = st => /\d\s*K\b|\bK\s*\d|GOLD|\b(916|750|585)\b/.test(st) ? 'gold' : (/^S\s*\d|SIL|\b925\b/.test(st) ? 'silver' : '');
+                for (let i = headerRow + 1; i < json.length; i++) {
+                    const row = json[i] || [];
                     const tagNo = (row[cols.tagNo] || '').toString().trim().toUpperCase();
                     if (!tagNo) continue;
+                    // Summary line at the bottom of the export: a bare number (the piece count) in the tag column
+                    // with no item name, or a line that starts with "Total" — not a real item.
+                    const _nameTxt = _cellTxt(row, cols.itemName);
+                    if (/^(GRAND\s+)?TOTAL\b/.test(tagNo) || /^(grand\s+)?total\b/i.test(_nameTxt) || (!_nameTxt && /^\d+(\.\d+)?$/.test(tagNo))) { skippedTotals++; continue; }
+                    // Stamp present → MRP is ignored; metal follows the stamp (no stamp → silver unless the sheet says otherwise)
+                    const _stamp = _cellTxt(row, cols.stamp).toUpperCase();
+                    let _metal = _cellTxt(row, cols.metal).toLowerCase();
+                    _metal = /gold/.test(_metal) ? 'gold' : (/silver/.test(_metal) ? 'silver' : '');
+                    const _sheetMetal = _metal;
+                    let _mrp = cols.mrp !== -1 ? parseFloat(row[cols.mrp]) || 0 : 0;
+                    if (_stamp) {
+                        const inG = !!(rates.gold && rates.gold[_stamp] !== undefined), inS = !!(rates.silver && rates.silver[_stamp] !== undefined);
+                        _metal = (inG && !inS) ? 'gold' : (inS && !inG) ? 'silver' : (_metal || _guessMetal(_stamp));
+                        if (_mrp > 0) mrpCleared++;
+                        _mrp = 0;
+                        if (!_metal || !(rates[_metal] && rates[_metal][_stamp] !== undefined)) unknownStamps.add(_stamp);
+                    } else if (!_metal) {
+                        _metal = 'silver';
+                    }
+                    if (_metal !== _sheetMetal) metalAuto++;
                     const grossWt = cols.grossWeight !== -1 ? parseFloat(row[cols.grossWeight]) || 0 : 0;
                     const netWt = cols.netWeight !== -1 ? parseFloat(row[cols.netWeight]) || 0 : grossWt;
                     newProductData[tagNo] = {
@@ -12173,10 +12208,10 @@
                         makingWastage: cols.wastage !== -1 ? parseFloat(row[cols.wastage]) || 0 : 0,
                         makingPerGram: cols.mGram !== -1 ? parseFloat(row[cols.mGram]) || 0 : 0,
                         makingPerPc: cols.mPc !== -1 ? parseFloat(row[cols.mPc]) || 0 : 0,
-                        mrp: cols.mrp !== -1 ? parseFloat(row[cols.mrp]) || 0 : 0,
+                        mrp: _mrp,
                         otherCharge: cols.otherCharge !== -1 ? parseFloat(row[cols.otherCharge]) || 0 : 0,
-                        metal: cols.metal !== -1 ? (row[cols.metal] || '').toString().trim().toLowerCase() : '',
-                        stamp: cols.stamp !== -1 ? (row[cols.stamp] || '').toString().trim().toUpperCase() : '',
+                        metal: _metal,
+                        stamp: _stamp,
                         HUID: cols.huid !== -1 ? (row[cols.huid] || '').toString().trim().toUpperCase() : '',
                         design: cols.design !== -1 ? (row[cols.design] || '').toString().trim() : '',
                         vouchNo: cols.vouchNo !== -1 ? (row[cols.vouchNo] || '').toString().trim() : '',
@@ -12187,8 +12222,14 @@
 
                 // --- SAFETY CONFIRMATION BEFORE OVERWRITE ---
                 const currentCount = Object.keys(productData).length;
+                const _notes = [];
+                if (headerRow > 0) _notes.push(`Headings found on line ${headerRow + 1} (title/blank lines above were ignored)`);
+                if (skippedTotals) _notes.push(`${skippedTotals} total/summary line${skippedTotals > 1 ? 's' : ''} skipped`);
+                if (mrpCleared) _notes.push(`MRP ignored on ${mrpCleared} stamped item${mrpCleared > 1 ? 's' : ''}`);
+                if (metalAuto) _notes.push(`Metal set automatically on ${metalAuto} item${metalAuto > 1 ? 's' : ''}`);
+                if (unknownStamps.size) _notes.push(`<span style="color:#C62828;">Stamps with no rate set up: ${Array.from(unknownStamps).join(', ')} — add them in Update Rates</span>`);
                 showCustomConfirm(
-                    `This will REPLACE your entire product list (${currentCount} items) with ${count} new items from Excel. Proceed?`,
+                    `This will REPLACE your entire product list (${currentCount} items) with ${count} new items from Excel.` + (_notes.length ? `<div style="text-align:left; font-size:12px; margin-top:8px;">• ${_notes.join('<br>• ')}</div>` : '') + `<div style="margin-top:8px;">Proceed?</div>`,
                     'Confirm Replacement',
                     () => {
                         productData = newProductData;
