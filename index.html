@@ -262,6 +262,10 @@
             touch-action: manipulation;
             overscroll-behavior-y: contain;
         }
+        /* iOS: a grid/flex child cannot shrink below its content unless min-width is 0 — iOS date inputs have a
+           wide built-in minimum, which pushed Date (and paired fields) past the card edge and shifted the page. */
+        input[type=date], input[type=month], input[type=time], input[type=number], select { min-width: 0; max-width: 100%; }
+        div[style*="display:grid"] > *, div[style*="display: grid"] > *, #invoice-screen .item-row-fields > *, #invoice-screen .item-row-making > * { min-width: 0; }
         /* Was body.opacity:0→1 originally — moved onto #app-view specifically
            so the login screen (a sibling of #app-view, not inside it) is
            always immediately visible regardless of this, while #app-view's
@@ -1463,7 +1467,7 @@
         #ledger-rates-table .lr-title { display:flex; align-items:center; gap:8px; margin:16px 2px 10px; font-size:13px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; color:var(--text2); }
         #ledger-rates-table .lr-title::after { content:''; flex:1; height:1px; background:linear-gradient(90deg, var(--border), transparent); }
         #ledger-rates-table .lr-card { background:var(--surface); border-radius:18px; overflow:hidden; box-shadow:0 4px 18px rgba(0,0,0,0.09); border:1px solid var(--border); }
-        #ledger-rates-table .lr-head, #ledger-rates-table .lr-row { display:grid; grid-template-columns:1.2fr 1fr 1.2fr; align-items:center; padding:0 16px; }
+        #ledger-rates-table .lr-head, #ledger-rates-table .lr-row { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) 1.2fr; align-items:center; padding:0 16px; }
         #ledger-rates-table .lr-head { background:linear-gradient(135deg, #1C1C1E 0%, #1E7A3E 100%); color:rgba(255,255,255,.85); font-size:11px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; padding-top:11px; padding-bottom:11px; }
         #ledger-rates-table .lr-head span:last-child, #ledger-rates-table .lr-rate { text-align:right; }
         #ledger-rates-table .lr-row { padding-top:13px; padding-bottom:13px; border-bottom:1px solid var(--border); }
@@ -2423,7 +2427,7 @@
                 <button onclick="closeCustomQuickList()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; line-height:1; width:auto; margin:0; box-shadow:none;">&#x2715;</button>
             </div>
             <input type="search" id="custom-quick-search" placeholder="🔍 Search custom items…" oninput="renderCustomQuickList()" autocomplete="off" style="width:100%; margin:0 0 10px 0; padding:10px 12px; font-size:14px; border:1.5px solid #ddd; border-radius:10px; box-sizing:border-box;">
-            <div id="custom-quick-list" style="overflow-y:auto; flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px; align-content:start;"></div>
+            <div id="custom-quick-list" style="overflow-y:auto; flex:1; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-content:start;"></div>
         </div>
     </div>
 
@@ -2447,11 +2451,11 @@
                 <button onclick="document.getElementById('adjust-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
             <!-- ±50 nudge buttons ABOVE inputs -->
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:10px;">
                 <button onclick="nudgeAdjustFinal(1)" title="+₹50 to final amount" style="background:#f3e5f5; color:#4CAF50; border:none; border-radius:8px; padding:9px 0; font-size:20px; font-weight:900; cursor:pointer; line-height:1; width:100%; box-shadow:none;">＋</button>
                 <button onclick="nudgeAdjustFinal(-1)" title="-₹50 from final amount" style="background:#f3e5f5; color:#e53935; border:none; border-radius:8px; padding:9px 0; font-size:20px; font-weight:900; cursor:pointer; line-height:1; width:100%; box-shadow:none;">－</button>
             </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:10px;">
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:10px;">
                 <div>
                     <label style="font-size:11px; color:#555; display:block; margin-bottom:3px;">Discount (₹)</label>
                     <input type="number" id="adjust-discount" placeholder="e.g. 500" step="1"
@@ -2505,7 +2509,7 @@
 
         <!-- Gold offsets -->
         <div id="np-gold-fields">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px;">
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:6px;">
                 <div>
                     <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">Wastage offset (%)</label>
                     <input type="number" id="np-gold-wastage" placeholder="e.g. +5 or -2" step="0.1" style="margin-bottom:0;">
@@ -2527,7 +2531,7 @@
 
         <!-- Silver offsets -->
         <div id="np-silver-fields" style="display:none;">
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px;">
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:6px;">
                 <div>
                     <label style="font-size:12px; color:#555; display:block; margin-bottom:4px;">Wastage offset (%)</label>
                     <input type="number" id="np-silver-wastage" placeholder="e.g. +5 or -2" step="0.1" style="margin-bottom:0;">
@@ -6869,7 +6873,7 @@
                     card.appendChild(header);
 
                     const thead = document.createElement('div');
-                    thead.style.cssText = 'display:grid; grid-template-columns:1fr 1fr 1fr; padding:6px 14px; background:#f5f5f5; font-size:12px; color:#888; font-weight:600; border-bottom:1px solid #eee;';
+                    thead.style.cssText = 'display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding:6px 14px; background:#f5f5f5; font-size:12px; color:#888; font-weight:600; border-bottom:1px solid #eee;';
                     thead.innerHTML = `<span>Barcode</span><span style="text-align:center;">Making</span><span style="text-align:right;">Price</span>`;
                     card.appendChild(thead);
 
@@ -6885,7 +6889,7 @@
                             else if (makingType === 'per pc') makingStr = `₹${makingInput}pc`;
                         }
                         const row = document.createElement('div');
-                        row.style.cssText = `display:grid; grid-template-columns:1fr 1fr 1fr; padding:10px 14px; font-size:14px; align-items:center; border-bottom:${idx < items.length - 1 ? '1px solid #f0f0f0' : 'none'}; background:${idx % 2 === 1 ? '#fafafa' : 'white'}; cursor:pointer;`;
+                        row.style.cssText = `display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); padding:10px 14px; font-size:14px; align-items:center; border-bottom:${idx < items.length - 1 ? '1px solid #f0f0f0' : 'none'}; background:${idx % 2 === 1 ? '#fafafa' : 'white'}; cursor:pointer;`;
                         row.onclick = () => { showSection('main'); lookupProduct(barcode); };
                         row.innerHTML = `
                             <span style="font-weight:600; color:#333;">${barcode}</span>
@@ -9971,7 +9975,7 @@
                 ` : ''}
 
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">ID Proof Photos</div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px;">
+                <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:6px;">
                     ${[0, 1, 2].map(slot => {
                         const entry = _getIdPhotoEntry(plan, slot);
                         return `
@@ -10012,7 +10016,7 @@
                     <p class="note" id="inst-pay-status" style="margin-top:6px; text-align:center;"></p>
                 ` : (plan.status === 'completed' ? `<p class="note" style="text-align:center; font-weight:700; color:#2E7D32;">✅ This plan is fully paid off.</p>` : '')}
 
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px;">
+                <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:14px;">
                     <button onclick="openInstallmentLinkModal()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🔗 Link</button>
                     ${isActive ? `<button onclick="chooseInstallmentPrintDestination()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">👁🖨️ Preview / Print</button>` : ''}
                     ${isActive ? `<button onclick="openInstallmentRateModal()" style="background:${plan.rateCancelled ? '#FFF3E0' : 'none'}; border:1.5px solid ${plan.rateCancelled ? '#E65100' : 'var(--border)'}; color:${plan.rateCancelled ? '#E65100' : 'var(--text)'}; font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">${plan.rateCancelled ? '⚠️ Change/Cancel Rate (Cancelled)' : '📈 Change/Cancel Rate'}</button>` : ''}
@@ -10960,7 +10964,7 @@
                 <div class="page" style="page-break-before:always;">
                     <div class="content">
                         <div style="font-size:9px; font-weight:700; letter-spacing:.06em; color:#555; text-transform:uppercase; margin-bottom:6px;">ID Proof</div>
-                        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                        <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;">
                             <div class="id-photo-box">${idPhotoCell(_getIdPhotoEntry(plan, 0), 'ID Photo 1')}</div>
                             <div class="id-photo-box">${idPhotoCell(_getIdPhotoEntry(plan, 1), 'ID Photo 2')}</div>
                         </div>
@@ -15700,7 +15704,7 @@
                     <p class="note" id="sav-pay-status" style="margin-top:6px; text-align:center;"></p>
                 ` : ''}
 
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px;">
+                <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:14px;">
                     <button onclick="copySavingsLink('${plan.id}')" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">📋 Copy Link</button>
                     <button onclick="sendSavingsLinkWhatsApp()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">🔗 Send Link</button>
                     ${isActive ? `<button onclick="sendSavingsWhatsAppReminder()" style="background:none; border:1.5px solid var(--border); color:var(--text); font-weight:700; padding:10px 6px; border-radius:var(--radius); font-size:12.5px;">💬 Send Reminder</button>` : ''}
@@ -19978,7 +19982,7 @@
                 ${inv.paymentMethod === 'partial' && inv.paymentDetails ? `<div style="font-size:11.5px; color:#888; margin:2px 0 6px;">${['cash','upi','card'].filter(k => inv.paymentDetails[k] > 0).map(k => `${k.toUpperCase()}: ₹${inv.paymentDetails[k].toFixed(0)}`).join(' · ')}</div>` : ''}
                 ${_cdPayTbl}
                 ${outstandingNow>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#c00;font-weight:700;"><span>Outstanding</span><span>₹${outstandingNow}</span></div>`:(_cdPaid>0&&outstanding>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);font-weight:700;"><span>Outstanding</span><span>Cleared ✓</span></div>`:'')}
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px;">
+                <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px;">
                   <button onclick="invPreviewFromHistory('${id}')" style="background:#43A047;color:white;border:none;border-radius:8px;padding:10px 8px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">👁 Preview</button>
                   <button onclick="chooseInvoiceHistoryPrintDestination('${id}')" style="background:#1D6BB5;color:white;border:none;border-radius:8px;padding:10px 8px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">🖨 Print</button>
                   <button onclick="invReloadBill('${id}');document.getElementById('inv-bill-modal').style.display='none';" style="background:var(--gold);color:white;border:none;border-radius:8px;padding:10px 8px;font-size:12.5px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;">✏️ Edit</button>
@@ -20980,7 +20984,7 @@
                 + '<div style="font-size:15px;font-weight:800;color:var(--text,#1a1a1a);">Select from Stock</div>'
                 + '<button onclick="document.getElementById(\'inv-item-picker-modal\').remove()" style="background:none;border:none;font-size:22px;color:#aaa;cursor:pointer;padding:0;line-height:1;">&#x2715;</button>'
                 + '</div>'
-                + '<div style="overflow-y:auto;flex:1;display:grid;grid-template-columns:1fr 1fr;gap:8px;">' + btns + '</div>'
+                + '<div style="overflow-y:auto;flex:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">' + btns + '</div>'
                 + '</div>';
             document.body.appendChild(modal);
             modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
@@ -21157,7 +21161,7 @@
                 <button onclick="closeAcctPicker()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; line-height:1; width:auto; margin:0; box-shadow:none;">&#x2715;</button>
             </div>
             <input type="search" id="acct-pick-search" placeholder="🔍 Search accounts…" oninput="renderAcctPicker()" autocomplete="off" style="width:100%; margin:0 0 10px 0; padding:10px 12px; font-size:14px; border:1.5px solid #ddd; border-radius:10px; box-sizing:border-box;">
-            <div id="acct-pick-list" style="overflow-y:auto; flex:1; display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; align-content:start;"></div>
+            <div id="acct-pick-list" style="overflow-y:auto; flex:1; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; align-content:start;"></div>
         </div>
     </div>
 
@@ -21382,7 +21386,7 @@
             <input type="date" id="ledger-inst-pay-date" style="margin:0 0 12px; width:100%;">
 
             <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:6px;">PAYMENT METHOD</label>
-            <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:6px; margin-bottom:10px;">
+            <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-bottom:10px;">
                 <button type="button" onclick="selectLedgerInstPayMode('cash')" id="ledger-inst-pay-mode-cash" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; color:#333; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">💵<br><span style="font-size:10px;">Cash</span></button>
                 <button type="button" onclick="selectLedgerInstPayMode('upi')" id="ledger-inst-pay-mode-upi" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; color:#333; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">📱<br><span style="font-size:10px;">UPI</span></button>
                 <button type="button" onclick="selectLedgerInstPayMode('card')" id="ledger-inst-pay-mode-card" class="ledger-inst-pay-mode-btn" style="padding:9px 4px; font-size:12px; font-weight:600; color:#333; border:1.5px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; box-shadow:none; margin:0;">💳<br><span style="font-size:10px;">Card</span></button>
@@ -21395,7 +21399,7 @@
                     <span onclick="window._upiQrContext='installment'; openUpiPaySelectModal();" style="font-size:12px; color:#1565C0; text-decoration:underline; cursor:pointer;">🔁 Switch UPI ID</span>
                 </div>
             </div>
-            <div id="ledger-inst-pay-partial-section" style="display:none; grid-template-columns:1fr 1fr 1fr; gap:6px; margin-bottom:12px;">
+            <div id="ledger-inst-pay-partial-section" style="display:none; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin-bottom:12px;">
                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">Cash</label><input type="number" id="ledger-inst-pay-split-cash" placeholder="0" step="0.01" style="margin:0; padding:8px; font-size:13px; width:100%;"></div>
                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">UPI</label><input type="number" id="ledger-inst-pay-split-upi" placeholder="0" step="0.01" style="margin:0; padding:8px; font-size:13px; width:100%;"></div>
                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">Card</label><input type="number" id="ledger-inst-pay-split-card" placeholder="0" step="0.01" style="margin:0; padding:8px; font-size:13px; width:100%;"></div>
@@ -21702,7 +21706,7 @@
             <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">ID Proof Photos (optional)</div>
                 <p class="note" style="margin-bottom:10px;">Uplaod ID proof here.</p>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px;">
+                <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:6px;">
                     <div style="position:relative;">
                         <div id="inst-new-id-photo-preview-0" onclick="document.getElementById('inst-new-id-photo-input-0').click()" style="width:100%; aspect-ratio:8/5; border-radius:10px; border:1.5px dashed var(--border); display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:11px; cursor:pointer; text-align:center; padding:6px; overflow:hidden; background-size:contain; background-position:center; background-repeat:no-repeat;">📷<br>Photo 1</div>
                         <input type="file" accept="image/*" capture="environment" id="inst-new-id-photo-input-0" style="display:none;" onchange="stageNewPlanIdPhoto(0, this.files[0])">
@@ -21934,7 +21938,7 @@
                 <h3 style="margin:0; font-size:18px; color:#1a1a1a;">Export Sale Register</h3>
                 <button onclick="invCloseExportModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
             </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:10px;">
                 <div>
                     <label style="font-size:11px; display:block; margin-bottom:3px; color:#888;">From</label>
                     <input type="date" id="inv-rep-from" style="margin:0; width:100%; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; box-sizing:border-box;">
@@ -21962,7 +21966,7 @@
                 <button onclick="closeDateRangeBackupModal()" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; width:auto; box-shadow:none; margin:0;">✕</button>
             </div>
             <p style="margin:0 0 14px; font-size:12.5px; color:#888; line-height:1.5;">Invoice History is limited to this range. Stock (products) is not included. Rates, profiles, and other settings are included in full.</p>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:10px;">
                 <div>
                     <label style="font-size:11px; display:block; margin-bottom:3px; color:#888;">From</label>
                     <input type="date" id="inv-bak-from" style="margin:0; width:100%; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; box-sizing:border-box;">
@@ -22114,7 +22118,7 @@
 
             <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:10px;">Invoice Info</div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:8px;">
+                <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:8px;">
                     <div>
                         <label style="font-size:11px; display:block; margin-bottom:3px;">Bill No.</label>
                         <input type="text" id="inv-bill-no" placeholder="SJ-000001" style="margin:0;">
@@ -22144,7 +22148,7 @@
             <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06); border:1.5px solid #ffcdd2;">
                 <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:#c62828; text-transform:uppercase; margin-bottom:10px;">💍 Old Jewellery</div>
                 <div id="inv-og-list" style="margin-bottom:10px;"></div>
-                <div style="display:grid; grid-template-columns:1fr auto auto; gap:7px; align-items:center;">
+                <div style="display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:7px; align-items:center;">
                     <input type="text" id="inv-og-desc" placeholder="Description (e.g. Old Chain)" style="margin:0; font-size:13px; padding:7px 10px;">
                     <input type="number" id="inv-og-val" placeholder="Value ₹" min="0" step="1" style="margin:0; width:100px; font-size:13px; padding:7px 8px;" onkeydown="if(event.key==='Enter')invAddOg()">
                     <button onclick="invAddOg()" style="background:#c62828;color:white;border:none;border-radius:8px;padding:7px 12px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:none;margin:0;white-space:nowrap;">+ Add</button>
@@ -22167,14 +22171,14 @@
                     <!-- Payment Method row -->
                     <div>
                         <label style="font-size:11px; display:block; margin-bottom:6px;">Payment Method</label>
-                        <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:6px; margin-bottom:8px;">
+                        <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-bottom:8px;">
                             <button type="button" onclick="invSelectPayMode('cash')" id="inv-pay-cash" class="inv-pay-btn" style="padding:9px 4px;font-size:12px;font-weight:600;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;box-shadow:none;margin:0;">💵<br><span style="font-size:10px;">Cash</span></button>
                             <button type="button" onclick="invSelectPayMode('upi')" id="inv-pay-upi" class="inv-pay-btn" style="padding:9px 4px;font-size:12px;font-weight:600;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;box-shadow:none;margin:0;">📱<br><span style="font-size:10px;">UPI</span></button>
                             <button type="button" onclick="invSelectPayMode('card')" id="inv-pay-card" class="inv-pay-btn" style="padding:9px 4px;font-size:12px;font-weight:600;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;box-shadow:none;margin:0;">💳<br><span style="font-size:10px;">Card</span></button>
                             <button type="button" onclick="invSelectPayMode('partial')" id="inv-pay-partial" class="inv-pay-btn" style="padding:9px 4px;font-size:12px;font-weight:600;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;box-shadow:none;margin:0;">⚡<br><span style="font-size:10px;">Partial</span></button>
                         </div>
                         <div id="inv-partial-section" style="display:none;margin-bottom:8px;">
-                            <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px;">
+                            <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px;">
                                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">Cash (₹)</label><input type="number" id="inv-pay-cash-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial()" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
                                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">UPI (₹)</label><input type="number" id="inv-pay-upi-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial()" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
                                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">Card (₹)</label><input type="number" id="inv-pay-card-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial()" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
@@ -22211,7 +22215,7 @@
                 <span>🧾 Format <span id="inv-format-current-label" style="font-weight:600; color:#999; font-size:12px;">(Invoice 1)</span></span><span style="color:#bbb;">›</span>
             </button>
 
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px;">
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:14px;">
                 <button onclick="invGenerate()" style="background:var(--gold); color:white; border:none; border-radius:var(--radius-sm); padding:14px 8px; font-size:14px; font-weight:800; cursor:pointer; box-shadow:none; margin:0; width:100%;">👁 Preview</button>
                 <button onclick="chooseInvoicePrintDestination()" style="background:#1D6BB5; color:white; border:none; border-radius:var(--radius-sm); padding:14px 8px; font-size:14px; font-weight:800; cursor:pointer; box-shadow:none; margin:0; width:100%;">🖨 Print</button>
                 <button onclick="invSaveDraft()" style="background:var(--surface); color:var(--text); border:1.5px solid var(--border); border-radius:var(--radius-sm); padding:14px 8px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:none; margin:0; width:100%;">💾 Save Bill</button>
@@ -22269,7 +22273,7 @@
                 <button onclick="invCloseBulkPrint()" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
             <div style="font-size:11px; color:var(--text2); margin-bottom:8px;">Filter by date (optional) — search box above also applies</div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:10px;">
                 <div>
                     <label style="font-size:11px; display:block; margin-bottom:3px;">From</label>
                     <input type="date" id="inv-bulk-from" onchange="invRenderBulkPrintList()" style="margin:0;">
@@ -22307,7 +22311,7 @@
                 <button onclick="invMarkTodayChecked()" style="flex:0 0 auto; background:#6A4FBF; color:white; border:none; border-radius:9px; padding:8px 12px; font-size:12.5px; font-weight:700; cursor:pointer; box-shadow:none; margin:0;">📅 Mark Today</button>
                 <span id="inv-bcl-last-visit" style="font-size:11.5px; color:var(--text2);"></span>
             </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:10px;">
                 <div>
                     <label style="font-size:11px; display:block; margin-bottom:3px;">From</label>
                     <input type="date" id="inv-bcl-from" onchange="invRenderBarcodeList()" style="margin:0;">
@@ -22508,8 +22512,8 @@
         .inv-tab.active { color: var(--gold) !important; border-bottom: 3px solid var(--gold) !important; background: var(--gold-lt) !important; }
         .inst-tab.active { color: var(--gold) !important; border-bottom: 3px solid var(--gold) !important; background: var(--gold-lt) !important; }
         #invoice-screen .item-row { background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:11px; margin-bottom:8px; }
-        #invoice-screen .item-row-fields { display:grid; grid-template-columns:repeat(5,1fr); gap:5px; margin-bottom:5px; }
-        #invoice-screen .item-row-making { display:grid; grid-template-columns:1.2fr 1fr; gap:5px; margin-bottom:6px; }
+        #invoice-screen .item-row-fields { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; margin-bottom:5px; }
+        #invoice-screen .item-row-making { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); gap:5px; margin-bottom:6px; }
         #invoice-screen .field-mini label { font-size:9px; color:#999; font-weight:700; margin-bottom:2px; text-align:center; display:block; }
         #invoice-screen .field-mini input, #invoice-screen .field-mini select { padding:5px 4px; font-size:11px; text-align:center; margin:0; }
         #invoice-screen .hist-item { background:var(--surface); border-radius:12px; padding:12px 14px; margin-bottom:8px; box-shadow:0 1px 5px rgba(0,0,0,.06); cursor:pointer; border:1.5px solid transparent; }
@@ -22598,7 +22602,7 @@
             <div id="pay-net-label" style="font-size:13px; color:#888; margin-bottom:18px;"></div>
 
             <!-- Mode selector -->
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px;">
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-bottom:18px;">
                 <button onclick="selectPayMode('cash')"   id="pay-btn-cash"    class="pay-mode-btn">💵 Cash</button>
                 <button onclick="selectPayMode('upi')"    id="pay-btn-upi"     class="pay-mode-btn">📱 UPI</button>
                 <button onclick="selectPayMode('card')"   id="pay-btn-card"    class="pay-mode-btn">💳 Card</button>
