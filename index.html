@@ -265,6 +265,17 @@
         /* iOS: a grid/flex child cannot shrink below its content unless min-width is 0 — iOS date inputs have a
            wide built-in minimum, which pushed Date (and paired fields) past the card edge and shifted the page. */
         input[type=date], input[type=month], input[type=time], input[type=number], select { min-width: 0; max-width: 100%; }
+
+        /* iOS Safari: a native date field sizes itself from its inner date text and ignores width:100%, so it spills out of
+           its grid cell. Drop the native sizing and make it an ordinary block-level box like the text fields. */
+        input[type=date], input[type=month], input[type=time], input[type=datetime-local] {
+            -webkit-appearance: none; appearance: none;
+            display: block; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%;
+            min-height: 46px; line-height: normal; text-align: left; background-color: #fff;
+        }
+        input[type=date]::-webkit-date-and-time-value, input[type=month]::-webkit-date-and-time-value, input[type=time]::-webkit-date-and-time-value {
+            min-width: 0; margin: 0; text-align: left;
+        }
         div[style*="display:grid"] > *, div[style*="display: grid"] > *, #invoice-screen .item-row-fields > *, #invoice-screen .item-row-making > * { min-width: 0; }
         /* Was body.opacity:0→1 originally — moved onto #app-view specifically
            so the login screen (a sibling of #app-view, not inside it) is
