@@ -19124,6 +19124,8 @@
         // Turns a finalized (non-draft) manual Invoice record into the matching
         // Ledger entry via the same shared helper checkout uses — see _recordSaleLedgerEntry.
         function _invLedgerFromRecord(rec, isEdit) {
+            // Copy / Move to Track A: no new ledger entry — the sale's cash movement is already in the ledger.
+            if (!isEdit && window._invCopiedFromB) return;
             const ogTotal = (rec.ogItems || []).reduce((s,i) => s + (i.value || 0), 0);
             const netAfterOG = ((rec.totals && rec.totals.rounded) || 0) - ogTotal;
             const receipt = (rec.totals && rec.totals.receipt) || 0;
@@ -19690,6 +19692,7 @@
             // invoice, cancelling, etc.) means the move was abandoned, so this
             // must not silently delete the original later on an unrelated save.
             window._invMoveSourceId = null;
+            window._invCopiedFromB = null;
             document.getElementById('inv-cust-name').value = '';
             document.getElementById('inv-cust-mob').value = '';
             document.getElementById('inv-cust-addr').value = '';
@@ -20579,6 +20582,9 @@
             invExitTrackB();
 
             invEditingId = null; // creating a new record, not editing the Track B one
+            // This invoice is only a Track A copy of a sale that was already booked in the ledger when the
+            // Track B invoice was made — saving it must not post a second ledger entry (see _invLedgerFromRecord).
+            window._invCopiedFromB = id;
             invRows = (inv.items || []).map(r => ({...r}));
             invOgItems = (inv.ogItems || []).map(r => ({...r}));
             document.getElementById('inv-cust-name').value = inv.custName || '';
