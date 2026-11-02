@@ -2011,9 +2011,26 @@
             <button onclick="showSection('main')" style="margin-top: 0; flex: 1;">Back to Main</button>
         </div>
 
-        <label for="repair-amount">Jewellery Amount (₹):</label>
-        <input type="number" id="repair-amount" placeholder="Enter amount" step="0.01">
-        <button onclick="addRepairToCart()" style="margin-top: 10px; background-color: #4CAF50; color: white; padding: 12px; border-radius: 25px; font-weight: 600; border: none; box-shadow: 0 3px 8px rgba(76, 175, 80, 0.3); width: 100%;">Add to Cart</button>
+        <div style="margin-top:18px; padding-top:14px; border-top:1px solid #e0e0da; text-align:left;">
+            <label for="loose-flat-name" style="font-size:12.5px; font-weight:600; color:#555;">Item Name</label>
+            <input type="text" id="loose-flat-name" placeholder="e.g. Silver payal" autocomplete="off" style="margin-bottom:6px;">
+            <div style="display:flex; flex-wrap:wrap; gap:8px; margin:0 0 10px;">
+                <button type="button" onclick="flatNamePick('Silver Coin')" style="width:auto; margin:0; padding:7px 14px; border:1.5px solid #cfd8dc; border-radius:16px; background:#f7f7f5; color:#222; font-size:13px; font-weight:700; box-shadow:none;">Silver Coin</button>
+                <button type="button" onclick="flatNamePick('Repair')" style="width:auto; margin:0; padding:7px 14px; border:1.5px solid #cfd8dc; border-radius:16px; background:#f7f7f5; color:#222; font-size:13px; font-weight:700; box-shadow:none;">Repair</button>
+                <button type="button" onclick="flatNamesOpen()" aria-label="Saved names" style="width:auto; margin:0; padding:7px 14px; border:1.5px solid #4CAF50; border-radius:16px; background:#e8f5e9; color:#2e7d32; font-size:15px; font-weight:800; line-height:1; box-shadow:none;">+</button>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;">
+                <div>
+                    <label for="loose-flat-wt" style="font-size:12.5px; font-weight:600; color:#555;">Weight (g) <span style="font-weight:400;">optional</span></label>
+                    <input type="number" id="loose-flat-wt" placeholder="0.00" step="0.001" inputmode="decimal" style="margin-bottom:0;">
+                </div>
+                <div>
+                    <label for="loose-flat-price" style="font-size:12.5px; font-weight:600; color:#555;">Price (₹, tax incl.)</label>
+                    <input type="number" id="loose-flat-price" placeholder="0.00" step="0.01" inputmode="decimal" style="margin-bottom:0;">
+                </div>
+            </div>
+            <button onclick="addLooseFlatToCart()" style="margin-top: 12px; background-color: #4CAF50; color: white; padding: 12px; border-radius: 25px; font-weight: 600; border: none; box-shadow: 0 3px 8px rgba(76, 175, 80, 0.3); width: 100%;">OK</button>
+        </div>
     </div>
     <div id="detail-modal">
         <div id="detail-content">
@@ -2439,6 +2456,20 @@
             </div>
             <input type="search" id="custom-quick-search" placeholder="🔍 Search custom items…" oninput="renderCustomQuickList()" autocomplete="off" style="width:100%; margin:0 0 10px 0; padding:10px 12px; font-size:14px; border:1.5px solid #ddd; border-radius:10px; box-sizing:border-box;">
             <div id="custom-quick-list" style="overflow-y:auto; flex:1; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-content:start;"></div>
+        </div>
+    </div>
+
+    <div id="flat-names-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:1500; align-items:flex-end; justify-content:center;" onclick="if(event.target===this) flatNamesClose()">
+        <div style="background:white; border-radius:20px 20px 0 0; width:100%; max-width:520px; padding:18px 16px 28px; max-height:72vh; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div style="font-size:15px; font-weight:800;">Saved Item Names</div>
+                <button onclick="flatNamesClose()" aria-label="Close" style="background:none; border:none; font-size:22px; color:#aaa; cursor:pointer; padding:0; line-height:1; width:auto; margin:0; box-shadow:none;">&#x2715;</button>
+            </div>
+            <div style="display:flex; gap:8px; margin-bottom:12px;">
+                <input type="text" id="flat-names-new" placeholder="Create new name" autocomplete="off" maxlength="60" onkeydown="if(event.key==='Enter'){event.preventDefault();flatNameAdd();}" style="flex:1; min-width:0; margin:0; padding:10px 12px; font-size:14px; border:1.5px solid #ddd; border-radius:10px; box-sizing:border-box;">
+                <button onclick="flatNameAdd()" style="width:auto; margin:0; padding:10px 16px; border:none; border-radius:10px; background:#4CAF50; color:white; font-weight:700; font-size:14px; box-shadow:none;">Add</button>
+            </div>
+            <div id="flat-names-list" style="overflow-y:auto; flex:1;"></div>
         </div>
     </div>
 
@@ -7836,26 +7867,64 @@
             clearAll();
         }
 
-        function addRepairToCart() {
-            const amount = parseFloat(document.getElementById('repair-amount').value);
-            if (isNaN(amount) || amount <= 0) {
-                showCustomAlert('Please enter a valid amount.');
-                return;
-            }
-            const _looseManualName = document.getElementById('loose-print-name').value.trim();
-            const item = {
-                type: 'repair',
-                id: crypto.randomUUID(),
-                itemName: _looseManualName || 'Jewellery',
-                finalPrice: amount
-            };
+        // ── Saved item names for the Loose screen's manual item (device-local) ──
+        const FLAT_NAMES_KEY = 'suhagFlatNames';
+        const _FLAT_FIXED = ['silver coin', 'repair'];      // the two always-visible shortcut chips
+        function _flatNamesLoad() {
+            try { const a = JSON.parse(localStorage.getItem(FLAT_NAMES_KEY) || '[]'); return Array.isArray(a) ? a.filter(x => typeof x === 'string' && x.trim()) : []; }
+            catch (e) { return []; }
+        }
+        function _flatNamesSave(a) { try { localStorage.setItem(FLAT_NAMES_KEY, JSON.stringify(a)); } catch (e) {} }
+        function _flatNamesAdd(name) {            // returns true if newly stored
+            name = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+            if (!name || _FLAT_FIXED.includes(name.toLowerCase())) return false;
+            const a = _flatNamesLoad();
+            if (a.some(x => x.toLowerCase() === name.toLowerCase())) return false;
+            a.push(name); _flatNamesSave(a.slice(-50));
+            return true;
+        }
+        function flatNamePick(n) { document.getElementById('loose-flat-name').value = n; }
+        function flatNamesOpen() { document.getElementById('flat-names-new').value = ''; flatNamesRender(); document.getElementById('flat-names-modal').style.display = 'flex'; }
+        function flatNamesClose() { document.getElementById('flat-names-modal').style.display = 'none'; }
+        function flatNamesRender() {
+            const a = _flatNamesLoad(), el = document.getElementById('flat-names-list');
+            if (!a.length) { el.innerHTML = '<p style="text-align:center; color:#888; font-size:13px; margin:14px 0;">No saved names yet. Create one above — names you use with OK are saved here too.</p>'; return; }
+            el.innerHTML = a.map((n, i) => `
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                    <button onclick="flatNameUse(${i})" style="flex:1; min-width:0; margin:0; padding:11px 12px; text-align:left; background:#f7f7f5; color:#222; border:1.5px solid #e0e0da; border-radius:10px; font-size:14px; font-weight:700; box-shadow:none; word-break:break-word;">${_ciEsc(n)}</button>
+                    <button onclick="flatNameDel(${i})" aria-label="Delete" style="width:auto; margin:0; padding:9px 12px; background:#fff; color:#c62828; border:1.5px solid #ffcdd2; border-radius:10px; font-size:14px; font-weight:800; box-shadow:none;">&#x2715;</button>
+                </div>`).join('');
+        }
+        function flatNameUse(i) { const n = _flatNamesLoad()[i]; if (n == null) return; flatNamePick(n); flatNamesClose(); }
+        function flatNameDel(i) { const a = _flatNamesLoad(); a.splice(i, 1); _flatNamesSave(a); flatNamesRender(); }
+        function flatNameAdd() {
+            const inp = document.getElementById('flat-names-new');
+            const v = inp.value.trim();
+            if (!v) return;
+            _flatNamesAdd(v); inp.value = ''; flatNamesRender();
+        }
+
+        // Loose screen → manual item: name + (optional) weight + final TAX-INCLUSIVE price. Stored as the cart's flat
+        // 'repair' item, so totals, checkout and both invoice formats already treat the price as tax-inclusive.
+        // The weight is for display/records only — it never changes the price.
+        function addLooseFlatToCart() {
+            const name = document.getElementById('loose-flat-name').value.trim();
+            const price = parseFloat(document.getElementById('loose-flat-price').value);
+            const wtRaw = document.getElementById('loose-flat-wt').value.trim();
+            const wt = wtRaw === '' ? 0 : parseFloat(wtRaw);
+            if (isNaN(price) || price <= 0) { showCustomAlert('Please enter a valid price.'); return; }
+            if (wtRaw !== '' && (isNaN(wt) || wt < 0)) { showCustomAlert('Weight must be a number (or leave it blank).'); return; }
+            const item = { type: 'repair', id: crypto.randomUUID(), itemName: name || 'Jewellery', finalPrice: parseFloat(price.toFixed(2)) };
+            if (wt > 0) item.weight = parseFloat(wt.toFixed(3));
+            if (name) _flatNamesAdd(name);          // remember names you actually use
             cart.push(item);
             _autoRoundCartAdjustment();
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
             updateCartIcon();
             showCustomAlert(`${item.itemName} added to cart!`);
-            document.getElementById('repair-amount').value = '';
-            document.getElementById('loose-print-name').value = '';
+            document.getElementById('loose-flat-name').value = '';
+            document.getElementById('loose-flat-wt').value = '';
+            document.getElementById('loose-flat-price').value = '';
         }
 
         // --- PRESET FUNCTIONS (UPDATED FOR CLOUD & PIN) ---
@@ -11146,7 +11215,7 @@
                         details = `Weight: ${item.weight.toFixed(2)}g`;
                         clickAction = '';
                     } else if (item.type === 'repair' || item.type === 'custom') {
-                        details = '';
+                        details = (item.type === 'repair' && item.weight > 0) ? `Weight: ${item.weight.toFixed(2)}g` : '';
                         clickAction = '';
                     } else {
                         // Standard Logic — use data-* attrs to avoid quote injection
@@ -17268,7 +17337,9 @@
         // Restore Logic (New)
         window.addToCartLoose = addToCartLoose;
         // Loose Add Cart (New)
-        window.addRepairToCart = addRepairToCart;
+        window.addLooseFlatToCart = addLooseFlatToCart;
+        window.flatNamePick = flatNamePick; window.flatNamesOpen = flatNamesOpen; window.flatNamesClose = flatNamesClose;
+        window.flatNameUse = flatNameUse; window.flatNameDel = flatNameDel; window.flatNameAdd = flatNameAdd;
         // Old Gold Functions
         window.openOldGoldModal = openOldGoldModal;
         window.addOldGoldItem = addOldGoldItem;
@@ -18605,7 +18676,7 @@
                     return {
                         desc: item.itemName || 'Jewellery',
                         hsn: '7113', pc: 1,
-                        grWt: 0, nlWt: 0, rate: 0,
+                        grWt: item.weight > 0 ? item.weight : 0, nlWt: item.weight > 0 ? item.weight : 0, rate: 0,
                         makingType: 'mrp', makingPct: backCalcTaxable,
                         metal: ''
                     };
@@ -19440,7 +19511,8 @@
                 // Anything else (flat jewellery amount, tagged piece no longer in stock, manual-invoice row):
                 // carried as a flat-amount item so the money still adds up.
                 if (!(r.makingType === 'mrp' && !r.barcode)) flat++;
-                return { type: 'repair', id, itemName: r.desc || r.itemName || 'Jewellery', finalPrice: price };
+                const _w = parseFloat(r.nlWt) || 0;
+                return Object.assign({ type: 'repair', id, itemName: r.desc || r.itemName || 'Jewellery', finalPrice: price }, _w > 0 ? { weight: _w } : {});
             });
             const sum = items.reduce((a, i) => a + i.finalPrice, 0);
             const rounded = (inv.totals && inv.totals.rounded != null) ? inv.totals.rounded : null;
