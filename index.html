@@ -13911,7 +13911,7 @@
             const billNo = _editEx ? _editEx.billNo : _invNextBillNo(checkoutTrackC);
 
             const d = (_editEx && _editEx.timestamp && !isNaN(new Date(_editEx.timestamp))) ? new Date(_editEx.timestamp) : new Date();
-            const dateDisp = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}` + _invTimeSuffix(_editEx ? (_editEx.track || checkoutTrackC) : checkoutTrackC, d.toISOString());
+            const dateDisp = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
 
             const paymentMethod = paymentMode || 'none';
             const paymentDetails = paymentMode === 'partial' ? (paymentSplit || {}) : {};
@@ -18953,7 +18953,7 @@
 
             const dp = dateRaw.split('-');
             const _eInv = (invEditingId && invoiceHistory.find(i => i.id === invEditingId)) || null;
-            const dateDisp = (dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0]}` : dateRaw) + _invTimeSuffix(_eInv ? _eInv.track : currentInvTrack, _eInv ? _eInv.timestamp : null);
+            const dateDisp = (dp.length === 3 ? `${dp[2]}/${dp[1]}/${dp[0]}` : dateRaw);
 
             const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
             const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows), invHmTotal(invRows));
