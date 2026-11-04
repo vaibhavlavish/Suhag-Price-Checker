@@ -2427,7 +2427,7 @@
                 <h4 style="margin:0; font-size:16px;">Custom Items</h4>
                 <button onclick="document.getElementById('custom-items-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
             </div>
-            <p style="font-size:12px; color:#666; margin:0 0 10px 0;">Fixed-price items with no barcode (price includes tax). Double-tap the SUHAG JEWELLERS name on the main screen for a quick list. (Admin PIN required to add/edit/delete)</p>
+            <p style="font-size:12px; color:#666; margin:0 0 10px 0;">Fixed-price items with no barcode (price includes tax). Double-tap the SUHAG JEWELLERS name on the main screen for a quick list. (Admin PIN required to delete)</p>
             <button onclick="openCustomItemForm()" style="background:#4CAF50; width:100%; margin:0 0 10px 0;">➕ Add Custom Item</button>
             <div id="custom-items-list" style="overflow-y:auto; flex:1;"></div>
         </div>
@@ -2440,6 +2440,13 @@
                 <button onclick="document.getElementById('custom-item-form-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
             </div>
             <input type="hidden" id="custom-item-id">
+            <label for="custom-item-category">Category:</label>
+            <select id="custom-item-category" style="width:100%; box-sizing:border-box; padding:10px; margin-bottom:8px; font-size:14px;">
+                <option value="gold">Gold</option>
+                <option value="silver">Silver</option>
+                <option value="1g">1G</option>
+                <option value="">Uncategorised</option>
+            </select>
             <label for="custom-item-name">Item Name:</label>
             <input type="text" id="custom-item-name" placeholder="e.g., Silver Coin 10g" maxlength="60">
             <label for="custom-item-price">Price (tax included, ₹):</label>
@@ -7738,6 +7745,33 @@
                 .sort((a, b) => (a.price - b.price) || a.name.localeCompare(b.name)); // low → high price
         }
 
+        // Categories — shown in this order everywhere; each has a default HSN for invoices
+        // (a per-name HSN saved in Invoice Item Settings still overrides it).
+        const CI_CATS = [
+            { key: 'gold',   label: 'Gold',   hsn: '7113' },
+            { key: 'silver', label: 'Silver', hsn: '7113' },
+            { key: '1g',     label: '1G',     hsn: '7117' }
+        ];
+        function ciCatKey(it) { return (it && CI_CATS.some(c => c.key === it.category)) ? it.category : ''; }
+        function ciCatLabel(key) { const c = CI_CATS.find(c => c.key === key); return c ? c.label : 'Uncategorised'; }
+        function ciCatHsn(key) { const c = CI_CATS.find(c => c.key === key); return c ? c.hsn : '7113'; }
+        // [{key,label,items}] in Gold → Silver → 1G → Uncategorised order, empty groups dropped
+        function ciGroupItems(list) {
+            const groups = CI_CATS.map(c => ({ key: c.key, label: c.label, items: [] }));
+            const none = { key: '', label: 'Uncategorised', items: [] };
+            list.forEach(it => { const g = groups.find(g => g.key === ciCatKey(it)); (g || none).items.push(it); });
+            groups.push(none);
+            return groups.filter(g => g.items.length);
+        }
+        function setCustomItemCategory(id, key) {
+            const it = customItems[id];
+            if (!it) return;
+            it.category = key;
+            dbSafeUpdateNotify({ ['jewelryData/config/customItems/' + id + '/category']: key }, 'The category change');
+            renderCustomItemsList();
+            if (document.getElementById('custom-quick-modal').style.display === 'flex') renderCustomQuickList();
+        }
+
         function _brandTap() {
             const now = Date.now();
             if (now - _brandLastTap < 400) { _brandLastTap = 0; openCustomQuickList(); }
@@ -7754,7 +7788,7 @@
             if (!el) return;
             const list = customItemList();
             if (!list.length) { el.innerHTML = '<div style="text-align:center; color:#888; font-size:13px; padding:20px 0;">No custom items yet.</div>'; return; }
-            el.innerHTML = list.map(it => `
+            const _rowHtml = it => `
                 <div style="display:flex; align-items:center; gap:8px; padding:10px; margin-bottom:8px; background:#f7f7f5; border:1px solid #e5e5e0; border-radius:10px;">
                     <div style="flex:1; min-width:0;">
                         <div style="font-size:14px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${_ciEsc(it.name)}</div>
@@ -7763,14 +7797,17 @@
                     <button onclick="document.getElementById('custom-items-modal').style.display='none'; showCustomItemOnMain('${it.id}')" style="width:auto; margin:0; padding:6px 10px; font-size:12px; background:#4CAF50;">Use</button>
                     <button onclick="openCustomItemForm('${it.id}')" style="width:auto; margin:0; padding:6px 10px; font-size:12px; background:#1976D2;">Edit</button>
                     <button onclick="deleteCustomItem('${it.id}')" style="width:auto; margin:0; padding:6px 10px; font-size:12px; background:#c62828;">✕</button>
-                </div>`).join('');
+                </div>`;
+            el.innerHTML = ciGroupItems(list).map(g => `
+                <div style="font-size:12px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#8a6d1f; margin:10px 0 6px;">${g.label} <span style="color:#999; font-weight:600;">(${g.items.length})</span></div>
+                ${g.items.map(_rowHtml).join('')}`).join('');
         }
         function openCustomItemForm(id) {
-            if (!checkPin()) return;
             const it = id ? customItems[id] : null;
             document.getElementById('custom-item-form-title').textContent = it ? 'Edit Custom Item' : 'Add Custom Item';
             document.getElementById('custom-item-id').value = it ? it.id : '';
             document.getElementById('custom-item-name').value = it ? it.name : '';
+            document.getElementById('custom-item-category').value = it ? ciCatKey(it) : 'gold';
             document.getElementById('custom-item-price').value = it ? it.price : '';
             document.getElementById('custom-item-gross').value = (it && it.grossWeight > 0) ? it.grossWeight : '';
             document.getElementById('custom-item-net').value = (it && it.netWeight > 0) ? it.netWeight : '';
@@ -7788,18 +7825,16 @@
             const netWeight = (_nwRaw > 0) ? Math.round(_nwRaw * 1000) / 1000 : 0;
             if (grossWeight && netWeight && netWeight > grossWeight) { showCustomAlert('Net weight cannot be more than gross weight.'); return; }
             const lower = name.toLowerCase();
-            if (customItemList().some(x => x.id !== id && x.name.toLowerCase() === lower)) {
-                showCustomAlert('A custom item with this name already exists.'); return;
-            }
+            // Same name is allowed (different price / weight) — items are told apart by id.
             // Item Settings (HSN / print name) are keyed by name — keep stock names and custom names apart
             if (Object.values(productData).some(d => d && String(d.itemName || '').trim().toLowerCase() === lower)) {
                 showCustomAlert('That name is already used by a stock item. Please choose a different name.'); return;
             }
             const old = id ? customItems[id] : null;
-            const rec = { id: id || crypto.randomUUID(), name, price, grossWeight, netWeight };
+            const rec = { id: id || crypto.randomUUID(), name, price, grossWeight, netWeight, category: document.getElementById('custom-item-category').value };
             const update = { ['jewelryData/config/customItems/' + rec.id]: rec };
             // Renamed: carry its HSN / print-name settings over to the new name
-            if (old && old.name !== name && invItemSettings[old.name]) {
+            if (old && old.name !== name && invItemSettings[old.name] && !customItemList().some(x => x.id !== old.id && x.name === old.name)) {
                 const cfg = invItemSettings[old.name];
                 invItemSettings[name] = cfg;
                 delete invItemSettings[old.name];
@@ -7841,11 +7876,15 @@
                     (all.length ? 'No items match your search.' : 'No custom items yet — add them from More → Custom Items.') + '</div>';
                 return;
             }
-            el.innerHTML = list.map(it => `
+            const _btnHtml = it => `
                 <button onclick="closeCustomQuickList(); showCustomItemOnMain('${it.id}')" style="background:#f7f7f5; color:#222; border:1.5px solid #e0e0da; border-radius:12px; padding:12px 8px; margin:0; text-align:center; box-shadow:none; width:100%;">
                     <div style="font-size:14px; font-weight:700; line-height:1.25;">${_ciEsc(it.name)}</div>
                     <div style="font-size:14px; color:#2e7d32; font-weight:700; margin-top:3px;">₹${Number(it.price).toFixed(2)}</div>
-                </button>`).join('');
+                    ${(it.grossWeight > 0 || it.netWeight > 0) ? `<div style="font-size:11px; color:#777; margin-top:2px;">${it.grossWeight > 0 ? 'Gr ' + it.grossWeight.toFixed(3) + 'g' : ''}${it.grossWeight > 0 && it.netWeight > 0 ? ' · ' : ''}${it.netWeight > 0 ? 'Nt ' + it.netWeight.toFixed(3) + 'g' : ''}</div>` : ''}
+                </button>`;
+            el.innerHTML = ciGroupItems(list).map(g => `
+                <div style="grid-column:1/-1; font-size:12px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#8a6d1f; margin-top:6px; padding-bottom:2px; border-bottom:1px solid #eee;">${g.label}</div>
+                ${g.items.map(_btnHtml).join('')}`).join('');
         }
         function closeCustomQuickList() { document.getElementById('custom-quick-modal').style.display = 'none'; }
 
@@ -7876,7 +7915,8 @@
             if (!c) return;
             const live = customItems[c.id] || c; // pick up a price edited while it was on screen
             const item = { type: 'custom', id: crypto.randomUUID(), customItemId: live.id, itemName: live.name, finalPrice: live.price,
-                           grossWeight: parseFloat(live.grossWeight) || 0, netWeight: parseFloat(live.netWeight) || 0 };
+                           grossWeight: parseFloat(live.grossWeight) || 0, netWeight: parseFloat(live.netWeight) || 0,
+                           category: ciCatKey(live) };
             cart.push(item);
             _autoRoundCartAdjustment();
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
@@ -18645,7 +18685,8 @@
                     // in either invoice format. HSN + print name come from Item Settings.
                     const _cAmt = parseFloat((item.finalPrice || 0).toFixed(2));
                     const _cTax = invoiceSettings.taxRate || 0;
-                    const _cItm = invApplyItemSettings(item.itemName || 'Custom Item', '7113');
+                    const _cCat = ciCatKey(item) || ciCatKey(customItems[item.customItemId]); // older cart entries: look the category up
+                    const _cItm = invApplyItemSettings(item.itemName || 'Custom Item', ciCatHsn(_cCat));
                     return {
                         desc: _cItm.printName,
                         hsn: _cItm.hsn, pc: 1,
@@ -18655,6 +18696,7 @@
                         metal: '',
                         itemName: item.itemName || '', // actual custom item name, frozen
                         isCustom: true,
+                        customCategory: _cCat,
                         customItemId: item.customItemId || null
                     };
                 }
@@ -19516,7 +19558,8 @@
                 const id = crypto.randomUUID();
                 if (r.isCustom) {
                     return { type: 'custom', id, customItemId: r.customItemId || null, itemName: r.itemName || r.desc || 'Custom Item', finalPrice: price,
-                             grossWeight: parseFloat(r.grWt) || 0, netWeight: parseFloat(r.nlWt) || 0 };
+                             grossWeight: parseFloat(r.grWt) || 0, netWeight: parseFloat(r.nlWt) || 0,
+                             category: r.customCategory || '' };
                 }
                 if (r.isLoose) {
                     const pre = (typeof loosePresets !== 'undefined' && loosePresets || []).find(pp => pp && pp.name === r.desc);
