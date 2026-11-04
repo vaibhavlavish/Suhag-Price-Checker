@@ -2444,6 +2444,16 @@
             <input type="text" id="custom-item-name" placeholder="e.g., Silver Coin 10g" maxlength="60">
             <label for="custom-item-price">Price (tax included, ₹):</label>
             <input type="number" id="custom-item-price" placeholder="e.g., 1500" step="0.01" min="0">
+            <div style="display:flex; gap:8px;">
+                <div style="flex:1; min-width:0;">
+                    <label for="custom-item-gross">Gross Wt (g) <span style="font-weight:400; color:#888;">optional</span>:</label>
+                    <input type="number" id="custom-item-gross" placeholder="e.g., 10.250" step="0.001" min="0" inputmode="decimal">
+                </div>
+                <div style="flex:1; min-width:0;">
+                    <label for="custom-item-net">Net Wt (g) <span style="font-weight:400; color:#888;">optional</span>:</label>
+                    <input type="number" id="custom-item-net" placeholder="e.g., 10.000" step="0.001" min="0" inputmode="decimal">
+                </div>
+            </div>
             <button onclick="saveCustomItem()" style="width:100%; margin-top:8px;">Save</button>
         </div>
     </div>
@@ -7659,7 +7669,7 @@
         function pdShowCustom(id) {
             const it = customItems[id];
             pdLastKey = null; pdAlterLoaded = false;
-            if (it) pdRender({ price: it.price, stamp: '', weight: 0 });
+            if (it) pdRender({ price: it.price, stamp: '', weight: parseFloat(it.netWeight) || 0 });
         }
         function pdSubmit() {
             const inp = document.getElementById('pd-input');
@@ -7748,7 +7758,7 @@
                 <div style="display:flex; align-items:center; gap:8px; padding:10px; margin-bottom:8px; background:#f7f7f5; border:1px solid #e5e5e0; border-radius:10px;">
                     <div style="flex:1; min-width:0;">
                         <div style="font-size:14px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${_ciEsc(it.name)}</div>
-                        <div style="font-size:12px; color:#555;">₹${Number(it.price).toFixed(2)}</div>
+                        <div style="font-size:12px; color:#555;">₹${Number(it.price).toFixed(2)}${(it.grossWeight > 0 || it.netWeight > 0) ? ` · Gr ${it.grossWeight > 0 ? it.grossWeight.toFixed(3) : '-'}g / Nt ${it.netWeight > 0 ? it.netWeight.toFixed(3) : '-'}g` : ''}</div>
                     </div>
                     <button onclick="document.getElementById('custom-items-modal').style.display='none'; showCustomItemOnMain('${it.id}')" style="width:auto; margin:0; padding:6px 10px; font-size:12px; background:#4CAF50;">Use</button>
                     <button onclick="openCustomItemForm('${it.id}')" style="width:auto; margin:0; padding:6px 10px; font-size:12px; background:#1976D2;">Edit</button>
@@ -7762,6 +7772,8 @@
             document.getElementById('custom-item-id').value = it ? it.id : '';
             document.getElementById('custom-item-name').value = it ? it.name : '';
             document.getElementById('custom-item-price').value = it ? it.price : '';
+            document.getElementById('custom-item-gross').value = (it && it.grossWeight > 0) ? it.grossWeight : '';
+            document.getElementById('custom-item-net').value = (it && it.netWeight > 0) ? it.netWeight : '';
             document.getElementById('custom-item-form-modal').style.display = 'flex';
         }
         function saveCustomItem() {
@@ -7770,6 +7782,11 @@
             const price = Math.round(parseFloat(document.getElementById('custom-item-price').value) * 100) / 100;
             if (!name) { showCustomAlert('Enter an item name.'); return; }
             if (isNaN(price) || price <= 0) { showCustomAlert('Enter a valid price (tax included).'); return; }
+            const _gwRaw = parseFloat(document.getElementById('custom-item-gross').value);
+            const _nwRaw = parseFloat(document.getElementById('custom-item-net').value);
+            const grossWeight = (_gwRaw > 0) ? Math.round(_gwRaw * 1000) / 1000 : 0;
+            const netWeight = (_nwRaw > 0) ? Math.round(_nwRaw * 1000) / 1000 : 0;
+            if (grossWeight && netWeight && netWeight > grossWeight) { showCustomAlert('Net weight cannot be more than gross weight.'); return; }
             const lower = name.toLowerCase();
             if (customItemList().some(x => x.id !== id && x.name.toLowerCase() === lower)) {
                 showCustomAlert('A custom item with this name already exists.'); return;
@@ -7779,7 +7796,7 @@
                 showCustomAlert('That name is already used by a stock item. Please choose a different name.'); return;
             }
             const old = id ? customItems[id] : null;
-            const rec = { id: id || crypto.randomUUID(), name, price };
+            const rec = { id: id || crypto.randomUUID(), name, price, grossWeight, netWeight };
             const update = { ['jewelryData/config/customItems/' + rec.id]: rec };
             // Renamed: carry its HSN / print-name settings over to the new name
             if (old && old.name !== name && invItemSettings[old.name]) {
@@ -7858,7 +7875,8 @@
             const c = currentCustomItem;
             if (!c) return;
             const live = customItems[c.id] || c; // pick up a price edited while it was on screen
-            const item = { type: 'custom', id: crypto.randomUUID(), customItemId: live.id, itemName: live.name, finalPrice: live.price };
+            const item = { type: 'custom', id: crypto.randomUUID(), customItemId: live.id, itemName: live.name, finalPrice: live.price,
+                           grossWeight: parseFloat(live.grossWeight) || 0, netWeight: parseFloat(live.netWeight) || 0 };
             cart.push(item);
             _autoRoundCartAdjustment();
             localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart));
@@ -11216,6 +11234,7 @@
                         clickAction = '';
                     } else if (item.type === 'repair' || item.type === 'custom') {
                         details = (item.type === 'repair' && item.weight > 0) ? `Weight: ${item.weight.toFixed(2)}g` : '';
+                        if (item.type === 'custom' && (item.grossWeight > 0 || item.netWeight > 0)) details = `Gr: ${item.grossWeight > 0 ? item.grossWeight.toFixed(3) : '-'}g · Nt: ${item.netWeight > 0 ? item.netWeight.toFixed(3) : '-'}g`;
                         clickAction = '';
                     } else {
                         // Standard Logic — use data-* attrs to avoid quote injection
@@ -18630,7 +18649,8 @@
                     return {
                         desc: _cItm.printName,
                         hsn: _cItm.hsn, pc: 1,
-                        grWt: 0, nlWt: 0, rate: 0,
+                        grWt: parseFloat(item.grossWeight) > 0 ? parseFloat(item.grossWeight) : 0,
+                        nlWt: parseFloat(item.netWeight) > 0 ? parseFloat(item.netWeight) : 0, rate: 0,
                         makingType: 'mrp', makingPct: Math.round((_cAmt / (1 + _cTax / 100)) * 100) / 100,
                         metal: '',
                         itemName: item.itemName || '', // actual custom item name, frozen
@@ -19495,7 +19515,8 @@
                 const price = parseFloat(((r.taxInclusive ? taxable : taxable * (1 + tax / 100)) + hm).toFixed(2));
                 const id = crypto.randomUUID();
                 if (r.isCustom) {
-                    return { type: 'custom', id, customItemId: r.customItemId || null, itemName: r.itemName || r.desc || 'Custom Item', finalPrice: price };
+                    return { type: 'custom', id, customItemId: r.customItemId || null, itemName: r.itemName || r.desc || 'Custom Item', finalPrice: price,
+                             grossWeight: parseFloat(r.grWt) || 0, netWeight: parseFloat(r.nlWt) || 0 };
                 }
                 if (r.isLoose) {
                     const pre = (typeof loosePresets !== 'undefined' && loosePresets || []).find(pp => pp && pp.name === r.desc);
