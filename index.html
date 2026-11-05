@@ -5380,8 +5380,18 @@
             populateStamps('stamp-select', document.getElementById('metal-select').value);
             populateStamps('manage-stamp', document.getElementById('metal-select').value);
             renderBaseRateCalc();
-            setLooseDefaults();
-            calculateLoosePrice();
+            // A background sync must never disturb what is selected on the Loose screen
+            // (e.g. the Nosepin preset). While it is open, only refresh the price;
+            // otherwise reset to defaults and re-apply the default preset.
+            const _looseScreen = document.getElementById('loose-calculator');
+            const _looseOpen = _looseScreen && _looseScreen.style.display === 'flex';
+            if (_looseOpen) {
+                calculateLoosePrice();
+            } else {
+                setLooseDefaults();
+                applyDefaultLoosePreset();
+                calculateLoosePrice();
+            }
             updateProfileBadge();
             // Reveal the app after first real render — eliminates FOUC flash
             if (!document.body.classList.contains('app-ready')) {
@@ -19562,7 +19572,7 @@
                              category: r.customCategory || '' };
                 }
                 if (r.isLoose) {
-                    const pre = (typeof loosePresets !== 'undefined' && loosePresets || []).find(pp => pp && pp.name === r.desc);
+                    const pre = (typeof loosePresets !== 'undefined' && loosePresets || []).find(pp => pp && pp.name === (r.presetName || r.desc));
                     return { type: 'loose', id, itemName: r.desc || 'Loose Jewellery', presetName: pre ? pre.name : null,
                              weight: r.nlWt || 0, metal: r.metal || '', stamp: r.stamp || '',
                              rate: r.rate || 0, makingType: r.makingType || '%', makingValue: r.makingPct || 0,
@@ -21161,17 +21171,46 @@
             }
             // Custom items also get HSN / print-name settings
             customItemList().forEach(function(ci) { names[ci.name.trim()] = true; });
+            // Loose Calculator presets (Nosepin, Silver payal, ...) are sellable items too,
+            // so they appear here (and in Item Settings) for HSN / print name.
+            (loosePresets || []).forEach(function(pr) {
+                var pn = ((pr && pr.name) || '').trim();
+                if (!pn) return;
+                var dup = Object.keys(names).some(function(k) { return k.toLowerCase() === pn.toLowerCase(); });
+                if (!dup) names[pn] = true;
+            });
             return Object.keys(names).sort();
         }
 
         function invShowItemPicker(rowIdx) {
             var existing = document.getElementById('inv-item-picker-modal');
             if (existing) { existing.remove(); }
-            var names = invGetStockItemNames();
-            if (!names.length) { invToast('No stock item names found'); return; }
-            var btns = names.map(function(name) {
-                var safe = name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-                return '<button onclick="invPickItemGroup(' + rowIdx + ',this.dataset.n);document.getElementById(\'inv-item-picker-modal\').remove();" data-n="' + safe + '" style="background:var(--surface,#fff);border:1.5px solid var(--border,#e0e0e0);border-radius:10px;padding:10px 8px;font-size:13px;font-weight:600;color:var(--text,#1a1a1a);cursor:pointer;text-align:left;box-shadow:none;margin:0;">' + safe + '</button>';
+            var esc = function(t) { return String(t == null ? '' : t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
+            var entries = [];
+            // 1) Plain stock item groups (from productData)
+            var stockNames = {};
+            for (var bc in productData) {
+                var n = ((productData[bc] || {}).itemName || '').trim();
+                if (n) stockNames[n] = true;
+            }
+            Object.keys(stockNames).forEach(function(n) { entries.push({ label: n, sub: '', kind: 'stock', key: n }); });
+            // 2) Custom items - one button each (same name can exist at different price/weight)
+            customItemList().forEach(function(ci) {
+                var sub = 'Custom \u00b7 \u20b9' + (ci.price || 0);
+                if (parseFloat(ci.netWeight) > 0) sub += ' \u00b7 ' + parseFloat(ci.netWeight) + 'g';
+                entries.push({ label: ci.name.trim(), sub: sub, kind: 'custom', key: ci.id });
+            });
+            // 3) Loose Calculator presets - fill metal, stamp, rate and making
+            (loosePresets || []).forEach(function(pr) {
+                if (!pr || !(pr.name || '').trim()) return;
+                var mk = { '%': '%', wastage: '% (W)', per_g: '\u20b9/g', per_pc: '\u20b9/pc', mrp: 'MRP' }[pr.makingType] || pr.makingType;
+                entries.push({ label: pr.name.trim(), sub: 'Preset \u00b7 ' + (pr.stamp || '') + ' \u00b7 ' + (pr.makingValue || 0) + ' ' + mk, kind: 'preset', key: pr.id });
+            });
+            if (!entries.length) { invToast('No stock item names found'); return; }
+            entries.sort(function(x, y) { return x.label < y.label ? -1 : x.label > y.label ? 1 : (x.sub < y.sub ? -1 : x.sub > y.sub ? 1 : 0); });
+            var btns = entries.map(function(e) {
+                var sub = e.sub ? '<div style="font-size:10px;font-weight:600;color:#9c27b0;margin-top:2px;">' + esc(e.sub) + '</div>' : '';
+                return '<button onclick="invPickEntry(' + rowIdx + ',this.dataset.k,this.dataset.n);document.getElementById(\'inv-item-picker-modal\').remove();" data-k="' + e.kind + '" data-n="' + esc(e.key) + '" style="background:var(--surface,#fff);border:1.5px solid var(--border,#e0e0e0);border-radius:10px;padding:10px 8px;font-size:13px;font-weight:600;color:var(--text,#1a1a1a);cursor:pointer;text-align:left;box-shadow:none;margin:0;">' + esc(e.label) + sub + '</button>';
             }).join('');
             var modal = document.createElement('div');
             modal.id = 'inv-item-picker-modal';
@@ -21188,9 +21227,76 @@
         }
         window.invShowItemPicker = invShowItemPicker;
 
+        // Picker dispatcher: stock group -> as before; custom item / preset -> fill the row's numbers too.
+        function invPickEntry(rowIdx, kind, key) {
+            if (kind === 'custom') return invFillRowFromCustomItem(rowIdx, key);
+            if (kind === 'preset') return invFillRowFromPreset(rowIdx, key);
+            return invPickItemGroup(rowIdx, key);
+        }
+        window.invPickEntry = invPickEntry;
+
+        // Clears everything a previous pick may have left on a row (barcode / HUID / flags).
+        function _invResetRowIdentity(r) {
+            r.barcode = null; r.huid = ''; r.size = ''; r.design = ''; r.hm = 0;
+            r.isLoose = false; r.isCustom = false; r.customItemId = null; r.customCategory = '';
+            r.presetName = null; r.itemName = '';
+        }
+
+        // Preset: metal, stamp, live rate and the preset's making type/value. Weight is left
+        // for the person to type (it is the one thing a preset cannot know).
+        function invFillRowFromPreset(rowIdx, presetId) {
+            var r = invRows[rowIdx];
+            var pr = (loosePresets || []).find(function(x) { return x && x.id === presetId; });
+            if (!r || !pr) return;
+            var wasSpecial = !!(r.isCustom || r.barcode);
+            var metal = (pr.metal || '').toLowerCase(), stamp = pr.stamp || '';
+            var rv = (rates[metal] && rates[metal][stamp]) ? rates[metal][stamp] : 0;
+            var cfg = invApplyItemSettings(pr.name, '7113');
+            var mt = pr.makingType || '%', mv = parseFloat(pr.makingValue) || 0;
+            // MRP (Direct) presets hold a tax-inclusive amount - back the GST out, same as the cart path.
+            if (mt === 'mrp') mv = Math.round((mv / (1 + (invoiceSettings.taxRate || 0) / 100)) * 100) / 100;
+            _invResetRowIdentity(r);
+            r.desc = cfg.printName; r.hsn = cfg.hsn;
+            r.itemName = pr.name; r.presetName = pr.name; r.isLoose = true;
+            r.pc = r.pc || 1;
+            if (wasSpecial) { r.grWt = 0; r.nlWt = 0; }
+            r.metal = metal; r.stamp = stamp;
+            r.rate = parseFloat(rv.toFixed(2));
+            r.pureRate = parseFloat((getPureRate(metal) || 0).toFixed(2));
+            r.makingType = mt; r.makingPct = parseFloat(mv.toFixed(2));
+            invRenderRows();
+            invRecalc();
+            invToast((rv || mt === 'mrp') ? ('Loaded preset: ' + pr.name + ' \u2014 enter weight') : ('\u26a0\ufe0f No rate set for ' + (pr.metal || '') + ' ' + stamp));
+        }
+
+        // Custom item: fixed tax-included price (GST backed out), weights, category HSN -
+        // identical to what the cart path produces for a custom item.
+        function invFillRowFromCustomItem(rowIdx, itemId) {
+            var r = invRows[rowIdx];
+            var ci = (customItems || {})[itemId];
+            if (!r || !ci) return;
+            var tax = invoiceSettings.taxRate || 0;
+            var cat = ciCatKey(ci);
+            var cfg = invApplyItemSettings(ci.name, ciCatHsn(cat));
+            var amt = parseFloat((parseFloat(ci.price) || 0).toFixed(2));
+            _invResetRowIdentity(r);
+            r.desc = cfg.printName; r.hsn = cfg.hsn; r.pc = 1;
+            r.grWt = parseFloat(ci.grossWeight) > 0 ? parseFloat(ci.grossWeight) : 0;
+            r.nlWt = parseFloat(ci.netWeight) > 0 ? parseFloat(ci.netWeight) : 0;
+            r.rate = 0; r.pureRate = 0; r.metal = ''; r.stamp = '';
+            r.makingType = 'mrp';
+            r.makingPct = Math.round((amt / (1 + tax / 100)) * 100) / 100;
+            r.itemName = ci.name; r.isCustom = true; r.customCategory = cat; r.customItemId = ci.id;
+            invRenderRows();
+            invRecalc();
+            invToast('Loaded: ' + ci.name + ' \u2014 \u20b9' + amt);
+        }
+
         function invPickItemGroup(rowIdx, name) {
             // Set desc on the specified row — it stays editable
             if (rowIdx >= 0 && rowIdx < invRows.length) {
+                invRows[rowIdx].isLoose = false; invRows[rowIdx].isCustom = false;
+                invRows[rowIdx].customItemId = null; invRows[rowIdx].presetName = null;
                 const itmSettings = invApplyItemSettings(name, invRows[rowIdx].hsn);
                 invRows[rowIdx].desc = itmSettings.printName;
                 invRows[rowIdx].hsn = itmSettings.hsn;
