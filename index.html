@@ -14090,7 +14090,7 @@
             .hdr-left{flex:1;padding:4px 7px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;overflow:hidden;}
             .hdr-right{width:52mm;padding:4px 7px;box-sizing:border-box;border-left:1px solid #1a1a1a;display:flex;flex-direction:column;justify-content:center;overflow:hidden;}
             table{border-collapse:collapse;width:100%;}
-            th{background:#efefef;font-size:9px;font-weight:700;padding:4px 6px;text-align:center;border-top:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;}
+            th{font-size:9px;font-weight:700;padding:4px 6px;text-align:center;border-top:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;}
             th:first-child{text-align:left;}
             th:last-child{text-align:right;}
             td{font-size:10px;color:#000;}
@@ -14171,7 +14171,7 @@
                     <tr><td style="padding:${ROWPAD};${ROW_FONT}color:#000;${HB}">${fp.grossRowLabel}</td><td style="padding:${ROWPAD};${ROW_FONT}color:#000;text-align:right;font-weight:600;${HB}">${(fmt==='invoice2'?rounded:(sub-disc)).toFixed(2)}</td></tr>
                     ${fp.taxRowsHtml.replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                     ${ogRowsC.replace(/padding:3px 6px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
-                    <tr style="background:#e8f5e9;"><td style="padding:${ROWPAD};font-size:11px;font-weight:800;${HB}">Net Amount</td><td style="padding:${ROWPAD};font-size:11px;font-weight:800;text-align:right;${HB}">₹${netAmtC}</td></tr>
+                    <tr><td style="padding:${ROWPAD};font-size:11px;font-weight:800;${HB}">Net Amount</td><td style="padding:${ROWPAD};font-size:11px;font-weight:800;text-align:right;${HB}">₹${netAmtC}</td></tr>
                     ${invPaymentHtml(receipt, paymentMethod, paymentDetails, outstanding, netPayable).replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                   </table>
                 </div>
@@ -18413,7 +18413,7 @@
                 if (returnAmt > 0) {
                     html += `<tr style="background:#fff3e0;"><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;color:#000;">PAID — Return</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;color:#000;">₹${returnAmt.toFixed(2)}</td></tr>`;
                 } else if (receipt > 0) {
-                    html += `<tr style="background:#e8f5e9;"><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;">RECEIPT</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;">₹${receipt.toFixed(2)}</td></tr>`;
+                    html += `<tr><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;">RECEIPT</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;">₹${receipt.toFixed(2)}</td></tr>`;
                 }
                 if (outstanding > 0) html += `<tr style="background:#fff3e0;"><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;color:#000;">Outstanding</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;color:#000;">₹${outstanding.toFixed(2)}</td></tr>`;
                 return html;
@@ -18426,13 +18426,13 @@
             } else {
             const receiptDisplay = receipt > 0 ? `₹${receipt.toFixed(2)}` : 'PAID';
             if (method === 'cash') {
-                html += `<tr style="background:#e8f5e9;"><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;">RECEIPT — Cash</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;">${receiptDisplay}</td></tr>`;
+                html += `<tr><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;">RECEIPT — Cash</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;">${receiptDisplay}</td></tr>`;
             } else if (method === 'upi') {
-                html += `<tr style="background:#e3f2fd;"><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;">RECEIPT — UPI</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;">${receiptDisplay}</td></tr>`;
+                html += `<tr><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;">RECEIPT — UPI</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;">${receiptDisplay}</td></tr>`;
             } else if (method === 'card') {
-                html += `<tr style="background:#f3e5f5;"><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;">RECEIPT — Card</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;">${receiptDisplay}</td></tr>`;
+                html += `<tr><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;">RECEIPT — Card</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;">${receiptDisplay}</td></tr>`;
             } else if (method === 'partial') {
-                html += `<tr style="background:#fff8e1;"><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;">RECEIPT — Partial</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;">${receiptDisplay}</td></tr>`;
+                html += `<tr><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;">RECEIPT — Partial</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;">${receiptDisplay}</td></tr>`;
                 if (details) {
                     if (details.cash > 0) html += `<tr><td style="padding:2px 5px;border:.5px solid #bbb;font-size:8px;color:#000;padding-left:12px;">  Cash</td><td style="padding:2px 5px;border:.5px solid #bbb;text-align:right;font-size:8px;">₹${details.cash.toFixed(2)}</td></tr>`;
                     if (details.upi > 0) html += `<tr><td style="padding:2px 5px;border:.5px solid #bbb;font-size:8px;color:#000;padding-left:12px;">  UPI</td><td style="padding:2px 5px;border:.5px solid #bbb;text-align:right;font-size:8px;">₹${details.upi.toFixed(2)}</td></tr>`;
@@ -19126,7 +19126,7 @@
             .hdr-left{flex:1;padding:4px 7px;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;overflow:hidden;}
             .hdr-right{width:52mm;padding:4px 7px;box-sizing:border-box;border-left:1px solid #1a1a1a;display:flex;flex-direction:column;justify-content:center;overflow:hidden;}
             table{border-collapse:collapse;width:100%;}
-            th{background:#efefef;font-size:9px;font-weight:700;padding:4px 6px;text-align:center;border-top:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;}
+            th{font-size:9px;font-weight:700;padding:4px 6px;text-align:center;border-top:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a;}
             th:first-child{text-align:left;}
             th:last-child{text-align:right;}
             td{font-size:10px;color:#000;}
@@ -19215,7 +19215,7 @@
                     <tr><td style="padding:${ROWPAD};${ROW_FONT}${HB}">${fp.grossRowLabel}</td><td style="padding:${ROWPAD};${ROW_FONT}text-align:right;font-weight:600;${HB}">${(fmt==='invoice2'?rounded:(sub-disc)).toFixed(2)}</td></tr>
                     ${fp.taxRowsHtml.replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                     ${ogRowsM.replace(/padding:3px 6px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
-                    <tr style="background:#e8f5e9;"><td style="padding:${ROWPAD};font-size:11px;font-weight:800;${HB}">Net Amount</td><td style="padding:${ROWPAD};font-size:11px;font-weight:800;text-align:right;${HB}">₹${netAmtM}</td></tr>
+                    <tr><td style="padding:${ROWPAD};font-size:11px;font-weight:800;${HB}">Net Amount</td><td style="padding:${ROWPAD};font-size:11px;font-weight:800;text-align:right;${HB}">₹${netAmtM}</td></tr>
                     ${invPaymentHtml(receipt, paymentMethod, paymentDetails, outstanding, netAfterOG).replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                   </table>
                 </div>
