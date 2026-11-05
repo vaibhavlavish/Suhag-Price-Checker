@@ -15368,7 +15368,7 @@
                     <div class="ledger-entry">
                         <div class="ledger-entry-icon ${iconClass}">${icons[e.type]||'📝'}</div>
                         <div class="ledger-entry-body">
-                            <div class="ledger-entry-title">${labels[e.type]||e.type}${_ledgerEditFull(e) ? `<button class="ledger-entry-edit" data-entry-id="${String(e.id).replace(/"/g,'&quot;')}" aria-label="Edit entry" title="Edit">✏️</button>` : ''}</div>
+                            <div class="ledger-entry-title">${labels[e.type]||e.type}${(_ledgerEditFull(e) || _supEntryEditable(e)) ? `<button class="ledger-entry-edit" data-entry-id="${String(e.id).replace(/"/g,'&quot;')}" aria-label="Edit entry" title="Edit">✏️</button>` : ''}</div>
                             <div class="ledger-entry-meta">${time}${_ledgerTagHtml(e)}${e.source === 'checkout' ? ' · checkout' : e.source === 'invoice' ? ' · From Invoice' : e.source === 'installment' ? ' · From Installment Plan' : e.source === 'credit' ? ' · Credit Received' : ' · Manual'}</div>
                             ${e.note ? `<div class="ledger-entry-note">${e.note}</div>` : ''}
                         </div>
@@ -16106,6 +16106,7 @@
         let _acctSyncStarted = false, _acctSyncRetries = 0;
         let _ledgerMode = 'cash';
         let _pendingSupEntry = null, _supKind = 'metal';
+        let _supEditId = null, _supSkipIds = new Set(), _supOldAuto = '';   // editing an existing supplier entry
 
         function _isTrackBActive() { return !!invTrackBUnlocked && currentInvTrack === 'B'; }
         function _localDateStr(d) {
@@ -16572,6 +16573,7 @@
         function openLedgerEntryEdit(id) {
             if (!checkPin()) return;
             const e = ledgerEntries.find(x => String(x.id) === String(id)); if (!e) return;
+            if (_supEntryEditable(e)) { _openSupplierEdit(e); return; }
             const full = _ledgerEditFull(e);
             _ledgerEditId = e.id;
             if (full) {
@@ -16638,17 +16640,17 @@
         // ── Supplier payment dialog ──
         function _supOutstanding(partyId, metal, track) {
             track = track || 'B';
-            const purchased = pmPurchases.filter(p => p.partyId === partyId && p.track === track && p.metal === metal && p.status === 'credit' && !((p.rate || 0) > 0)).reduce((s, p) => s + (p.weight || 0), 0);
-            const paid = pmPayments.filter(p => p.partyId === partyId && p.track === track && p.metal === metal).reduce((s, p) => s + (p.weight || 0), 0);
+            const purchased = pmPurchases.filter(p => p.partyId === partyId && p.track === track && p.metal === metal && p.status === 'credit' && !((p.rate || 0) > 0) && !_supSkipIds.has(p.id)).reduce((s, p) => s + (p.weight || 0), 0);
+            const paid = pmPayments.filter(p => p.partyId === partyId && p.track === track && p.metal === metal && !_supSkipIds.has(p.id)).reduce((s, p) => s + (p.weight || 0), 0);
             return Math.max(0, purchased - paid);
         }
         // ₹ (cash) owed to the supplier: credit-in-amount purchases + locked-rate credit purchases,
         // less any amount payments — same rule the Purchase Manager uses.
         function _supCashOwed(partyId, track) {
             track = track || 'B';
-            const owed = pmPurchases.filter(p => p.partyId === partyId && p.track === track && p.status === 'credit' && (p.creditType === 'amount' || (p.rate || 0) > 0))
+            const owed = pmPurchases.filter(p => p.partyId === partyId && p.track === track && p.status === 'credit' && (p.creditType === 'amount' || (p.rate || 0) > 0) && !_supSkipIds.has(p.id))
                 .reduce((s, p) => s + (p.creditType === 'amount' ? (p.amount || 0) : (p.weight || 0) * (p.rate || 0) + (p.extra || 0)), 0);
-            const paid = pmPayments.filter(p => p.partyId === partyId && p.track === track && p.payType === 'amount').reduce((s, p) => s + (p.amount || 0), 0);
+            const paid = pmPayments.filter(p => p.partyId === partyId && p.track === track && p.payType === 'amount' && !_supSkipIds.has(p.id)).reduce((s, p) => s + (p.amount || 0), 0);
             return Math.max(0, owed - paid);
         }
         function _supRenderBalance() {
@@ -16766,7 +16768,7 @@
             _supSetKind(pieceOnly ? 'piece' : (initial ? 'metal' : _supKind));
         }
         function _supPieceBalance(partyId) {
-            return pmPieceSupplies.filter(r => r.partyId === partyId && r.track === 'B')
+            return pmPieceSupplies.filter(r => r.partyId === partyId && r.track === 'B' && !_supSkipIds.has(r.id))
                 .reduce((s, r) => s + (r.kind === 'payment' ? -(r.amount || 0) : (r.amount || 0)), 0);
         }
         function _openSupplierPayDialog(entry) {
@@ -16794,6 +16796,53 @@
         function closeSupplierPayDialog() {
             document.getElementById('supplier-pay-modal').style.display = 'none';
             _pendingSupEntry = null;
+            _supEditId = null; _supSkipIds = new Set(); _supOldAuto = '';
+            document.getElementById('sup-edit-extra').style.display = 'none';
+            document.getElementById('sup-title').textContent = 'Supplier Payment';
+            document.getElementById('sup-save-btn').textContent = '✓ Save Payment';
+        }
+        // ── Edit an existing supplier entry ──
+        // Reuses the supplier dialog, pre-filled. On save the entry's old Purchase Manager records
+        // (payment / purchase / per-piece bill + payment) are removed and re-created from the new values
+        // in ONE write, so the supplier's balance always matches the edited entry.
+        function _supEntryEditable(e) { return !!e && e.source === 'manual' && e.type === 'expense' && !!e.supplier; }
+        function _openSupplierEdit(orig) {
+            const s = orig.supplier || {};
+            _supEditId = orig.id;
+            _supSkipIds = new Set([s.paymentId, s.purchaseId, s.pieceBillId, s.piecePayId].filter(Boolean));
+            _supOldAuto = (s.partyName || '') + ' — ' + (s.kind === 'piece' ? (s.desc || 'per-piece supplies') : (s.weight + 'g ' + s.metal + ' @ ₹' + s.rate));
+            _supKind = s.kind === 'piece' ? 'piece' : 'metal';
+            _openSupplierPayDialog(Object.assign({}, orig));      // working copy: nothing changes until Save
+            const g = id => document.getElementById(id);
+            if (!s.adhoc && s.partyId && pmParties.some(x => x.id === s.partyId)) g('sup-party').value = s.partyId;
+            _supKind = s.kind === 'piece' ? 'piece' : 'metal';      // the open call above resets it to Metal
+            _supApplyPartyMetal(false);
+            if (_supKind === 'metal') {
+                const ms = g('sup-metal');
+                if (s.metal && ![...ms.options].some(o => o.value === s.metal)) ms.insertAdjacentHTML('beforeend', '<option value="' + s.metal + '">' + s.metal + '</option>');
+                if (s.metal) ms.value = s.metal;
+                g('sup-weight').value = s.weight || '';
+                g('sup-rate').value = s.rate || '';
+            } else {
+                g('sup-desc').value = s.desc || '';
+                g('sup-qty').value = s.qty || '';
+                g('sup-bill').value = s.billAmount || '';
+            }
+            g('sup-e-amount').value = orig.amount;
+            g('sup-e-date').value = _localDateStr(new Date(orig.timestamp)); g('sup-e-date').max = _localDateStr(new Date());
+            g('sup-e-mode').value = orig.mode === 'upi' ? 'upi' : 'cash';
+            g('sup-e-note').value = orig.note || '';
+            g('sup-edit-extra').style.display = 'block';
+            g('sup-title').textContent = 'Edit Supplier Entry';
+            g('sup-save-btn').textContent = '✓ Save Changes';
+            _supSetKind(_supKind);
+            _supEditFieldsChanged();
+        }
+        function _supEditFieldsChanged() {
+            const e = _pendingSupEntry; if (!e || _supEditId == null) return;
+            e.amount = parseFloat(document.getElementById('sup-e-amount').value) || 0;
+            document.getElementById('sup-amount-line').textContent = 'Paying ₹' + _fmt(e.amount) + ' via ' + (document.getElementById('sup-e-mode').value === 'upi' ? 'UPI' : 'Cash');
+            _supRecalc();
         }
         function _supPartyChanged() {
             const isNew = document.getElementById('sup-party').value === '__new';
@@ -16848,6 +16897,25 @@
             const e = _pendingSupEntry; if (!e) return;
             let partyId = document.getElementById('sup-party').value;
             const extra = {};
+            const _edit = _supEditId != null;
+            if (_edit) {
+                const amtE = parseFloat(document.getElementById('sup-e-amount').value);
+                if (!(amtE > 0)) { showCustomAlert('Enter a valid amount.'); return; }
+                const dv = document.getElementById('sup-e-date').value;
+                if (dv && dv > _localDateStr(new Date())) { showCustomAlert('Date cannot be in the future.'); return; }
+                const orig = ledgerEntries.find(x => String(x.id) === String(_supEditId));
+                if (!orig) { closeSupplierPayDialog(); closeLedgerEntryModal(); return; }
+                e.amount = amtE;
+                e.mode = document.getElementById('sup-e-mode').value === 'upi' ? 'upi' : 'cash';
+                e.note = document.getElementById('sup-e-note').value.trim();
+                if (e.note === _supOldAuto) e.note = '';               // untouched auto-note: rebuild it from the new values
+                if (dv && dv !== _localDateStr(new Date(orig.timestamp))) e.timestamp = _ledgerTsNewestOfDay(dv, e.id);
+                const os = orig.supplier || {};
+                if (os.paymentId)   extra['payments/' + os.paymentId] = null;
+                if (os.purchaseId)  extra['purchases/' + os.purchaseId] = null;
+                if (os.pieceBillId) extra['pieceSupplies/' + os.pieceBillId] = null;
+                if (os.piecePayId)  extra['pieceSupplies/' + os.piecePayId] = null;
+            }
             let partyName = '';
             if (!partyId) { showCustomAlert('Select a supplier.'); return; }
             const isAdhoc = partyId === '__adhoc';
@@ -16916,10 +16984,14 @@
                 autoNote = desc || 'per-piece supplies';
             }
             e.supplier = sup;
+            if (_edit && !isAdhoc) { e.accountId = partyId; e.accountName = partyName; }
             if (!e.note) e.note = partyName + ' — ' + autoNote;
-            ledgerEntries.push(e); _saveLedgerLocal(); _saveLedgerRecord(e, extra); renderLedger();
+            if (_edit) { const ix = ledgerEntries.findIndex(x => String(x.id) === String(e.id)); if (ix >= 0) ledgerEntries[ix] = e; else ledgerEntries.push(e); }
+            else ledgerEntries.push(e);
+            _saveLedgerLocal(); _saveLedgerRecord(e, extra); renderLedger();
             closeSupplierPayDialog();
             closeLedgerEntryModal();
+            if (_edit) showCustomAlert('Entry updated!');
         }
         // ── Old jewellery bought through the ledger: metal + weight + rate, booked as a Purchase Manager purchase ──
         // The ledger AMOUNT is final. If weight x rate disagrees with it, the rate is re-derived from the amount.
@@ -21538,10 +21610,22 @@
     <div id="supplier-pay-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1600; align-items:center; justify-content:center;">
         <div style="background:white; border-radius:16px; margin:16px; max-width:400px; width:100%; max-height:90vh; overflow-y:auto; padding:18px; box-sizing:border-box;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <h4 style="margin:0; font-size:16px;">Supplier Payment</h4>
+                <h4 id="sup-title" style="margin:0; font-size:16px;">Supplier Payment</h4>
                 <button onclick="closeSupplierPayDialog()" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
             </div>
             <div id="sup-amount-line" style="font-size:13px; font-weight:700; color:#2e7d32; margin-bottom:10px;"></div>
+            <div id="sup-edit-extra" style="display:none; margin-bottom:6px;">
+                <div style="display:flex; gap:8px;">
+                    <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">AMOUNT (₹)</label>
+                    <input type="number" id="sup-e-amount" oninput="_supEditFieldsChanged()" step="0.01" min="0" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
+                    <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">DATE</label>
+                    <input type="date" id="sup-e-date" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
+                </div>
+                <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">PAID VIA</label>
+                <select id="sup-e-mode" onchange="_supEditFieldsChanged()" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"><option value="cash">Cash</option><option value="upi">UPI</option></select>
+                <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">NOTE</label>
+                <input type="text" id="sup-e-note" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;">
+            </div>
             <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">SUPPLIER</label>
             <div style="display:flex; gap:6px; margin-bottom:8px;"><select id="sup-party" onchange="_supPartyChanged()" style="flex:1; min-width:0; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; font-size:14px; margin:0; box-sizing:border-box;"></select><button id="sup-party-edit" onclick="_supEditParty()" title="Edit supplier" style="display:none; width:auto; margin:0; padding:0 14px; background:#eee; color:#333; box-shadow:none; border-radius:10px; font-size:15px;">✎</button></div>
             <input type="text" id="sup-new-party" placeholder="New supplier name" style="display:none; padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:8px; box-sizing:border-box;">
@@ -21573,7 +21657,7 @@
                 </div>
                 <div id="sup-piece-info" style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.5;"></div>
             </div>
-            <button onclick="_confirmSupplierPay()" style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">✓ Save Payment</button>
+            <button id="sup-save-btn" onclick="_confirmSupplierPay()" style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">✓ Save Payment</button>
         </div>
     </div>
 
