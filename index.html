@@ -14018,7 +14018,7 @@
                 // per row must be GST-inclusive (taxable value × (1 + tax rate)).
                 // MRP-type rows hold a real pre-tax taxable value (see invTaxableVal),
                 // so they're taxed the same as every other row — no exemption here.
-                const tv = ((fmt === 'invoice2' && !r.taxInclusive) ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r)) + (fmt === 'invoice2' ? (parseFloat(r.hm) || 0) : 0); // Format 2: H/M folded into the amount, unlabelled
+                const tv = ((fmt === 'invoice2' && !r.taxInclusive) ? invInclusiveVal(r, t.pct) : invTaxableVal(r)) + (fmt === 'invoice2' ? (parseFloat(r.hm) || 0) : 0); // Format 2: H/M folded into the amount, unlabelled
                 tvTotal += tv;
                 itemsHtml += `<tr>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}">${invDescWithStamp(r)}</td>
@@ -15368,7 +15368,7 @@
                     <div class="ledger-entry">
                         <div class="ledger-entry-icon ${iconClass}">${icons[e.type]||'📝'}</div>
                         <div class="ledger-entry-body">
-                            <div class="ledger-entry-title">${labels[e.type]||e.type}${(_ledgerEditFull(e) || _supEntryEditable(e)) ? `<button class="ledger-entry-edit" data-entry-id="${String(e.id).replace(/"/g,'&quot;')}" aria-label="Edit entry" title="Edit">✏️</button>` : ''}</div>
+                            <div class="ledger-entry-title">${labels[e.type]||e.type}${(_ledgerEditFull(e) || _supEntryEditable(e) || _ojEntryEditable(e)) ? `<button class="ledger-entry-edit" data-entry-id="${String(e.id).replace(/"/g,'&quot;')}" aria-label="Edit entry" title="Edit">✏️</button>` : ''}</div>
                             <div class="ledger-entry-meta">${time}${_ledgerTagHtml(e)}${e.source === 'checkout' ? ' · checkout' : e.source === 'invoice' ? ' · From Invoice' : e.source === 'installment' ? ' · From Installment Plan' : e.source === 'credit' ? ' · Credit Received' : ' · Manual'}</div>
                             ${e.note ? `<div class="ledger-entry-note">${e.note}</div>` : ''}
                         </div>
@@ -16574,6 +16574,7 @@
             if (!checkPin()) return;
             const e = ledgerEntries.find(x => String(x.id) === String(id)); if (!e) return;
             if (_supEntryEditable(e)) { _openSupplierEdit(e); return; }
+            if (_ojEntryEditable(e)) { _openOldJewEdit(e); return; }
             const full = _ledgerEditFull(e);
             _ledgerEditId = e.id;
             if (full) {
@@ -16995,7 +16996,7 @@
         }
         // ── Old jewellery bought through the ledger: metal + weight + rate, booked as a Purchase Manager purchase ──
         // The ledger AMOUNT is final. If weight x rate disagrees with it, the rate is re-derived from the amount.
-        let _pendingOjEntry = null, _ojMetal = '';
+        let _pendingOjEntry = null, _ojMetal = '', _ojEditId = null, _ojOldAuto = '';
         function _ojSetMetal(m) {
             _ojMetal = (m === 'Gold' || m === 'Silver') ? m : '';
             ['Gold', 'Silver'].forEach(x => {
@@ -17015,6 +17016,37 @@
         function closeOldJewDialog() {
             document.getElementById('oj-modal').style.display = 'none';
             _pendingOjEntry = null;
+            _ojEditId = null; _ojOldAuto = '';
+            document.getElementById('oj-edit-extra').style.display = 'none';
+            document.getElementById('oj-title').textContent = 'Old Jewellery Purchase';
+            document.getElementById('oj-save-btn').textContent = '✓ Save Entry';
+        }
+        // ── Edit an existing old-jewellery entry ──
+        // Same dialog, pre-filled. Saving rewrites the entry AND its linked Purchase Manager purchase
+        // (same record id) in one write, so metal bought / P&L follow the edit.
+        function _ojEntryEditable(e) { return !!e && e.source === 'manual' && e.type === 'expense' && !!e.oldJewellery; }
+        function _openOldJewEdit(orig) {
+            const o = orig.oldJewellery || {}, g = id => document.getElementById(id);
+            _ojEditId = orig.id;
+            _ojOldAuto = (orig.accountName || 'Old jewellery') + ' — ' + o.weight + 'g ' + o.metal + ' @ ₹' + (+o.rate || 0).toFixed(2);
+            _openOldJewDialog(Object.assign({}, orig));          // working copy: nothing changes until Save
+            _ojSetMetal(o.metal);
+            g('oj-weight').value = o.weight || '';
+            g('oj-rate').value = o.rate || '';
+            g('oj-e-amount').value = orig.amount;
+            g('oj-e-date').value = _localDateStr(new Date(orig.timestamp)); g('oj-e-date').max = _localDateStr(new Date());
+            g('oj-e-mode').value = orig.mode === 'upi' ? 'upi' : 'cash';
+            g('oj-e-note').value = orig.note || '';
+            g('oj-edit-extra').style.display = 'block';
+            g('oj-title').textContent = 'Edit Old Jewellery Entry';
+            g('oj-save-btn').textContent = '✓ Save Changes';
+            _ojEditFieldsChanged();
+        }
+        function _ojEditFieldsChanged() {
+            const e = _pendingOjEntry; if (!e || _ojEditId == null) return;
+            e.amount = parseFloat(document.getElementById('oj-e-amount').value) || 0;
+            document.getElementById('oj-amount-line').textContent = 'Paying ₹' + _fmt(e.amount) + ' via ' + (document.getElementById('oj-e-mode').value === 'upi' ? 'UPI' : 'Cash') + (e.accountName ? ' · ' + e.accountName : '');
+            _ojRecalc();
         }
         function _ojFinalRate(amt, w, r) {
             // amount wins: keep the typed rate only when weight x rate already equals the amount
@@ -17036,6 +17068,21 @@
         }
         function _confirmOldJew() {
             const e = _pendingOjEntry; if (!e) return;
+            const _edit = _ojEditId != null;
+            let _origOj = null;
+            if (_edit) {
+                const amtE = parseFloat(document.getElementById('oj-e-amount').value);
+                if (!(amtE > 0)) { showCustomAlert('Enter a valid amount.'); return; }
+                const dv = document.getElementById('oj-e-date').value;
+                if (dv && dv > _localDateStr(new Date())) { showCustomAlert('Date cannot be in the future.'); return; }
+                _origOj = ledgerEntries.find(x => String(x.id) === String(_ojEditId));
+                if (!_origOj) { closeOldJewDialog(); closeLedgerEntryModal(); return; }
+                e.amount = amtE;
+                e.mode = document.getElementById('oj-e-mode').value === 'upi' ? 'upi' : 'cash';
+                e.note = document.getElementById('oj-e-note').value.trim();
+                if (e.note === _ojOldAuto) e.note = '';           // untouched auto-note: rebuild it from the new values
+                if (dv && dv !== _localDateStr(new Date(_origOj.timestamp))) e.timestamp = _ledgerTsNewestOfDay(dv, e.id);
+            }
             if (!_ojMetal) { showCustomAlert('Choose Gold or Silver.'); return; }
             const weight = parseFloat(document.getElementById('oj-weight').value) || 0;
             if (!(weight > 0)) { showCustomAlert('Enter the metal weight.'); return; }
@@ -17043,7 +17090,7 @@
             const rate = _ojFinalRate(e.amount, weight, typed);
             const date = _localDateStr(new Date(e.timestamp || Date.now()));
             const createdAt = new Date(date + 'T12:00:00.000Z').toISOString();
-            const purId = crypto.randomUUID();
+            const purId = (_edit && _origOj.oldJewellery && _origOj.oldJewellery.purchaseId) ? _origOj.oldJewellery.purchaseId : crypto.randomUUID();
             const extra = {};
             // Same shape as a Purchase Manager "paid" purchase (Track B, no supplier, no plan) so it counts as metal bought.
             extra['purchases/' + purId] = { id: purId, track: 'B', metal: _ojMetal, weight, rate, date, createdAt, status: 'paid',
@@ -17051,9 +17098,12 @@
             e.oldJewellery = { metal: _ojMetal, weight, rate, purchaseId: purId };
             if (!e.note) e.note = (e.accountName || 'Old jewellery') + ' — ' + weight + 'g ' + _ojMetal + ' @ ₹' + rate.toFixed(2);
             extra['purchases/' + purId].note = e.note;
-            ledgerEntries.push(e); _saveLedgerLocal(); _saveLedgerRecord(e, extra); renderLedger();
+            if (_edit) { const ix = ledgerEntries.findIndex(x => String(x.id) === String(e.id)); if (ix >= 0) ledgerEntries[ix] = e; else ledgerEntries.push(e); }
+            else ledgerEntries.push(e);
+            _saveLedgerLocal(); _saveLedgerRecord(e, extra); renderLedger();
             closeOldJewDialog();
             closeLedgerEntryModal();
+            if (_edit) showCustomAlert('Entry updated!');
         }
         window._ojSetMetal = _ojSetMetal; window.closeOldJewDialog = closeOldJewDialog; window._ojRecalc = _ojRecalc; window._confirmOldJew = _confirmOldJew;
         function closeLedgerEntryModal() {
@@ -18536,6 +18586,19 @@
             if ((r.makingType || '%') === 'mrp') return r.makingPct || 0;
             return (r.nlWt || 0) * (r.rate || 0) + invMakingAmt(r);
         }
+        // GST-inclusive value of a row (what Format 2 prints in its Value column).
+        // Flat-price rows (custom items, Jewellery amount, MRP loose) store the pre-tax figure rounded to
+        // paise — ₹2100 @3% is stored as 2038.83 — and multiplying back gives 2099.9949, which printed as
+        // 2099.99 with a "+₹0.01" Less line. When the whole-rupee amount next to the result backs out to
+        // exactly the stored pre-tax figure, that rupee amount is what was entered, so print it.
+        function invInclusiveVal(r, pct) {
+            const base = invTaxableVal(r);
+            const x = base * (1 + (pct || 0) / 100);
+            if ((r.makingType || '%') !== 'mrp' || !(pct > 0)) return x;
+            const whole = Math.round(x);
+            if (Math.abs(whole - x) < 0.02 && Math.round((whole / (1 + pct / 100)) * 100) / 100 === Math.round(base * 100) / 100) return whole;
+            return x;
+        }
 
         // A row only counts as "real" content if it has a description AND
         // some non-zero amount (weight×rate or a making charge). A freshly
@@ -19142,7 +19205,7 @@
                 // per row must be GST-inclusive (taxable value × (1 + tax rate)).
                 // MRP-type rows hold a real pre-tax taxable value (see invTaxableVal),
                 // so they're taxed the same as every other row — no exemption here.
-                const tv = ((fmt === 'invoice2' && !r.taxInclusive) ? invTaxableVal(r) * (1 + (t.pct || 0) / 100) : invTaxableVal(r)) + (fmt === 'invoice2' ? (parseFloat(r.hm) || 0) : 0); // Format 2: H/M folded into the amount, unlabelled
+                const tv = ((fmt === 'invoice2' && !r.taxInclusive) ? invInclusiveVal(r, t.pct) : invTaxableVal(r)) + (fmt === 'invoice2' ? (parseFloat(r.hm) || 0) : 0); // Format 2: H/M folded into the amount, unlabelled
                 tvTotal += tv;
                 itemsHtml += `<tr>
                   <td style="padding:${ITEMPAD};${ROWBORDER}${ROW_FONT}">${invDescWithStamp(r)}</td>
@@ -19636,7 +19699,7 @@
             const items = (inv.items || []).map(r => {
                 const taxable = invTaxableVal(r);
                 const hm = parseFloat(r.hm) || 0;
-                const price = parseFloat(((r.taxInclusive ? taxable : taxable * (1 + tax / 100)) + hm).toFixed(2));
+                const price = parseFloat(((r.taxInclusive ? taxable : invInclusiveVal(r, tax)) + hm).toFixed(2));
                 const id = crypto.randomUUID();
                 if (r.isCustom) {
                     return { type: 'custom', id, customItemId: r.customItemId || null, itemName: r.itemName || r.desc || 'Custom Item', finalPrice: price,
@@ -21665,10 +21728,22 @@
     <div id="oj-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1600; align-items:center; justify-content:center;">
         <div style="background:white; border-radius:16px; margin:16px; max-width:400px; width:100%; max-height:90vh; overflow-y:auto; padding:18px; box-sizing:border-box;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <h4 style="margin:0; font-size:16px;">Old Jewellery Purchase</h4>
+                <h4 id="oj-title" style="margin:0; font-size:16px;">Old Jewellery Purchase</h4>
                 <button onclick="closeOldJewDialog()" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; width:auto; margin:0;">✕</button>
             </div>
             <div id="oj-amount-line" style="font-size:13px; font-weight:700; color:#2e7d32; margin-bottom:10px;"></div>
+            <div id="oj-edit-extra" style="display:none; margin-bottom:6px;">
+                <div style="display:flex; gap:8px;">
+                    <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">AMOUNT (₹)</label>
+                    <input type="number" id="oj-e-amount" oninput="_ojEditFieldsChanged()" step="0.01" min="0" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
+                    <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">DATE</label>
+                    <input type="date" id="oj-e-date" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
+                </div>
+                <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">PAID VIA</label>
+                <select id="oj-e-mode" onchange="_ojEditFieldsChanged()" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"><option value="cash">Cash</option><option value="upi">UPI</option></select>
+                <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">NOTE</label>
+                <input type="text" id="oj-e-note" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;">
+            </div>
             <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">METAL</label>
             <div style="display:flex; gap:8px; margin-bottom:10px;">
                 <button id="oj-metal-Gold" onclick="_ojSetMetal('Gold')" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer; margin:0;">🟡 Gold</button>
@@ -21681,7 +21756,7 @@
                 <input type="number" id="oj-rate" oninput="_ojRecalc()" step="0.01" min="0" placeholder="optional" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
             </div>
             <div id="oj-info" style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.5;"></div>
-            <button onclick="_confirmOldJew()" style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">✓ Save Entry</button>
+            <button id="oj-save-btn" onclick="_confirmOldJew()" style="width:100%; padding:14px; background:#4CAF50; color:white; border:none; border-radius:12px; font-size:16px; font-weight:800; cursor:pointer;">✓ Save Entry</button>
         </div>
     </div>
 
