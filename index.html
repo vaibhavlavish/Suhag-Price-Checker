@@ -16766,7 +16766,10 @@
             const pieceOnly = info.oneG || (real && !info.metals.length && info.hasPiece);
             document.getElementById('sup-kind-metal').style.display = info.oneG ? 'none' : '';
             const eb = document.getElementById('sup-party-edit'); if (eb) eb.style.display = real ? 'block' : 'none';
-            _supSetKind(pieceOnly ? 'piece' : (initial ? 'metal' : _supKind));
+            document.getElementById('sup-kind-amount').style.display = info.oneG ? 'none' : '';
+            // Credit owed only in rupees (no metal outstanding) -> default to the Amount tab: no weight needed.
+            const amtOnly = real && !info.oneG && _supEditId == null && _supCashOwed(pid) > 0.5 && _supOutstanding(pid, 'Gold') < 0.001 && _supOutstanding(pid, 'Silver') < 0.001;
+            _supSetKind(pieceOnly ? 'piece' : (amtOnly ? 'amount' : (initial ? 'metal' : ((_supKind === 'amount' && _supEditId == null) ? 'metal' : _supKind))));
         }
         function _supPieceBalance(partyId) {
             return pmPieceSupplies.filter(r => r.partyId === partyId && r.track === 'B' && !_supSkipIds.has(r.id))
@@ -16811,12 +16814,12 @@
             const s = orig.supplier || {};
             _supEditId = orig.id;
             _supSkipIds = new Set([s.paymentId, s.purchaseId, s.pieceBillId, s.piecePayId].filter(Boolean));
-            _supOldAuto = (s.partyName || '') + ' — ' + (s.kind === 'piece' ? (s.desc || 'per-piece supplies') : (s.weight + 'g ' + s.metal + ' @ ₹' + s.rate));
-            _supKind = s.kind === 'piece' ? 'piece' : 'metal';
+            _supOldAuto = (s.partyName || '') + ' — ' + (s.kind === 'piece' ? (s.desc || 'per-piece supplies') : s.kind === 'amount' ? 'amount payment' : (s.weight + 'g ' + s.metal + ' @ ₹' + s.rate));
+            _supKind = (s.kind === 'piece' || s.kind === 'amount') ? s.kind : 'metal';
             _openSupplierPayDialog(Object.assign({}, orig));      // working copy: nothing changes until Save
             const g = id => document.getElementById(id);
             if (!s.adhoc && s.partyId && pmParties.some(x => x.id === s.partyId)) g('sup-party').value = s.partyId;
-            _supKind = s.kind === 'piece' ? 'piece' : 'metal';      // the open call above resets it to Metal
+            _supKind = (s.kind === 'piece' || s.kind === 'amount') ? s.kind : 'metal';      // the open call above resets it to Metal
             _supApplyPartyMetal(false);
             if (_supKind === 'metal') {
                 const ms = g('sup-metal');
@@ -16824,7 +16827,7 @@
                 if (s.metal) ms.value = s.metal;
                 g('sup-weight').value = s.weight || '';
                 g('sup-rate').value = s.rate || '';
-            } else {
+            } else if (_supKind === 'piece') {
                 g('sup-desc').value = s.desc || '';
                 g('sup-qty').value = s.qty || '';
                 g('sup-bill').value = s.billAmount || '';
@@ -16853,14 +16856,15 @@
             _supApplyPartyMetal(false);
         }
         function _supSetKind(k) {
-            _supKind = (k === 'piece') ? 'piece' : 'metal';
-            ['metal', 'piece'].forEach(x => {
+            _supKind = (k === 'piece' || k === 'amount') ? k : 'metal';
+            ['metal', 'piece', 'amount'].forEach(x => {
                 const b = document.getElementById('sup-kind-' + x);
                 b.style.border = x === _supKind ? '2.5px solid #1565C0' : '2px solid #e0e0e0';
                 b.style.background = x === _supKind ? '#e3f2fd' : 'white';
             });
             document.getElementById('sup-metal-box').style.display = _supKind === 'metal' ? 'block' : 'none';
             document.getElementById('sup-piece-box').style.display = _supKind === 'piece' ? 'block' : 'none';
+            document.getElementById('sup-amount-box').style.display = _supKind === 'amount' ? 'block' : 'none';
             _supRecalc();
         }
         function _supRecalc() {
@@ -16882,6 +16886,14 @@
                     t += 'No rate entered — effective rate ₹' + (amt / w).toFixed(2) + '/g will be recorded.';
                 }
                 document.getElementById('sup-metal-info').innerHTML = t;
+            } else if (_supKind === 'amount') {
+                let t = '';
+                if (pid && pid !== '__new' && pid !== '__adhoc') {
+                    const owed = _supCashOwed(pid);
+                    t += 'Amount owed to this supplier: <b>₹' + _fmt(owed) + '</b><br>After this payment: <b>₹' + _fmt(Math.max(0, owed - amt)) + '</b>';
+                    if (amt > owed + 0.5) t += '<br><b style="color:#c62828;">More than what is owed in amount.</b>';
+                } else t = 'Pick a supplier to settle their credit that is owed in rupees.';
+                document.getElementById('sup-amount-info').innerHTML = t;
             } else {
                 const bill = parseFloat(document.getElementById('sup-bill').value) || 0;
                 let t = '';
@@ -16941,7 +16953,16 @@
             const sup = { partyId, partyName, kind: _supKind, adjustment: 0 };
             if (isAdhoc) sup.adhoc = true;
             let autoNote = '';
-            if (_supKind === 'metal') {
+            if (_supKind === 'amount') {
+                if (!isAdhoc) {
+                    const owedAmt = extra['parties/' + partyId] ? 0 : _supCashOwed(partyId);
+                    if (e.amount > owedAmt + 0.5) { showCustomAlert('This supplier is owed only ₹' + _fmt(owedAmt) + ' in amount. Use the Metal or Per-piece tab if this payment is for something else.'); return; }
+                    const payId = crypto.randomUUID();
+                    extra['payments/' + payId] = { id: payId, partyId, track: 'B', payType: 'amount', amount: e.amount, note: e.note || null, date, createdAt, source: 'pos', ledgerEntryId: e.id };
+                    sup.paymentId = payId;
+                }
+                autoNote = 'amount payment';
+            } else if (_supKind === 'metal') {
                 const metal = document.getElementById('sup-metal').value;
                 const weight = parseFloat(document.getElementById('sup-weight').value) || 0;
                 let rate = parseFloat(document.getElementById('sup-rate').value) || 0;
@@ -21697,7 +21718,9 @@
             <div style="display:flex; gap:8px; margin:6px 0 12px;">
                 <button onclick="_supSetKind('metal')" id="sup-kind-metal" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">⚖️ Metal</button>
                 <button onclick="_supSetKind('piece')" id="sup-kind-piece" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">🧩 Per-piece</button>
+                <button onclick="_supSetKind('amount')" id="sup-kind-amount" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer;">₹ Amount</button>
             </div>
+            <div id="sup-amount-box" style="display:none;"><div id="sup-amount-info" style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.6;"></div></div>
             <div id="sup-metal-box">
                 <label id="sup-metal-label" style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">METAL</label>
                 <select id="sup-metal" onchange="_supRecalc()" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"><option value="Gold">Gold</option><option value="Silver">Silver</option></select>
