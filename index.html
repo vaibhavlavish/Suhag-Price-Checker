@@ -16793,7 +16793,7 @@
                 _supSel.value = '__adhoc';
                 _supSel.disabled = true;
             }
-            ['sup-weight', 'sup-rate', 'sup-desc', 'sup-qty', 'sup-bill'].forEach(id => { document.getElementById(id).value = ''; });
+            ['sup-weight', 'sup-rate', 'sup-extra', 'sup-desc', 'sup-qty', 'sup-bill'].forEach(id => { document.getElementById(id).value = ''; });
             _supApplyPartyMetal(true);      // metal list + starting tab follow the supplier
             document.getElementById('supplier-pay-modal').style.display = 'flex';
         }
@@ -16827,6 +16827,7 @@
                 if (s.metal) ms.value = s.metal;
                 g('sup-weight').value = s.weight || '';
                 g('sup-rate').value = s.rate || '';
+                g('sup-extra').value = s.extra || '';
             } else if (_supKind === 'piece') {
                 g('sup-desc').value = s.desc || '';
                 g('sup-qty').value = s.qty || '';
@@ -16876,14 +16877,15 @@
                 const metal = document.getElementById('sup-metal').value;
                 const w = parseFloat(document.getElementById('sup-weight').value) || 0;
                 const r = parseFloat(document.getElementById('sup-rate').value) || 0;
+                const xc = parseFloat(document.getElementById('sup-extra').value) || 0;
                 let t = '';
                 if (pid && pid !== '__new' && pid !== '__adhoc') t += 'Outstanding with this supplier: <b>' + _supOutstanding(pid, metal).toFixed(2) + 'g</b> ' + metal + '<br>';
                 if (w > 0 && r > 0) {
-                    const diff = Math.round((w * r - amt) * 100) / 100;
-                    t += 'Booked value ₹' + _fmt(w * r) + ' vs paid ₹' + _fmt(amt) + ' → ' +
+                    const diff = Math.round((w * r + xc - amt) * 100) / 100;
+                    t += 'Booked value ₹' + _fmt(w * r + xc) + (xc > 0 ? ' (incl. ₹' + _fmt(xc) + ' extra)' : '') + ' vs paid ₹' + _fmt(amt) + ' → ' +
                         (Math.abs(diff) < 0.5 ? 'exact' : (diff > 0 ? '<b style="color:#2e7d32;">discount ₹' + _fmt(diff) + '</b>' : '<b style="color:#e65100;">round-off / extra ₹' + _fmt(-diff) + '</b>'));
                 } else if (w > 0) {
-                    t += 'No rate entered — effective rate ₹' + (amt / w).toFixed(2) + '/g will be recorded.';
+                    t += 'No rate entered — effective rate ₹' + ((amt - xc) / w).toFixed(2) + '/g will be recorded' + (xc > 0 ? ' (after ₹' + _fmt(xc) + ' extra).' : '.');
                 }
                 document.getElementById('sup-metal-info').innerHTML = t;
             } else if (_supKind === 'amount') {
@@ -16966,10 +16968,13 @@
                 const metal = document.getElementById('sup-metal').value;
                 const weight = parseFloat(document.getElementById('sup-weight').value) || 0;
                 let rate = parseFloat(document.getElementById('sup-rate').value) || 0;
+                const exCost = Math.max(0, parseFloat(document.getElementById('sup-extra').value) || 0);
                 if (!(weight > 0)) { showCustomAlert('Enter the weight paid.'); return; }
-                if (!(rate > 0)) rate = Math.round((e.amount / weight) * 100) / 100;
-                sup.adjustment = Math.round((weight * rate - e.amount) * 100) / 100;
+                if (exCost >= e.amount) { showCustomAlert('Extra cost must be less than the amount paid.'); return; }
+                if (!(rate > 0)) rate = Math.round(((e.amount - exCost) / weight) * 100) / 100;
+                sup.adjustment = Math.round((weight * rate + exCost - e.amount) * 100) / 100;
                 Object.assign(sup, { metal, weight, rate });
+                if (exCost > 0) sup.extra = exCost;
                 if (!isAdhoc) {
                     // Grams that settle credit already owed = supplier PAYMENT; any grams beyond that (or all of them when
                     // nothing is owed) = a new PAID PURCHASE, so it also shows in the Purchase Manager's purchase log.
@@ -16978,12 +16983,12 @@
                     const share = w => Math.round(e.amount * (w / weight) * 100) / 100;
                     if (payW > 0.0005) {
                         const payId = crypto.randomUUID();
-                        extra['payments/' + payId] = { id: payId, partyId, track: 'B', metal, weight: payW, rate, note: e.note || '', date, createdAt, source: 'pos', ledgerEntryId: e.id, amountPaid: share(payW) };
+                        extra['payments/' + payId] = { id: payId, partyId, track: 'B', metal, weight: payW, rate, note: e.note || '', date, createdAt, source: 'pos', ledgerEntryId: e.id, amountPaid: share(payW), ...(exCost > 0 && !(purW > 0.0005) ? { extra: exCost } : {}) };
                         sup.paymentId = payId;
                     }
                     if (purW > 0.0005) {
                         const purId = crypto.randomUUID();
-                        extra['purchases/' + purId] = { id: purId, partyId, planId: null, track: 'B', metal, weight: purW, rate, date, createdAt, status: 'paid', note: e.note || null, source: 'pos', ledgerEntryId: e.id, amountPaid: share(purW) };
+                        extra['purchases/' + purId] = { id: purId, partyId, planId: null, track: 'B', metal, weight: purW, rate, date, createdAt, status: 'paid', note: e.note || null, source: 'pos', ledgerEntryId: e.id, amountPaid: share(purW), ...(exCost > 0 ? { extra: exCost } : {}) };
                         sup.purchaseId = purId;
                     }
                 }
@@ -21730,6 +21735,8 @@
                     <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">RATE BOOKED (₹/g)</label>
                     <input type="number" id="sup-rate" oninput="_supRecalc()" step="0.01" min="0" placeholder="optional" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
                 </div>
+                <label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">EXTRA COST (₹, OPTIONAL)</label>
+                <input type="number" id="sup-extra" oninput="_supRecalc()" step="0.01" min="0" placeholder="e.g. 500 — making, transport…" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;">
                 <div id="sup-metal-info" style="font-size:12px; color:#666; margin-bottom:12px; line-height:1.5;"></div>
             </div>
             <div id="sup-piece-box" style="display:none;">
