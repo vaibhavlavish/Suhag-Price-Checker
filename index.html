@@ -16991,6 +16991,12 @@
                         extra['purchases/' + purId] = { id: purId, partyId, planId: null, track: 'B', metal, weight: purW, rate, date, createdAt, status: 'paid', note: e.note || null, source: 'pos', ledgerEntryId: e.id, amountPaid: share(purW), ...(exCost > 0 ? { extra: exCost } : {}) };
                         sup.purchaseId = purId;
                     }
+                } else {
+                    // One-off name (＋ under Supplier): not a Purchase Manager supplier, but the metal still counts as
+                    // bought and belongs in Purchase P&L — same shape as old jewellery, labelled with the typed name.
+                    const purId = crypto.randomUUID();
+                    extra['purchases/' + purId] = { id: purId, track: 'B', metal, weight, rate, date, createdAt, status: 'paid', note: null, source: 'pos-adhoc', acctName: partyName || null, ledgerEntryId: e.id, amountPaid: e.amount, ...(exCost > 0 ? { extra: exCost } : {}) };
+                    sup.purchaseId = purId;
                 }
                 autoNote = weight + 'g ' + metal + ' @ ₹' + rate;
             } else {
@@ -17013,6 +17019,7 @@
             e.supplier = sup;
             if (_edit && !isAdhoc) { e.accountId = partyId; e.accountName = partyName; }
             if (!e.note) e.note = partyName + ' — ' + autoNote;
+            if (sup.adhoc && sup.purchaseId && extra['purchases/' + sup.purchaseId]) extra['purchases/' + sup.purchaseId].note = e.note;
             if (_edit) { const ix = ledgerEntries.findIndex(x => String(x.id) === String(e.id)); if (ix >= 0) ledgerEntries[ix] = e; else ledgerEntries.push(e); }
             else ledgerEntries.push(e);
             _saveLedgerLocal(); _saveLedgerRecord(e, extra); renderLedger();
