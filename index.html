@@ -2297,9 +2297,15 @@
     <div id="manage-stamps-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
         <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; max-height:85vh; overflow-y:auto; padding:18px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-                <h4 style="margin:0; font-size:15px;">Manage Stamps for Selected Metal</h4>
+                <h4 style="margin:0; font-size:15px;">Manage Stamps</h4>
                 <button onclick="document.getElementById('manage-stamps-modal').style.display='none';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
             </div>
+            <label for="manage-metal" style="font-size:12.5px; font-weight:600; color:#555; display:block; margin-bottom:3px;">Metal</label>
+            <select id="manage-metal" onchange="manageMetalChanged(this.value)" style="width:100%; margin-bottom:12px;">
+                <option value="Gold">Gold</option>
+                <option value="Silver">Silver</option>
+                <option value="PC">PC</option>
+            </select>
             <label for="new-stamp" style="font-size:12.5px; font-weight:600; color:#555; display:block; margin-bottom:3px;">Add New Stamp</label>
             <input type="text" id="new-stamp" placeholder="e.g., 20K" style="width:100%; margin-bottom:6px;">
             <button onclick="addStamp()" style="width:100%; margin:0 0 14px;">Add</button>
@@ -12220,6 +12226,7 @@
             rates[metal][newStamp] = 0;
             saveAllDataToCloudDebounced();
             document.getElementById('new-stamp').value = '';
+            _refreshManageStamps();
             showCustomAlert(`Added ${newStamp} for ${metal}`);
         }
         function removeStamp() {
@@ -12233,6 +12240,7 @@
             showCustomConfirm(`Remove ${stamp} for ${metal.toUpperCase()}?`, 'Confirm Removal', () => {
                 delete rates[metal][stamp];
                 saveAllDataToCloudDebounced();
+                _refreshManageStamps();
                 showCustomAlert(`Removed ${stamp}`);
             });
         }
@@ -12257,6 +12265,7 @@
             delete rates[metal][oldStamp];
             saveAllDataToCloudDebounced();
             document.getElementById('rename-to').value = '';
+            _refreshManageStamps();
             showCustomAlert(`Renamed ${oldStamp} to ${newName}`);
         }
         function loadExcel() {
@@ -12429,7 +12438,22 @@
         // metal-select via the change listener set up at startup — this
         // just needs to show the popup, no extra refresh required.
         function openManageStampsModal(){
+            const m = document.getElementById('metal-select').value || 'Gold';
+            document.getElementById('manage-metal').value = m;
+            _refreshManageStamps();
             document.getElementById('manage-stamps-modal').style.display = 'flex';
+        }
+        // The Metal picker in this popup drives the same metal as the rate popup, so Add / Remove / Rename
+        // all act on whichever metal is picked here (Gold, Silver or PC).
+        function manageMetalChanged(v){
+            const ms = document.getElementById('metal-select');
+            ms.value = v;
+            ms.dispatchEvent(new Event('change'));
+            _refreshManageStamps();
+        }
+        function _refreshManageStamps(){
+            populateStamps('manage-stamp', document.getElementById('metal-select').value || 'Gold');
+            updateRemoveButton();
         }
 
         function updateRate() {
