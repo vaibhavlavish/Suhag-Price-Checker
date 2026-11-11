@@ -12288,6 +12288,13 @@
                 const workbook = XLSX.read(data, {type: 'array'});
                 const sheet = workbook.Sheets[workbook.SheetNames[0]];
                 const json = XLSX.utils.sheet_to_json(sheet, {header: 1});
+                _importSheetRows(json);
+                document.getElementById('excel-file').value = ''; // Also reset on cancel so same file can be re-selected
+            };
+            reader.readAsArrayBuffer(file);
+        }
+        // Shared by Upload Excel and Fetch Tags: takes the sheet as an array of rows (first heading row found automatically)
+        function _importSheetRows(json) {
                 // Raw barcode-software exports start with a title row ("Tag Stock") and blank lines before the
                 // headings, so look for the real heading row instead of assuming it is the first line.
                 const _normH = h => (h == null ? '' : String(h)).trim().toLowerCase();
@@ -12395,12 +12402,9 @@
                         saveAllDataToCloud();
                         invSyncCatalogueAvailability();
                         document.getElementById('excel-info').innerHTML = `<p>Successfully loaded ${count} products.</p>`;
-                        fileInput.value = ''; // Reset after confirm so same file can be re-selected
+                        const _fi = document.getElementById('excel-file'); if (_fi) _fi.value = ''; // Reset after confirm so same file can be re-selected
                     }
                 );
-                fileInput.value = ''; // Also reset on cancel so same file can be re-selected
-            };
-            reader.readAsArrayBuffer(file);
         }
         function findColumn(headers, names) {
             for (let i = 0; i < headers.length; i++) {
@@ -18125,6 +18129,8 @@
 
         function invOpenSettings() {
             document.getElementById('inv-settings-modal').style.display = 'flex';
+            const _mb = document.getElementById('inv-mmi-settings-btn');
+            if (_mb) _mb.style.display = (typeof _isTrackBActive === 'function' && _isTrackBActive()) ? 'flex' : 'none';
             const bgEl = document.getElementById('inv-with-bg');
             if (bgEl) bgEl.checked = invGetWithBgPref();
             _renderCustomFullPageBgPreview();
@@ -22875,7 +22881,32 @@
                 <button onclick="invOpenPrintSettingsModal()" style="width:100%; text-align:left; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; font-size:14px; font-weight:700; color:var(--text); cursor:pointer; box-shadow:none; margin:0; display:flex; align-items:center; justify-content:space-between;">
                     <span>🖨️ Print Settings</span><span style="color:#bbb;">›</span>
                 </button>
+                <button id="inv-mmi-settings-btn" onclick="invOpenMmiModal()" style="width:100%; text-align:left; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; font-size:14px; font-weight:700; color:var(--text); cursor:pointer; box-shadow:none; margin:0; display:flex; align-items:center; justify-content:space-between; display:none;">
+                    <span>🔗 MMI Link (Track B)</span><span style="color:#bbb;">›</span>
+                </button>
             </div>
+        </div>
+    </div>
+
+    <!-- MMI LINK MODAL (Track B settings only) -->
+    <div id="inv-mmi-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:610; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <span style="font-size:16px; font-weight:800; color:var(--text); user-select:none;">🔗 MMI Link</span>
+                <button onclick="document.getElementById('inv-mmi-modal').style.display='none'; document.getElementById('inv-settings-modal').style.display='flex';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">← Back</button>
+            </div>
+        <div id="mmi-panel" style="background:#f3f8f3; border:1px solid #81C784; border-radius:10px; padding:12px; margin:0;">
+            <div style="font-weight:800; font-size:14px; margin-bottom:2px;">🔗 MMI link (main computer)</div>
+            <div id="mmi-folder-status" style="font-size:12px; color:#666; margin-bottom:8px;">Folder not connected yet</div>
+            <button onclick="mmiConnectFolder()" style="background:#fff; color:#333; border:1px solid #bbb; border-radius:8px; padding:9px; font-size:13px; font-weight:700; cursor:pointer; width:100%; margin:0 0 8px;">📁 Connect MTOOLS folder</button>
+            <button onclick="mmiFetchTags()" style="background:#2E7D32; color:#fff; border:none; border-radius:8px; padding:11px; font-size:14px; font-weight:800; cursor:pointer; width:100%; margin:0 0 8px;">🔄 Fetch Tags from MMI</button>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px; font-size:12.5px; color:#444;">
+                Remove tags sold/issued <b>before</b> <input type="date" id="mmi-before" style="padding:5px; margin:0;">
+            </div>
+            <button onclick="mmiAdjustTags()" style="background:#C62828; color:#fff; border:none; border-radius:8px; padding:11px; font-size:14px; font-weight:800; cursor:pointer; width:100%; margin:0;">🧹 Adjust Tags (remove sold/issued from MMI)</button>
+            <button id="mmi-manual-btn" onclick="mmiShowManualList()" style="background:#FFF8E1; color:#8D6E00; border:1px solid #F0C040; border-radius:8px; padding:10px; font-size:13.5px; font-weight:800; cursor:pointer; width:100%; margin:8px 0 0;">📋 Manual tags list (0)</button>
+            <div id="mmi-status" style="font-size:12.5px; margin-top:8px; min-height:16px;"></div>
+        </div>
         </div>
     </div>
 
@@ -23308,6 +23339,336 @@
     </style>
 
 </div><!-- /#app-view -->
+
+<script>
+/* ═══════════ MMI LINK — Fetch Tags / Adjust Tags ═══════════
+   Lives in Invoice Settings > MMI Link (Track B only).
+   Talks to the Tag Watcher running on the main PC (D:\MMITools) through plain files in that folder:
+   POS writes request.json -> watcher runs the script -> POS reads status.json + the result file.
+   Nothing here touches MMI directly; deleting is done by TagPurge.ps1 (backup first, MMI must be closed). */
+const MMI_DIR_KEY = 'mmiToolsDirHandle';
+let _mmiBusy = false;
+function _mmiAllowed() {
+    if (typeof _isTrackBActive === 'function' && _isTrackBActive()) return true;
+    showCustomAlert('The MMI link is only available in Track B settings.'); return false;
+}
+function invOpenMmiModal() {
+    if (!_mmiAllowed()) return;
+    document.getElementById('inv-settings-modal').style.display = 'none';
+    document.getElementById('inv-mmi-modal').style.display = 'flex';
+    _mmiRefreshFolderLabel(); _mmiUpdateManualBadge();
+}
+
+function _mmiSay(msg, color) {
+    const el = document.getElementById('mmi-status');
+    if (el) { el.textContent = msg || ''; el.style.color = color || '#555'; }
+}
+async function _mmiRefreshFolderLabel() {
+    const el = document.getElementById('mmi-folder-status'); if (!el) return;
+    try {
+        const h = await _abIdbGet(MMI_DIR_KEY);
+        el.textContent = h ? ('Folder: ' + h.name) : 'Folder not connected yet';
+    } catch (e) { el.textContent = 'Folder not connected yet'; }
+}
+async function mmiConnectFolder() {
+    if (!_mmiAllowed()) return;
+    if (!window.showDirectoryPicker) { showCustomAlert('Folder access needs Chrome or Edge on the main computer.'); return; }
+    try {
+        const h = await window.showDirectoryPicker({ mode: 'readwrite' });
+        await _abIdbSet(MMI_DIR_KEY, h);
+        await _mmiRefreshFolderLabel();
+        _mmiSay('Folder connected. Make sure Install Watcher.bat was run once in that folder.', '#2E7D32');
+    } catch (e) { if (e.name !== 'AbortError') showCustomAlert('Could not open folder: ' + e.message); }
+}
+async function _mmiGetDir() {
+    const h = await _abIdbGet(MMI_DIR_KEY);
+    if (!h) throw new Error('Connect the MTOOLS folder first (button "Connect MTOOLS folder").');
+    let perm = await h.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') perm = await h.requestPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') throw new Error('Folder permission was not allowed. Press the button again and click Allow.');
+    return h;
+}
+async function _mmiReadJson(dir, name) {
+    try {
+        const fh = await dir.getFileHandle(name);
+        const f = await fh.getFile();
+        return JSON.parse(await f.text());
+    } catch (e) { return null; }
+}
+async function _mmiWriteJson(dir, name, obj) {
+    const fh = await dir.getFileHandle(name, { create: true });
+    const w = await fh.createWritable();
+    await w.write(JSON.stringify(obj));
+    await w.close();
+}
+const _mmiSleep = ms => new Promise(r => setTimeout(r, ms));
+
+// Sends one request to the watcher and waits for its answer. Resolves with the status object, rejects on error/timeout.
+async function _mmiSend(dir, type, payload, timeoutMs, waitingText) {
+    const hb = await _mmiReadJson(dir, 'watcher.json');
+    if (!hb || !hb.aliveMs || Math.abs(Date.now() - hb.aliveMs) > 30000) {
+        throw new Error('The Tag Watcher is not running on the main PC. Run Install Watcher.bat in the MTOOLS folder (or check TagWatcher.log there).');
+    }
+    const id = 'r' + Date.now() + Math.floor(Math.random() * 1000);
+    await _mmiWriteJson(dir, 'request.json', Object.assign({ id, type }, payload || {}));
+    const t0 = Date.now();
+    while (Date.now() - t0 < timeoutMs) {
+        await _mmiSleep(1000);
+        const st = await _mmiReadJson(dir, 'status.json');
+        if (st && st.id === id) {
+            if (st.state === 'done') return st;
+            if (st.state === 'error') throw new Error(st.message || 'The helper reported an error.');
+        }
+        _mmiSay((waitingText || 'Working') + '… ' + Math.round((Date.now() - t0) / 1000) + 's', '#555');
+    }
+    throw new Error('No reply from the Tag Watcher in time. Check TagWatcher.log in the MTOOLS folder.');
+}
+
+// ───── Fetch Tags ─────
+async function mmiFetchTags() {
+    if (_mmiBusy || !_mmiAllowed()) return;
+    _mmiBusy = true;
+    try {
+        const dir = await _mmiGetDir();           // first: permission prompt needs the fresh click
+        if (!checkPin()) return;
+        _mmiSay('Asking MMI for tags…');
+        const st = await _mmiSend(dir, 'export', {}, 180000, 'Reading MMI');
+        const data = await _mmiReadJson(dir, 'tags_latest.json');
+        if (!data || !Array.isArray(data.rows) || data.rows.length < 2) throw new Error('The helper returned no tags.');
+        _mmiSay(st.message || ('Got ' + data.count + ' tags.'), '#2E7D32');
+        _importSheetRows(data.rows);              // same import + confirmation as Upload Excel
+    } catch (e) {
+        _mmiSay(e.message, '#C62828');
+        showCustomAlert(escHtml(e.message), 'Fetch Tags');
+    } finally { _mmiBusy = false; }
+}
+
+// ───── Adjust Tags (remove sold / issued tags from MMI) ─────
+function _mmiYmd(ts) {
+    const d = new Date(ts); if (isNaN(d)) return '';
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+// tag -> { first: earliest sale/issue ms, last: latest sale/issue ms }
+function _mmiCollectGoneTags() {
+    const ev = {};
+    const add = (code, ts) => {
+        const bc = String(code || '').trim().toUpperCase(); if (!bc) return;
+        const t = (typeof ts === 'number') ? ts : new Date(ts).getTime();
+        if (!t || isNaN(t)) return;
+        const e = ev[bc] || (ev[bc] = { first: t, last: t });
+        if (t < e.first) e.first = t; if (t > e.last) e.last = t;
+    };
+    (billHistory || []).forEach(b => (b.items || []).forEach(i => i && i.barcode && add(i.barcode, b.timestamp || b.date)));
+    (invoiceHistory || []).forEach(inv => { if (inv.draft) return; (inv.items || []).forEach(i => i && i.barcode && add(i.barcode, inv.timestamp)); });
+    const issued = window._issuedBarcodes || {};
+    Object.keys(issued).forEach(c => { const r = issued[c] || {}; add(c, r.ts || (r.date ? r.date + 'T12:00:00' : 0)); });
+    // items back in stock (returned) or held for an installment plan are NOT gone
+    const returned = window._returnedBarcodes || {};
+    Object.keys(returned).forEach(c => delete ev[String(c).toUpperCase()]);
+    try { getInstallmentHeldBarcodes().forEach(c => delete ev[c]); } catch (e) {}
+    return ev;
+}
+
+async function mmiAdjustTags() {
+    if (_mmiBusy || !_mmiAllowed()) return;
+    _mmiBusy = true;
+    try {
+        const dir = await _mmiGetDir();
+        if (!checkPin()) return;
+        const beforeVal = (document.getElementById('mmi-before') || {}).value || '';
+        if (!beforeVal) { showCustomAlert('Pick the date first: tags sold or issued before that date will be listed.'); return; }
+        const cutoff = new Date(beforeVal + 'T00:00:00').getTime();
+        if (isNaN(cutoff) || cutoff > Date.now() + 86400000) { showCustomAlert('That date is in the future. Pick a date up to today.'); return; }
+        try { localStorage.setItem('mmiAdjustBefore', beforeVal); } catch (e) {}
+        const beforeTxt = new Date(cutoff).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+        const ev = _mmiCollectGoneTags();
+        const tags = Object.keys(ev).filter(c => ev[c].last < cutoff).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+            .map(c => ({ tag: c, date: _mmiYmd(ev[c].first) }));
+        if (!tags.length) { _mmiSay('No sold or issued tags before ' + beforeTxt + '.', '#555'); showCustomAlert('No sold or issued tags before ' + beforeTxt + ' to remove.'); return; }
+        _mmiSay('Checking ' + tags.length + ' tags against MMI…');
+        await _mmiSend(dir, 'purgecheck', { tags }, 240000, 'Checking MMI');
+        const res = await _mmiReadJson(dir, 'purge_result.json');
+        if (!res || !Array.isArray(res.rows)) throw new Error('The helper returned no check result.');
+        _mmiSay('', '#555');
+        _mmiShowReview(dir, res, tags);
+    } catch (e) {
+        _mmiSay(e.message, '#C62828');
+        showCustomAlert(escHtml(e.message), 'Adjust Tags');
+    } finally { _mmiBusy = false; }
+}
+
+function _mmiCloseReview() { const m = document.getElementById('mmi-review'); if (m) m.remove(); }
+
+function _mmiShowReview(dir, res, sentTags) {
+    _mmiCloseReview();
+    const dateOf = {}; sentTags.forEach(t => dateOf[t.tag] = t.date);
+    const rows = res.rows;
+    const removable = rows.filter(r => r.verdict === 'WOULD REMOVE');
+    const others = rows.filter(r => r.verdict !== 'WOULD REMOVE');
+    const nameOf = tag => ((productData[tag] || {}).itemName || '');
+    const manualN = _mmiMergeManual(rows, dateOf, nameOf);
+    const _bv = (document.getElementById('mmi-before') || {}).value || '';
+    const beforeLabel = _bv ? new Date(_bv + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    const manBanner = manualN ? `<div style="background:#FFF8E1; border:1px solid #F0C040; padding:8px 10px; border-radius:8px; font-size:12.5px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:8px;"><span>📋 <b>${manualN}</b> tag(s) need manual work in MMI (issue / delete by hand).</span><button onclick="mmiShowManualList()" style="background:#F0B400; color:#fff; border:none; border-radius:8px; padding:7px 12px; font-weight:800; cursor:pointer; margin:0; white-space:nowrap;">Open list</button></div>` : '';
+    const verdictText = {
+        'KEEP - LAST IN VOUCHER': 'Last tag of its voucher — MMI keeps one; delete in MMI by hand',
+        'SKIP - NEWER THAN SALE': 'Number reused by newer stock — not touched',
+        'REVIEW - MMI STATUS': 'MMI already marks it sold/issued — decide in MMI',
+        'SKIP - DUPLICATE TAG': 'Number exists twice in MMI — not touched',
+        'SKIP - VOUCHER TYPE': 'Voucher type not supported — delete in MMI by hand',
+        'SKIP - OP GOLD FINE CHECK': 'Gold fine data unclear — delete in MMI by hand',
+        'SKIP - P VOUCHER CHECK': 'P voucher rows did not pass the safety check — delete in MMI by hand',
+        'SKIP - NO LINKED LINE': 'Voucher line missing — not touched',
+        'ALREADY DELETED': 'Already deleted in MMI',
+        'NOT FOUND': 'Not found in MMI'
+    };
+    const rowHtml = r => `<label style="display:flex; gap:10px; align-items:center; padding:7px 4px; border-bottom:1px solid #eee; font-size:13px;">
+        <input type="checkbox" class="mmi-chk" data-tag="${escHtml(r.tag)}" checked style="width:18px; height:18px; flex:none;">
+        <span style="font-family:monospace; font-weight:700; min-width:70px;">${escHtml(r.tag)}</span>
+        <span style="flex:1; color:#555;">${escHtml(nameOf(r.tag))}</span>
+        <span style="color:#888; font-size:11px; white-space:nowrap;">${escHtml(r.voucher || '')} · ${escHtml(dateOf[r.tag] || '')}</span></label>`;
+    const otherHtml = r => `<div style="display:flex; gap:10px; padding:6px 4px; border-bottom:1px solid #f3f3f3; font-size:12px; color:#888;">
+        <span style="font-family:monospace; min-width:70px;">${escHtml(r.tag)}</span>
+        <span style="flex:1;">${escHtml(verdictText[r.verdict] || r.verdict)}</span></div>`;
+    const warn = (res.message && res.message !== 'OK') ? `<div style="background:#FFF3E0; color:#E65100; padding:8px 10px; border-radius:8px; font-size:12.5px; margin-bottom:8px; font-weight:600;">⚠️ ${escHtml(res.message)}</div>` : '';
+    const wrap = document.createElement('div');
+    wrap.id = 'mmi-review';
+    wrap.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100000; display:flex; align-items:center; justify-content:center; padding:12px;';
+    wrap.innerHTML = `<div style="background:#fff; border-radius:14px; width:100%; max-width:620px; max-height:92vh; display:flex; flex-direction:column; box-shadow:0 10px 40px rgba(0,0,0,.35);">
+        <div style="padding:14px 16px; border-bottom:1px solid #eee;">
+            <div style="font-size:16px; font-weight:800;">🧹 Adjust Tags — remove from MMI</div>
+            <div style="font-size:12px; color:#666; margin-top:4px;">Tags sold or issued before ${beforeLabel}. Untick any tag you want to keep. Ticked tags will be deleted from MMI (a backup is made first).</div>
+        </div>
+        <div style="padding:10px 16px; overflow-y:auto; flex:1;">
+            ${warn}${manBanner}
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <b id="mmi-sel-count" style="font-size:13px;"></b>
+                <span><a href="#" onclick="mmiSelAll(true);return false;" style="font-size:12px; margin-right:12px;">Select all</a><a href="#" onclick="mmiSelAll(false);return false;" style="font-size:12px;">Select none</a></span>
+            </div>
+            ${removable.length ? removable.map(rowHtml).join('') : '<div style="color:#888; font-size:13px; padding:10px 0;">Nothing can be removed automatically.</div>'}
+            ${others.length ? `<div style="font-size:11px; font-weight:800; letter-spacing:.06em; color:#999; margin:14px 0 4px;">NOT REMOVED (${others.length})</div>` + others.map(otherHtml).join('') : ''}
+        </div>
+        <div id="mmi-review-msg" style="padding:0 16px; font-size:12.5px;"></div>
+        <div style="padding:12px 16px; border-top:1px solid #eee; display:flex; gap:10px;">
+            <button onclick="_mmiCloseReview()" style="flex:1; background:#f1f1f1; color:#333; border:none; border-radius:10px; padding:11px; font-weight:700; cursor:pointer; margin:0;">Close</button>
+            <button id="mmi-apply-btn" style="flex:2; background:#C62828; color:#fff; border:none; border-radius:10px; padding:11px; font-weight:800; cursor:pointer; margin:0;">Delete from MMI</button>
+        </div></div>`;
+    document.body.appendChild(wrap);
+    const upd = () => {
+        const n = wrap.querySelectorAll('.mmi-chk:checked').length;
+        wrap.querySelector('#mmi-sel-count').textContent = n + ' of ' + removable.length + ' selected';
+        const b = wrap.querySelector('#mmi-apply-btn'); b.textContent = 'Delete ' + n + ' from MMI'; b.disabled = !n; b.style.opacity = n ? '1' : '.5';
+    };
+    wrap.addEventListener('change', upd); upd();
+    wrap.querySelector('#mmi-apply-btn').onclick = () => _mmiApplyPurge(dir, wrap, dateOf);
+}
+function mmiSelAll(on) {
+    document.querySelectorAll('#mmi-review .mmi-chk').forEach(c => c.checked = on);
+    const w = document.getElementById('mmi-review'); if (w) w.dispatchEvent(new Event('change'));
+}
+
+async function _mmiApplyPurge(dir, wrap, dateOf) {
+    if (_mmiBusy) return;
+    const picked = Array.from(wrap.querySelectorAll('.mmi-chk:checked')).map(c => c.dataset.tag);
+    if (!picked.length) return;
+    if (!confirm('Delete ' + picked.length + ' tags from MMI?\n\nMMI must be CLOSED. A backup of the MMI tag files is made first.')) return;
+    _mmiBusy = true;
+    const msg = wrap.querySelector('#mmi-review-msg'), btn = wrap.querySelector('#mmi-apply-btn');
+    btn.disabled = true; btn.style.opacity = '.5';
+    msg.style.color = '#555'; msg.textContent = 'Deleting… do not close this window.';
+    try {
+        const st = await _mmiSend(dir, 'purge', { tags: picked.map(t => ({ tag: t, date: dateOf[t] || '' })) }, 600000, 'Deleting in MMI');
+        const res = await _mmiReadJson(dir, 'purge_result.json') || {};
+        msg.style.color = '#2E7D32';
+        msg.innerHTML = '✅ ' + escHtml(st.message || 'Done') + (res.backup ? '<br><span style="color:#666; font-size:11.5px;">Backup: ' + escHtml(res.backup) + '</span>' : '')
+            + '<br><a href="#" onclick="_mmiCloseReview();mmiFetchTags();return false;" style="font-weight:700;">Fetch Tags now to refresh the POS list →</a>';
+        btn.style.display = 'none';
+        if (_mmiPendingCount()) mmiShowManualList();
+        wrap.querySelectorAll('.mmi-chk').forEach(c => c.disabled = true);
+    } catch (e) {
+        msg.style.color = '#C62828'; msg.textContent = '✖ ' + e.message;
+        btn.disabled = false; btn.style.opacity = '1';
+    } finally { _mmiBusy = false; }
+}
+
+
+// ───── Manual list: tags the tool will not touch (issue / delete by hand in MMI). Saved on this PC until you tick them off. ─────
+const MMI_MANUAL_KEY = 'mmiManualList';
+const MMI_MANUAL_ACTION = { 'KEEP - LAST IN VOUCHER': 'ISSUE', 'SKIP - P VOUCHER CHECK': 'DELETE', 'SKIP - VOUCHER TYPE': 'DELETE', 'SKIP - DUPLICATE TAG': 'DELETE', 'SKIP - NO LINKED LINE': 'DELETE' };
+const MMI_MANUAL_GONE = ['ALREADY DELETED', 'NOT FOUND', 'REVIEW - MMI STATUS'];   // done in MMI meanwhile -> drops off the list
+function _mmiLoadManual() { try { return JSON.parse(localStorage.getItem(MMI_MANUAL_KEY) || '[]'); } catch (e) { return []; } }
+function _mmiSaveManual(list) { try { localStorage.setItem(MMI_MANUAL_KEY, JSON.stringify(list)); } catch (e) {} _mmiUpdateManualBadge(); }
+function _mmiPendingCount() { return _mmiLoadManual().filter(e => !e.done).length; }
+function _mmiUpdateManualBadge() {
+    const b = document.getElementById('mmi-manual-btn'); if (!b) return;
+    const n = _mmiPendingCount();
+    b.textContent = '📋 Manual tags list (' + n + ')';
+    b.style.background = n ? '#FFE082' : '#FFF8E1';
+}
+// Called with the rows of every check; returns how many tags are waiting for manual work
+function _mmiMergeManual(rows, dateOf, nameOf) {
+    const by = {}; _mmiLoadManual().forEach(e => by[e.tag] = e);
+    rows.forEach(r => {
+        if (MMI_MANUAL_GONE.includes(r.verdict)) { delete by[r.tag]; return; }
+        const act = MMI_MANUAL_ACTION[r.verdict]; if (!act) return;
+        const prev = by[r.tag];
+        by[r.tag] = { tag: r.tag, item: nameOf(r.tag), action: act, why: r.note || r.verdict, voucher: r.voucher || '', date: dateOf[r.tag] || '', added: prev ? prev.added : Date.now(), done: false };
+    });
+    const list = Object.values(by); _mmiSaveManual(list);
+    return list.filter(e => !e.done).length;
+}
+function mmiCloseManualList() { const m = document.getElementById('mmi-manual'); if (m) m.remove(); }
+function mmiToggleManual(tag, on) {
+    const l = _mmiLoadManual(); const e = l.find(x => x.tag === tag); if (e) e.done = !!on;
+    _mmiSaveManual(l); mmiShowManualList();
+}
+function mmiClearManual(onlyDone) {
+    if (!confirm(onlyDone ? 'Remove the ticked tags from this list?' : 'Clear the whole list? Tags still in MMI will be found again on the next Adjust Tags.')) return;
+    _mmiSaveManual(onlyDone ? _mmiLoadManual().filter(e => !e.done) : []); mmiShowManualList();
+}
+function mmiCopyManual() {
+    const l = _mmiLoadManual().filter(e => !e.done);
+    const txt = ['ISSUE', 'DELETE'].map(a => { const t = l.filter(e => e.action === a); return t.length ? (a === 'ISSUE' ? 'ISSUE in MMI:' : 'DELETE by hand in MMI:') + '\n' + t.map(e => e.tag + '  ' + e.item + '  ' + e.voucher).join('\n') : ''; }).filter(Boolean).join('\n\n');
+    try { navigator.clipboard.writeText(txt); alert('List copied.'); } catch (e) { prompt('Copy this list:', txt); }
+}
+function mmiShowManualList() {
+    mmiCloseManualList();
+    const list = _mmiLoadManual().sort((a, b) => a.tag.localeCompare(b.tag, undefined, { numeric: true }));
+    const nm = e => e.item ? ' <span style="color:#777; font-weight:500;">' + escHtml(e.item) + '</span>' : '';
+    const rowH = e => `<label style="display:flex; gap:10px; align-items:flex-start; padding:8px 4px; border-bottom:1px solid #eee; ${e.done ? 'opacity:.45;' : ''}">
+        <input type="checkbox" ${e.done ? 'checked' : ''} onchange="mmiToggleManual('${escHtml(e.tag)}', this.checked)" style="width:18px; height:18px; margin-top:2px; flex:none;">
+        <span style="flex:1; font-size:13px; ${e.done ? 'text-decoration:line-through;' : ''}"><b style="font-family:monospace;">${escHtml(e.tag)}</b>${nm(e)}
+        <div style="font-size:11.5px; color:#888;">${escHtml(e.voucher)}${e.date ? ' · ' + escHtml(e.date) : ''}${e.why ? ' — ' + escHtml(e.why) : ''}</div></span></label>`;
+    const sec = (act, title, color) => {
+        const t = list.filter(e => e.action === act);
+        return t.length ? `<div style="font-size:12px; font-weight:800; color:${color}; margin:12px 0 2px;">${title} (${t.filter(e => !e.done).length} left)</div>` + t.map(rowH).join('') : '';
+    };
+    const wrap = document.createElement('div');
+    wrap.id = 'mmi-manual';
+    wrap.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:100001; display:flex; align-items:center; justify-content:center; padding:12px;';
+    wrap.innerHTML = `<div style="background:#fff; border-radius:14px; width:100%; max-width:560px; max-height:92vh; display:flex; flex-direction:column; box-shadow:0 10px 40px rgba(0,0,0,.35);">
+        <div style="padding:14px 16px; border-bottom:1px solid #eee;">
+            <div style="font-size:16px; font-weight:800;">📋 Do these by hand in MMI</div>
+            <div style="font-size:12px; color:#666; margin-top:4px;">Saved on this computer. Tick a tag when done; it also drops off by itself after the next Adjust Tags once MMI no longer needs it. Reopen any time from the MMI link box.</div>
+        </div>
+        <div style="padding:6px 16px 12px; overflow-y:auto; flex:1;">
+            ${list.length ? sec('ISSUE', '🔶 ISSUE these in MMI (last tag of its voucher)', '#B26A00') + sec('DELETE', '🔴 DELETE these by hand in MMI', '#C62828') : '<div style="color:#888; padding:18px 0; font-size:13px;">Nothing waiting. 🎉</div>'}
+        </div>
+        <div style="padding:10px 16px; border-top:1px solid #eee; display:flex; gap:8px; flex-wrap:wrap;">
+            <button onclick="mmiCopyManual()" style="flex:1; background:#E3F2FD; color:#1565C0; border:none; border-radius:8px; padding:9px; font-weight:700; cursor:pointer; margin:0;">Copy list</button>
+            <button onclick="mmiClearManual(true)" style="flex:1; background:#E8F5E9; color:#2E7D32; border:none; border-radius:8px; padding:9px; font-weight:700; cursor:pointer; margin:0;">Remove ticked</button>
+            <button onclick="mmiClearManual(false)" style="flex:1; background:#f1f1f1; color:#555; border:none; border-radius:8px; padding:9px; font-weight:700; cursor:pointer; margin:0;">Clear all</button>
+            <button onclick="mmiCloseManualList()" style="flex:1; background:#333; color:#fff; border:none; border-radius:8px; padding:9px; font-weight:800; cursor:pointer; margin:0;">Close</button>
+        </div></div>`;
+    document.body.appendChild(wrap);        // no click-outside close: it only closes with the Close button
+}
+
+window.addEventListener('load', () => {
+    _mmiRefreshFolderLabel(); _mmiUpdateManualBadge();
+    const d = document.getElementById('mmi-before');
+    if (d) { let v = ''; try { v = localStorage.getItem('mmiAdjustBefore') || ''; } catch (e) {} d.value = v || _mmiYmd(Date.now() - 15 * 86400000); }
+});
+</script>
 
 </body>
 </html>
