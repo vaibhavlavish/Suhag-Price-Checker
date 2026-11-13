@@ -2019,7 +2019,7 @@
                 <button type="button" onclick="flatNamePick('Repair')" style="width:auto; margin:0; padding:7px 14px; border:1.5px solid #cfd8dc; border-radius:16px; background:#f7f7f5; color:#222; font-size:13px; font-weight:700; box-shadow:none;">Repair</button>
                 <button type="button" onclick="flatNamesOpen()" aria-label="Saved names" style="width:auto; margin:0; padding:7px 14px; border:1.5px solid #4CAF50; border-radius:16px; background:#e8f5e9; color:#2e7d32; font-size:15px; font-weight:800; line-height:1; box-shadow:none;">+</button>
             </div>
-            <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;">
+            <div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) 70px; gap:10px;">
                 <div>
                     <label for="loose-flat-wt" style="font-size:12.5px; font-weight:600; color:#555;">Weight (g) <span style="font-weight:400;">optional</span></label>
                     <input type="number" id="loose-flat-wt" placeholder="0.00" step="0.001" inputmode="decimal" style="margin-bottom:0;">
@@ -2027,6 +2027,10 @@
                 <div>
                     <label for="loose-flat-price" style="font-size:12.5px; font-weight:600; color:#555;">Price (₹, tax incl.)</label>
                     <input type="number" id="loose-flat-price" placeholder="0.00" step="0.01" inputmode="decimal" style="margin-bottom:0;">
+                </div>
+                <div>
+                    <label for="loose-flat-pcs" style="font-size:12.5px; font-weight:600; color:#555;">Pcs</label>
+                    <input type="number" id="loose-flat-pcs" value="1" min="1" step="1" inputmode="numeric" style="margin-bottom:0;">
                 </div>
             </div>
             <button onclick="addLooseFlatToCart()" style="margin-top: 12px; background-color: #4CAF50; color: white; padding: 12px; border-radius: 25px; font-weight: 600; border: none; box-shadow: 0 3px 8px rgba(76, 175, 80, 0.3); width: 100%;">OK</button>
@@ -7990,6 +7994,8 @@
             if (wtRaw !== '' && (isNaN(wt) || wt < 0)) { showCustomAlert('Weight must be a number (or leave it blank).'); return; }
             const item = { type: 'repair', id: crypto.randomUUID(), itemName: name || 'Jewellery', finalPrice: parseFloat(price.toFixed(2)) };
             if (wt > 0) item.weight = parseFloat(wt.toFixed(3));
+            const pcs = parseInt(document.getElementById('loose-flat-pcs').value, 10);
+            item.pieceCount = (pcs > 0) ? pcs : 1;
             if (name) _flatNamesAdd(name);          // remember names you actually use
             cart.push(item);
             _autoRoundCartAdjustment();
@@ -7999,6 +8005,7 @@
             document.getElementById('loose-flat-name').value = '';
             document.getElementById('loose-flat-wt').value = '';
             document.getElementById('loose-flat-price').value = '';
+            document.getElementById('loose-flat-pcs').value = '1';
         }
 
         // --- PRESET FUNCTIONS (UPDATED FOR CLOUD & PIN) ---
@@ -11290,6 +11297,7 @@
                         clickAction = '';
                     } else if (item.type === 'repair' || item.type === 'custom') {
                         details = (item.type === 'repair' && item.weight > 0) ? `Weight: ${item.weight.toFixed(2)}g` : '';
+                        if (item.type === 'repair' && item.pieceCount > 1) details += (details ? ' · ' : '') + `${item.pieceCount} pcs`;
                         if (item.type === 'custom' && (item.grossWeight > 0 || item.netWeight > 0)) details = `Gr: ${item.grossWeight > 0 ? item.grossWeight.toFixed(3) : '-'}g · Nt: ${item.netWeight > 0 ? item.netWeight.toFixed(3) : '-'}g`;
                         clickAction = '';
                     } else {
@@ -18945,7 +18953,7 @@
                     const backCalcTaxable = Math.round((amt / (1 + taxRate / 100)) * 100) / 100;
                     return {
                         desc: item.itemName || 'Jewellery',
-                        hsn: '7113', pc: 1,
+                        hsn: '7113', pc: item.pieceCount || 1,
                         grWt: item.weight > 0 ? item.weight : 0, nlWt: item.weight > 0 ? item.weight : 0, rate: 0,
                         makingType: 'mrp', makingPct: backCalcTaxable,
                         metal: ''
