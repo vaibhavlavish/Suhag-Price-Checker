@@ -2756,6 +2756,10 @@
                 style="width:100%; max-width:280px; padding:22px; border:none; border-radius:16px; background:linear-gradient(135deg,#B0B7BD,#8A9197); color:white; font-size:18px; font-weight:800; cursor:pointer; box-shadow:0 4px 14px rgba(138,145,151,0.4); display:flex; align-items:center; justify-content:center; gap:10px;">
                 ⚪ Silver
             </button>
+            <button onclick="openTagWeight()"
+                style="width:100%; max-width:280px; padding:18px; border:2px dashed #90A4AE; border-radius:16px; background:white; color:#37474F; font-size:16px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:10px;">
+                🏷️ Tag Weight
+            </button>
         </div>
 
         <!-- STEP 2: Table view (hidden until a metal is chosen) -->
@@ -2793,6 +2797,34 @@
                     <tbody id="stock-calc-tbody"></tbody>
                 </table>
             </div>
+        </div>
+    </div>
+
+    <!-- TAG WEIGHT: scan one tag, see gross + packing weight -->
+    <div id="tag-weight" onclick="twRefocus(event)" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:480px; margin:0 auto; min-height:0;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; gap:8px;">
+            <h2 style="margin:0; font-size:20px;">🏷️ Tag Weight</h2>
+            <button onclick="showStockCalcSection()" style="background:#555; color:white; border:none; border-radius:20px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap;">← Back</button>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+            <input type="text" id="tw-barcode" placeholder="Scan or enter barcode..." maxlength="50" autocomplete="off" autocapitalize="characters" spellcheck="false"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();twSubmit();}" style="flex:1; margin-bottom:0;">
+            <button onclick="openCamera('tagweight')" title="Scan with camera"
+                style="flex-shrink:0; width:46px; height:46px; border-radius:12px; background:#4CAF50; color:white; border:none; font-size:22px; cursor:pointer; display:flex; align-items:center; justify-content:center;">📷</button>
+        </div>
+        <div id="tw-result" style="margin-top:16px; background:white; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.08); padding:26px 16px; text-align:center; flex:1; min-height:340px; display:flex; flex-direction:column; align-items:center; justify-content:center;"></div>
+        <button onclick="openTwPack()" style="margin-top:14px; width:100%; padding:14px; border:none; border-radius:12px; background:#37474F; color:white; font-size:15px; font-weight:700; cursor:pointer;">⚙ Packing weights</button>
+    </div>
+
+    <div id="tw-pack-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:420px; width:100%; max-height:86vh; padding:16px; display:flex; flex-direction:column; box-sizing:border-box;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <h4 style="margin:0; font-size:15px;">Packing weight per piece (g)</h4>
+                <button onclick="closeTwPack()" style="background:#eee; border:none; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:700; color:#555; cursor:pointer;">Done</button>
+            </div>
+            <div style="font-size:11.5px; color:#777; margin-bottom:8px;">Same P.WEIGHT used in Stock Weight Calc. Each tag shows gross + this.</div>
+            <input type="text" id="tw-pack-search" placeholder="Search item..." oninput="twPackRender()" style="width:100%; padding:9px 13px; margin-bottom:8px; border:1px solid #ddd; border-radius:20px; font-size:14px; box-sizing:border-box;">
+            <div id="tw-pack-list" style="overflow-y:auto; -webkit-overflow-scrolling:touch; flex:1; min-height:0;"></div>
         </div>
     </div>
 
@@ -5760,6 +5792,7 @@
             document.getElementById('loose-calculator').style.display = 'none';
             document.getElementById('stock-view').style.display = 'none';
             document.getElementById('stock-calc').style.display = 'none';
+            document.getElementById('tag-weight').style.display = 'none';
             document.getElementById('profiles-section').style.display = 'none';
             document.getElementById('bulk-check').style.display = 'none';
             document.getElementById('ledger').style.display = 'none';
@@ -5797,7 +5830,7 @@
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen' || section === 'savings-screen' || section === 'credit-screen') ? 'flex' : 'block';
+                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'tag-weight' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen' || section === 'savings-screen' || section === 'credit-screen') ? 'flex' : 'block';
             }
 
             if (section === 'installments-screen') {
@@ -6602,6 +6635,101 @@
             });
             summary.innerHTML = `<strong>${stockCalcRows.length}</strong> items &nbsp;|&nbsp; <strong>${grandPc}</strong> pcs`;
         }
+        // =============== TAG WEIGHT (scan one tag: gross + packing weight) ===============
+        let _twLast = null;   // { code, d } of the tag on screen, so edits in the packing popup refresh it
+        function openTagWeight() {
+            showSection('tag-weight');
+            _twLast = null;
+            twRender();
+            setTimeout(() => { const i = document.getElementById('tw-barcode'); if (i) { i.value = ''; i.focus(); } }, 120);
+        }
+        // Tap on empty space = ready for the next scan (not while a popup is open)
+        function twRefocus(ev) {
+            if (document.getElementById('tw-pack-modal').style.display === 'flex') return;
+            const t = ev && ev.target;
+            if (t && /^(BUTTON|INPUT|SELECT|TEXTAREA|A)$/.test(t.tagName)) return;
+            const i = document.getElementById('tw-barcode'); if (i) i.focus();
+        }
+        function twSubmit() {
+            const inp = document.getElementById('tw-barcode');
+            const code = inp.value.trim().toUpperCase();
+            inp.value = ''; inp.focus();      // ready for the next scan straight away
+            if (code) twScan(code);
+        }
+        function twScan(value) {
+            const code = String(value || '').trim().toUpperCase();
+            let d = productData[code];
+            if (!d) { const k = Object.keys(productData).find(b => String(b).trim().toUpperCase() === code); if (k) d = productData[k]; }
+            _twLast = { code, d: d || null, sold: !!d && getSoldBarcodesForStock().has(code) };
+            twRender();
+            const i = document.getElementById('tw-barcode'); if (i) { i.value = ''; i.focus(); }
+        }
+        function twRender() {
+            const box = document.getElementById('tw-result'); if (!box) return;
+            if (!_twLast) { box.innerHTML = '<div style="font-size:18px; color:#999;">Scan a tag to see its weight</div>'; return; }
+            const { code, d, sold } = _twLast;
+            if (!d) { box.innerHTML = `<div style="font-size:34px;">❌</div><div style="font-size:17px; font-weight:800; color:#C62828; margin-top:6px;">Tag not found</div><div style="font-size:13px; color:#777; margin-top:4px;">${escHtml(code)}</div>`; return; }
+            const name = (d.itemName || '').trim();
+            const gross = parseFloat(d.grossWeight || d.netWeight) || 0;
+            const pack = name ? (parseFloat(getPackaging(name).pWeight) || 0) : 0;
+            const total = gross + pack;
+            const meta = [d.metal, d.stamp, d.size ? 'Size ' + d.size : ''].filter(Boolean).join(' · ');
+            box.innerHTML = `
+                <div style="font-size:16px; color:#888; font-weight:700; letter-spacing:.04em;">${escHtml(code)}</div>
+                <div style="font-size:26px; font-weight:800; color:#333; margin-top:2px;">${escHtml(name || 'Unnamed item')}</div>
+                ${meta ? `<div style="font-size:15px; color:#888; margin-top:2px;">${escHtml(meta)}</div>` : ''}
+                <div style="font-size:clamp(88px, 27vw, 140px); font-weight:800; color:#2E7D32; line-height:1.02; margin:18px 0 8px; font-variant-numeric:tabular-nums;">${total.toFixed(2)}<span style="font-size:clamp(30px, 9vw, 48px); color:#66BB6A; margin-left:8px;">g</span></div>
+                <div style="font-size:17px; color:#555;">Gross <b>${gross.toFixed(2)}</b> + Packing <b>${pack.toFixed(2)}</b></div>
+                ${pack === 0 ? '<div style="font-size:14px; color:#E65100; margin-top:10px;">No packing weight set for this item — tap ⚙ Packing weights</div>' : ''}
+                ${sold ? '<div style="font-size:14px; font-weight:700; color:#E65100; background:#FFF3E0; border-radius:10px; padding:5px 14px; margin-top:12px;">Already sold / issued</div>' : ''}`;
+        }
+        function openTwPack() {
+            document.getElementById('tw-pack-modal').style.display = 'flex';
+            const sr = document.getElementById('tw-pack-search'); if (sr) sr.value = '';
+            twPackRender();
+        }
+        function closeTwPack() {
+            document.getElementById('tw-pack-modal').style.display = 'none';
+            twRender();
+            const i = document.getElementById('tw-barcode'); if (i) i.focus();
+        }
+        function twPackRender() {
+            const q = (document.getElementById('tw-pack-search')?.value || '').trim().toLowerCase();
+            const groups = {};   // item name -> { metal, n }
+            for (const bc in productData) {
+                const d = productData[bc]; const name = (d.itemName || '').trim(); if (!name) continue;
+                if (!groups[name]) groups[name] = { metal: (d.metal || '').toLowerCase(), n: 0 };
+                groups[name].n++;
+            }
+            const names = Object.keys(groups).filter(n => !q || n.toLowerCase().includes(q))
+                .sort((a, b) => (groups[a].metal === groups[b].metal ? 0 : groups[a].metal === 'gold' ? -1 : 1) || a.localeCompare(b));
+            let html = '', lastMetal = null;
+            names.forEach((n, i) => {
+                if (groups[n].metal !== lastMetal) { lastMetal = groups[n].metal; html += `<div style="font-size:11px; font-weight:800; color:#999; letter-spacing:.06em; margin:10px 0 4px;">${lastMetal === 'gold' ? '🟡 GOLD' : lastMetal === 'silver' ? '⚪ SILVER' : escHtml((lastMetal || 'OTHER').toUpperCase())}</div>`; }
+                const pw = getPackaging(n).pWeight || 0;
+                html += `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-top:1px solid #f0f0f0;">
+                    <div style="flex:1; min-width:0; font-size:13px; font-weight:700; color:#333;">${escHtml(n)} <span style="font-size:11px; font-weight:500; color:#999;">${groups[n].n} pcs</span></div>
+                    <input type="number" step="0.01" min="0" inputmode="decimal" value="${pw}" data-name="${escHtml(n)}" oninput="twPackInput(this)"
+                        style="width:74px; padding:6px 8px; border:1px solid #ddd; border-radius:8px; font-size:13px; text-align:right; box-sizing:border-box;"></div>`;
+            });
+            document.getElementById('tw-pack-list').innerHTML = html || '<div style="text-align:center; color:#999; padding:30px 0; font-size:13px;">No items found</div>';
+        }
+        function twPackInput(el) {
+            let v = parseFloat(el.value); if (isNaN(v) || v < 0) v = 0;
+            getPackaging(el.dataset.name).pWeight = v;
+            saveAllDataToCloudDebounced();
+        }
+        // A hardware scanner types without tapping the box: send keys to the scan input while this screen is open
+        document.addEventListener('keydown', function (ev) {
+            const scr = document.getElementById('tag-weight');
+            if (!scr || scr.style.display !== 'flex') return;
+            if (document.getElementById('tw-pack-modal').style.display === 'flex') return;
+            if (ev.ctrlKey || ev.altKey || ev.metaKey || ev.key.length !== 1) return;
+            if (/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '')) return;
+            const i = document.getElementById('tw-barcode'); if (i) i.focus();
+        });
+        // =============== END TAG WEIGHT ===============
+
         // =============== END STOCK WEIGHT CALCULATOR ===============
 
         // A stamped item (has a metal purity stamp, e.g. 916/22K) is always priced by
@@ -13380,6 +13508,8 @@
             } else if (cameraTarget === 'issue') {
                 document.getElementById('issue-barcode').value = value;
                 issueLookup();
+            } else if (cameraTarget === 'tagweight') {
+                twScan(value);
             } else if (cameraTarget === 'pricedisplay') {
                 pdShowBarcode(value);
                 setTimeout(() => { const i = document.getElementById('pd-input'); if (i) i.focus(); }, 120);
@@ -17079,7 +17209,7 @@
         function _openOldJewDialog(entry) {
             _pendingOjEntry = entry;
             document.getElementById('oj-amount-line').textContent = 'Paying ₹' + _fmt(entry.amount) + ' via ' + (entry.mode === 'upi' ? 'UPI' : 'Cash') + (entry.accountName ? ' · ' + entry.accountName : '');
-            ['oj-weight', 'oj-rate'].forEach(id => { document.getElementById(id).value = ''; });
+            ['oj-weight', 'oj-purity', 'oj-rate'].forEach(id => { document.getElementById(id).value = ''; });
             _ojSetMetal('');
             _ojRecalc();
             document.getElementById('oj-modal').style.display = 'flex';
@@ -17099,10 +17229,11 @@
         function _openOldJewEdit(orig) {
             const o = orig.oldJewellery || {}, g = id => document.getElementById(id);
             _ojEditId = orig.id;
-            _ojOldAuto = (orig.accountName || 'Old jewellery') + ' — ' + o.weight + 'g ' + o.metal + ' @ ₹' + (+o.rate || 0).toFixed(2);
+            _ojOldAuto = _ojAutoNote(orig.accountName, o.weight, o.metal, o.rate, o.grossWeight, o.purity);
             _openOldJewDialog(Object.assign({}, orig));          // working copy: nothing changes until Save
             _ojSetMetal(o.metal);
-            g('oj-weight').value = o.weight || '';
+            g('oj-weight').value = o.grossWeight || o.weight || '';
+            g('oj-purity').value = o.purity || '';
             g('oj-rate').value = o.rate || '';
             g('oj-e-amount').value = orig.amount;
             g('oj-e-date').value = _localDateStr(new Date(orig.timestamp)); g('oj-e-date').max = _localDateStr(new Date());
@@ -17119,6 +17250,12 @@
             document.getElementById('oj-amount-line').textContent = 'Paying ₹' + _fmt(e.amount) + ' via ' + (document.getElementById('oj-e-mode').value === 'upi' ? 'UPI' : 'Cash') + (e.accountName ? ' · ' + e.accountName : '');
             _ojRecalc();
         }
+        // Purity %: weight typed is the gross weight; pure weight = gross x purity / 100. Blank = 100 (weight already pure).
+        // Purchase Manager and the ledger always carry the PURE weight.
+        function _ojPure(gross, pct) { return (pct > 0 && pct < 100) ? Math.round(gross * pct / 100 * 1000) / 1000 : gross; }
+        function _ojAutoNote(acct, w, metal, rate, gross, pct) {
+            return (acct || 'Old jewellery') + ' — ' + w + 'g ' + metal + ' @ ₹' + (+rate || 0).toFixed(2) + ((pct > 0 && pct < 100 && gross > 0) ? ' (' + gross + 'g @ ' + pct + '%)' : '');
+        }
         function _ojFinalRate(amt, w, r) {
             // amount wins: keep the typed rate only when weight x rate already equals the amount
             if (r > 0 && Math.abs(w * r - amt) < 0.005) return r;
@@ -17126,14 +17263,17 @@
         }
         function _ojRecalc() {
             const e = _pendingOjEntry, box = document.getElementById('oj-info'); if (!e || !box) return;
-            const w = parseFloat(document.getElementById('oj-weight').value) || 0;
+            const gw = parseFloat(document.getElementById('oj-weight').value) || 0;
+            const pc = parseFloat(document.getElementById('oj-purity').value) || 0;
+            const w = _ojPure(gw, pc);
             const r = parseFloat(document.getElementById('oj-rate').value) || 0;
             let t = '';
+            if (w > 0 && w !== gw) t += 'Pure weight = <b>' + w + ' g</b> (' + gw + ' g × ' + pc + '%)<br>';
             if (w > 0) {
                 const fr = _ojFinalRate(e.amount, w, r);
-                if (r > 0 && Math.abs(w * r - e.amount) < 0.005) t = 'Weight × rate matches the amount ✓';
-                else if (r > 0) t = 'Weight × rate = ₹' + _fmt(w * r) + ' but amount paid is ₹' + _fmt(e.amount) + '.<br><b style="color:#e65100;">Amount is final — rate will be recorded as ₹' + fr.toFixed(2) + '/g.</b>';
-                else t = 'No rate entered — rate will be recorded as <b>₹' + fr.toFixed(2) + '/g</b> (amount ÷ weight).';
+                if (r > 0 && Math.abs(w * r - e.amount) < 0.005) t += 'Weight × rate matches the amount ✓';
+                else if (r > 0) t += 'Weight × rate = ₹' + _fmt(w * r) + ' but amount paid is ₹' + _fmt(e.amount) + '.<br><b style="color:#e65100;">Amount is final — rate will be recorded as ₹' + fr.toFixed(2) + '/g.</b>';
+                else t += 'No rate entered — rate will be recorded as <b>₹' + fr.toFixed(2) + '/g</b> (amount ÷ weight).';
             }
             box.innerHTML = t;
         }
@@ -17155,8 +17295,11 @@
                 if (dv && dv !== _localDateStr(new Date(_origOj.timestamp))) e.timestamp = _ledgerTsNewestOfDay(dv, e.id);
             }
             if (!_ojMetal) { showCustomAlert('Choose Gold or Silver.'); return; }
-            const weight = parseFloat(document.getElementById('oj-weight').value) || 0;
-            if (!(weight > 0)) { showCustomAlert('Enter the metal weight.'); return; }
+            const gross = parseFloat(document.getElementById('oj-weight').value) || 0;
+            if (!(gross > 0)) { showCustomAlert('Enter the metal weight.'); return; }
+            const pct = parseFloat(document.getElementById('oj-purity').value) || 0;
+            if (pct > 100) { showCustomAlert('Purity cannot be more than 100%.'); return; }
+            const weight = _ojPure(gross, pct);   // pure grams — what Purchase Manager counts as metal bought
             const typed = parseFloat(document.getElementById('oj-rate').value) || 0;
             const rate = _ojFinalRate(e.amount, weight, typed);
             const date = _localDateStr(new Date(e.timestamp || Date.now()));
@@ -17167,7 +17310,8 @@
             extra['purchases/' + purId] = { id: purId, track: 'B', metal: _ojMetal, weight, rate, date, createdAt, status: 'paid',
                 note: e.note || null, source: 'pos-oj', acctName: e.accountName || null, ledgerEntryId: e.id, amountPaid: e.amount };
             e.oldJewellery = { metal: _ojMetal, weight, rate, purchaseId: purId };
-            if (!e.note) e.note = (e.accountName || 'Old jewellery') + ' — ' + weight + 'g ' + _ojMetal + ' @ ₹' + rate.toFixed(2);
+            if (pct > 0 && pct < 100) { e.oldJewellery.grossWeight = gross; e.oldJewellery.purity = pct; }
+            if (!e.note) e.note = _ojAutoNote(e.accountName, weight, _ojMetal, rate, gross, pct);
             extra['purchases/' + purId].note = e.note;
             if (_edit) { const ix = ledgerEntries.findIndex(x => String(x.id) === String(e.id)); if (ix >= 0) ledgerEntries[ix] = e; else ledgerEntries.push(e); }
             else ledgerEntries.push(e);
@@ -21830,8 +21974,10 @@
                 <button id="oj-metal-Silver" onclick="_ojSetMetal('Silver')" style="flex:1; padding:10px 4px; border:2px solid #e0e0e0; background:white; border-radius:10px; font-size:13px; font-weight:700; color:#333; cursor:pointer; margin:0;">⚪ Silver</button>
             </div>
             <div style="display:flex; gap:8px;">
-                <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">WEIGHT (g, pure)</label>
+                <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">WEIGHT (g)</label>
                 <input type="number" id="oj-weight" oninput="_ojRecalc()" step="0.001" min="0" placeholder="0" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
+                <div style="flex:0.8;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">PURITY %</label>
+                <input type="number" id="oj-purity" oninput="_ojRecalc()" step="0.01" min="0" max="100" placeholder="100" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
                 <div style="flex:1;"><label style="font-size:12px; font-weight:700; color:#888; margin:0 0 4px 0;">RATE (₹/g)</label>
                 <input type="number" id="oj-rate" oninput="_ojRecalc()" step="0.01" min="0" placeholder="optional" style="padding:10px 12px; border:1.5px solid #e0e0e0; border-radius:10px; width:100%; font-size:14px; margin-bottom:10px; box-sizing:border-box;"></div>
             </div>
