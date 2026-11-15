@@ -2812,8 +2812,25 @@
             <button onclick="openCamera('tagweight')" title="Scan with camera"
                 style="flex-shrink:0; width:46px; height:46px; border-radius:12px; background:#4CAF50; color:white; border:none; font-size:22px; cursor:pointer; display:flex; align-items:center; justify-content:center;">📷</button>
         </div>
-        <div id="tw-result" style="margin-top:16px; background:white; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.08); padding:26px 16px; text-align:center; flex:1; min-height:340px; display:flex; flex-direction:column; align-items:center; justify-content:center;"></div>
-        <button onclick="openTwPack()" style="margin-top:14px; width:100%; padding:14px; border:none; border-radius:12px; background:#37474F; color:white; font-size:15px; font-weight:700; cursor:pointer;">⚙ Packing weights</button>
+        <div id="tw-result" style="margin-top:10px; background:white; border-radius:16px; box-shadow:0 2px 10px rgba(0,0,0,0.08); padding:26px 16px; text-align:center; flex:1; min-height:340px; display:flex; flex-direction:column; align-items:center; justify-content:center;"></div>
+        <div style="display:flex; gap:8px; margin-top:14px;">
+            <button onclick="openTwPack()" style="flex:1; margin:0; padding:14px 6px; border:none; border-radius:12px; background:#37474F; color:white; font-size:15px; font-weight:700; cursor:pointer;">⚙ Packing weights</button>
+            <button id="tv-open-btn" onclick="openTvPop()" style="flex:1; margin:0; padding:14px 6px; border:none; border-radius:12px; background:#2E7D32; color:white; font-size:15px; font-weight:700; cursor:pointer;">✅ Stock check</button>
+        </div>
+    </div>
+
+    <div id="tv-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:440px; width:100%; max-height:90vh; padding:16px; display:flex; flex-direction:column; box-sizing:border-box;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px;">
+                <button onclick="tvReset()" style="margin:0; background:white; border:1.5px solid #C62828; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:700; color:#C62828; cursor:pointer;">↺ Reset</button>
+                <h4 style="margin:0; font-size:15px;">Stock check</h4>
+                <button onclick="closeTvPop()" style="margin:0; background:#eee; border:none; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:700; color:#555; cursor:pointer;">Done</button>
+            </div>
+            <div style="display:flex; gap:6px;" id="tv-scope"></div>
+            <div id="tv-summary" style="font-size:14px; color:#555; margin:10px 0 8px;"></div>
+            <input type="text" id="tv-search" placeholder="Search item or tag..." oninput="tvPopRender()" style="width:100%; padding:9px 13px; margin-bottom:6px; border:1px solid #ddd; border-radius:20px; font-size:14px; box-sizing:border-box;">
+            <div id="tv-list" style="overflow-y:auto; -webkit-overflow-scrolling:touch; flex:1; min-height:0;"></div>
+        </div>
     </div>
 
     <div id="tw-pack-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
@@ -6640,12 +6657,13 @@
         function openTagWeight() {
             showSection('tag-weight');
             _twLast = null;
+            tvLoad(); tvUpdate();
             twRender();
             setTimeout(() => { const i = document.getElementById('tw-barcode'); if (i) { i.value = ''; i.focus(); } }, 120);
         }
         // Tap on empty space = ready for the next scan (not while a popup is open)
         function twRefocus(ev) {
-            if (document.getElementById('tw-pack-modal').style.display === 'flex') return;
+            if (document.getElementById('tw-pack-modal').style.display === 'flex' || document.getElementById('tv-modal').style.display === 'flex') return;
             const t = ev && ev.target;
             if (t && /^(BUTTON|INPUT|SELECT|TEXTAREA|A)$/.test(t.tagName)) return;
             const i = document.getElementById('tw-barcode'); if (i) i.focus();
@@ -6660,15 +6678,19 @@
             const code = String(value || '').trim().toUpperCase();
             let d = productData[code];
             if (!d) { const k = Object.keys(productData).find(b => String(b).trim().toUpperCase() === code); if (k) d = productData[k]; }
-            _twLast = { code, d: d || null, sold: !!d && getSoldBarcodesForStock().has(code) };
+            const sold = !!d && getSoldBarcodesForStock().has(code);
+            const prev = _tv.scanned[code];
+            if (code && !prev) { _tv.scanned[code] = { t: Date.now(), st: !d ? 'unknown' : (sold ? 'sold' : 'ok') }; tvSave(); }
+            _twLast = { code, d: d || null, sold, dup: !!prev };
+            tvUpdate();
             twRender();
             const i = document.getElementById('tw-barcode'); if (i) { i.value = ''; i.focus(); }
         }
         function twRender() {
             const box = document.getElementById('tw-result'); if (!box) return;
             if (!_twLast) { box.innerHTML = '<div style="font-size:18px; color:#999;">Scan a tag to see its weight</div>'; return; }
-            const { code, d, sold } = _twLast;
-            if (!d) { box.innerHTML = `<div style="font-size:34px;">❌</div><div style="font-size:17px; font-weight:800; color:#C62828; margin-top:6px;">Tag not found</div><div style="font-size:13px; color:#777; margin-top:4px;">${escHtml(code)}</div>`; return; }
+            const { code, d, sold, dup } = _twLast;
+            if (!d) { box.innerHTML = `<div style="font-size:34px;">❌</div><div style="font-size:17px; font-weight:800; color:#C62828; margin-top:6px;">Tag not found</div><div style="font-size:13px; color:#777; margin-top:4px;">${escHtml(code)}</div>${dup ? '<div style="font-size:13px; font-weight:700; color:#E65100; margin-top:8px;">Scanned before</div>' : ''}`; return; }
             const name = (d.itemName || '').trim();
             const gross = parseFloat(d.grossWeight || d.netWeight) || 0;
             const pack = name ? (parseFloat(getPackaging(name).pWeight) || 0) : 0;
@@ -6681,7 +6703,8 @@
                 <div style="font-size:clamp(88px, 27vw, 140px); font-weight:800; color:#2E7D32; line-height:1.02; margin:18px 0 8px; font-variant-numeric:tabular-nums;">${total.toFixed(2)}<span style="font-size:clamp(30px, 9vw, 48px); color:#66BB6A; margin-left:8px;">g</span></div>
                 <div style="font-size:17px; color:#555;">Gross <b>${gross.toFixed(2)}</b> + Packing <b>${pack.toFixed(2)}</b></div>
                 ${pack === 0 ? '<div style="font-size:14px; color:#E65100; margin-top:10px;">No packing weight set for this item — tap ⚙ Packing weights</div>' : ''}
-                ${sold ? '<div style="font-size:14px; font-weight:700; color:#E65100; background:#FFF3E0; border-radius:10px; padding:5px 14px; margin-top:12px;">Already sold / issued</div>' : ''}`;
+                ${sold ? '<div style="font-size:14px; font-weight:700; color:#E65100; background:#FFF3E0; border-radius:10px; padding:5px 14px; margin-top:12px;">Already sold / issued</div>' : ''}
+                ${dup ? '<div style="font-size:14px; font-weight:700; color:#E65100; background:#FFF3E0; border-radius:10px; padding:5px 14px; margin-top:12px;">Scanned before</div>' : (!sold ? '<div style="font-size:14px; font-weight:700; color:#2E7D32; background:#E8F5E9; border-radius:10px; padding:5px 14px; margin-top:12px;">✓ Counted</div>' : '')}`;
         }
         function openTwPack() {
             document.getElementById('tw-pack-modal').style.display = 'flex';
@@ -6723,11 +6746,90 @@
         document.addEventListener('keydown', function (ev) {
             const scr = document.getElementById('tag-weight');
             if (!scr || scr.style.display !== 'flex') return;
-            if (document.getElementById('tw-pack-modal').style.display === 'flex') return;
+            if (document.getElementById('tw-pack-modal').style.display === 'flex' || document.getElementById('tv-modal').style.display === 'flex') return;
             if (ev.ctrlKey || ev.altKey || ev.metaKey || ev.key.length !== 1) return;
             if (/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '')) return;
             const i = document.getElementById('tw-barcode'); if (i) i.focus();
         });
+        // ---- Stock verify: every scanned tag is remembered (on this device); the rest of the stock list = not scanned yet ----
+        let _tv = { scope: 'all', scanned: {} }, _tvExp = null, _tvTab = 'left';
+        function tvLoad() {
+            try { const v = JSON.parse(localStorage.getItem('suhagTagVerify') || 'null'); if (v && v.scanned) _tv = { scope: v.scope || 'all', scanned: v.scanned }; } catch (e) {}
+            _tvExp = null;
+        }
+        function tvSave() { try { localStorage.setItem('suhagTagVerify', JSON.stringify(_tv)); } catch (e) {} }
+        // tags that should be on the shelf: in the stock list, not sold / issued / held for an installment
+        function tvExpected(force) {
+            if (_tvExp && !force && _tvExp._scope === _tv.scope) return _tvExp;
+            const sold = getSoldBarcodesForStock(), held = getInstallmentHeldBarcodes(), out = {};
+            for (const bc in productData) {
+                const up = String(bc).trim().toUpperCase();
+                if (sold.has(up) || held.has(up)) continue;
+                const d = productData[bc], metal = (d.metal || '').toLowerCase();
+                if (_tv.scope !== 'all' && metal !== _tv.scope) continue;
+                out[up] = { name: (d.itemName || '').trim() || 'Unnamed item', metal };
+            }
+            Object.defineProperty(out, '_scope', { value: _tv.scope, enumerable: false });
+            _tvExp = out; return out;
+        }
+        let _tvOpen = {}, _tvNames = [];   // groups currently expanded in the Stock check list
+        function tvUpdate() {
+            const exp = tvExpected(); let total = 0, done = 0;
+            for (const c in exp) { total++; if (_tv.scanned[c]) done++; }
+            const b = document.getElementById('tv-open-btn'); if (b) b.textContent = '✅ Stock check · ' + done + ' / ' + total;
+            const sc = document.getElementById('tv-scope');
+            if (sc) sc.innerHTML = [['all', 'All'], ['gold', '🟡 Gold'], ['silver', '⚪ Silver']].map(x =>
+                `<button onclick="tvSetScope('${x[0]}')" style="flex:1; margin:0; padding:7px 4px; border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer; border:1.5px solid ${_tv.scope === x[0] ? '#37474F' : '#ddd'}; background:${_tv.scope === x[0] ? '#37474F' : 'white'}; color:${_tv.scope === x[0] ? 'white' : '#555'};">${x[1]}</button>`).join('');
+        }
+        function openTvPop() { tvExpected(true); _tvOpen = {}; document.getElementById('tv-search').value = ''; document.getElementById('tv-modal').style.display = 'flex'; tvUpdate(); tvPopRender(); }
+        function closeTvPop() { document.getElementById('tv-modal').style.display = 'none'; tvUpdate(); const i = document.getElementById('tw-barcode'); if (i) i.focus(); }
+        function tvToggle(i) { const n = _tvNames[i]; _tvOpen[n] = !_tvOpen[n]; tvPopRender(); }
+        function _tvNat(a, b) { return a.localeCompare(b, undefined, { numeric: true }); }
+        // one row per item group: scanned / total; tap a row to see the tags still to be scanned
+        function tvPopRender() {
+            const q = (document.getElementById('tv-search').value || '').trim().toLowerCase();
+            const exp = tvExpected(), g = {};
+            let total = 0, done = 0;
+            for (const c in exp) {
+                const n = exp[c].name; total++;
+                const o = g[n] || (g[n] = { total: 0, left: [] });
+                o.total++; if (_tv.scanned[c]) done++; else o.left.push(c);
+            }
+            document.getElementById('tv-summary').innerHTML = `✓ <b>${done}</b> / ${total} scanned &nbsp;·&nbsp; <b style="color:${total - done ? '#C62828' : '#2E7D32'}">${total - done}</b> left`;
+            const odd = Object.keys(_tv.scanned).filter(c => _tv.scanned[c].st !== 'ok').sort(_tvNat);
+            _tvNames = Object.keys(g).filter(n => !q || n.toLowerCase().includes(q) || g[n].left.some(t => t.toLowerCase().includes(q)))
+                .sort((a, b) => (g[b].left.length > 0) - (g[a].left.length > 0) || g[b].left.length - g[a].left.length || a.localeCompare(b));
+            let html = '';
+            _tvNames.forEach((n, i) => {
+                const o = g[n], sc = o.total - o.left.length, full = o.left.length === 0, open = !!_tvOpen[n];
+                const col = full ? '#2E7D32' : (sc === 0 ? '#9E9E9E' : '#EF6C00');
+                html += `<div style="border-top:1px solid #f0f0f0; padding:9px 0;">
+                    <div onclick="tvToggle(${i})" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                        <div style="flex:1; min-width:0; font-size:14px; font-weight:800; color:#333;">${open ? '▾' : '▸'} ${escHtml(n)}</div>
+                        <div style="font-size:14px; font-weight:800; color:${col}; white-space:nowrap;">${full ? '✓ ' : ''}${sc} / ${o.total}</div>
+                    </div>
+                    <div style="height:5px; border-radius:3px; background:#eee; margin-top:6px; overflow:hidden;"><div style="height:100%; width:${Math.round(sc / o.total * 100)}%; background:${col};"></div></div>
+                    ${open ? (full ? '<div style="font-size:13px; color:#2E7D32; font-weight:700; margin-top:8px;">All scanned ✓</div>' : `<div style="font-size:11.5px; color:#C62828; font-weight:700; margin-top:8px;">${o.left.length} left to scan</div><div style="font-size:12.5px; color:#555; margin-top:3px; line-height:1.6; word-break:break-word;">${o.left.slice().sort(_tvNat).map(escHtml).join(', ')}</div><button onclick="tvCopyGroup(${i})" style="margin:8px 0 0; padding:5px 12px; border:1px solid #ccc; border-radius:8px; background:white; font-size:12px; font-weight:700; color:#555; cursor:pointer;">Copy tags</button>`) : ''}
+                </div>`;
+            });
+            if (odd.length && !q) {
+                const open = !!_tvOpen['__odd'];
+                html += `<div style="border-top:2px solid #FFE0B2; padding:9px 0; margin-top:6px;"><div onclick="_tvOpen['__odd']=!_tvOpen['__odd']; tvPopRender();" style="display:flex; justify-content:space-between; cursor:pointer;"><div style="font-size:14px; font-weight:800; color:#E65100;">${open ? '▾' : '▸'} Unexpected tags</div><div style="font-size:14px; font-weight:800; color:#E65100;">${odd.length}</div></div>
+                    ${open ? odd.map(c => `<div style="display:flex; justify-content:space-between; padding:5px 0; font-size:13px;"><b>${escHtml(c)}</b><span style="color:#E65100;">${_tv.scanned[c].st === 'sold' ? 'Marked sold / issued' : 'Not in stock list'}</span></div>`).join('') : ''}</div>`;
+            }
+            if (!html) html = `<div style="text-align:center; color:#999; padding:30px 0; font-size:14px;">${total ? 'No match' : 'No stock tags in this selection'}</div>`;
+            document.getElementById('tv-list').innerHTML = html;
+        }
+        function tvCopyGroup(i) {
+            const n = _tvNames[i], exp = tvExpected();
+            const codes = Object.keys(exp).filter(c => exp[c].name === n && !_tv.scanned[c]).sort(_tvNat);
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(codes.join('\n')).then(() => showCustomAlert(codes.length + ' tags copied.', 'Copied'), () => showCustomAlert('Could not copy.'));
+            else showCustomAlert('Copy is not available on this browser.');
+        }
+        function tvSetScope(sc) { _tv.scope = sc; tvSave(); _tvExp = null; _tvOpen = {}; tvUpdate(); tvPopRender(); }
+        function tvReset() {
+            showCustomConfirm('Forget all scanned tags and start the count again?', 'Reset stock check', () => { _tv.scanned = {}; tvSave(); _tvExp = null; _tvOpen = {}; tvUpdate(); tvPopRender(); });
+        }
         // =============== END TAG WEIGHT ===============
 
         // =============== END STOCK WEIGHT CALCULATOR ===============
