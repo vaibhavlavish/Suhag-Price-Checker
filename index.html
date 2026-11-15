@@ -6668,7 +6668,7 @@
             twSoldClose();
             showSection('tag-weight');
             _twLast = null;
-            tvLoad(); tvUpdate();
+            tvLoad(); tvUpdate(); startTvSync();
             twRender();
             setTimeout(() => { const i = document.getElementById('tw-barcode'); if (i) { i.value = ''; i.focus(); } }, 120);
         }
@@ -6691,7 +6691,7 @@
             if (!d) { const k = Object.keys(productData).find(b => String(b).trim().toUpperCase() === code); if (k) d = productData[k]; }
             const sold = !!d && getSoldBarcodesForStock().has(code);
             const prev = _tv.scanned[code];
-            if (code && !prev) { _tv.scanned[code] = { t: Date.now(), st: !d ? 'unknown' : (sold ? 'sold' : 'ok') }; tvSave(); }
+            if (code && !prev) { _tv.scanned[code] = { t: Date.now(), st: !d ? 'unknown' : (sold ? 'sold' : 'ok') }; tvSave(); tvCloudSet(code, _tv.scanned[code]); }
             _twLast = { code, d: d || null, sold, dup: !!prev };
             tvUpdate();
             twRender();
@@ -6784,13 +6784,64 @@
             if (/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '')) return;
             const i = document.getElementById('tw-barcode'); if (i) i.focus();
         });
-        // ---- Stock verify: every scanned tag is remembered (on this device); the rest of the stock list = not scanned yet ----
+        // ---- Stock verify: every scanned tag is remembered (synced across devices); the rest of the stock list = not scanned yet ----
         let _tv = { scope: 'all', scanned: {} }, _tvExp = null, _tvTab = 'left';
         function tvLoad() {
             try { const v = JSON.parse(localStorage.getItem('suhagTagVerify') || 'null'); if (v && v.scanned) _tv = { scope: v.scope || 'all', scanned: v.scanned }; } catch (e) {}
             _tvExp = null;
         }
         function tvSave() { try { localStorage.setItem('suhagTagVerify', JSON.stringify(_tv)); } catch (e) {} }
+        // ---- Cloud sync of scanned tags (all devices share one scanned list) ----
+        // Stored per tag at jewelryData/tagVerify/scanned/<key> = { c: code, t: time, st: 'ok'|'sold'|'unknown' }
+        // so two devices scanning at the same moment never overwrite each other. The scope
+        // (All/Gold/Silver) stays per-device. Local copy is kept as an offline fallback.
+        const TV_CLOUD = 'jewelryData/tagVerify/scanned';
+        function _tvKey(code) { return String(code).replace(/[.#$\/\[\]%]/g, ch => '%' + ch.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')); }
+        function tvCloudSet(code, rec) {
+            if (!window.dbSafeUpdate) return;
+            window.dbSafeUpdate({ [TV_CLOUD + '/' + _tvKey(code)]: { c: code, t: rec.t, st: rec.st } })
+                .catch(e => console.error('[TagVerify] save failed', e));
+        }
+        function tvCloudClear() {
+            if (!window.dbSafeUpdate) return;
+            window.dbSafeUpdate({ [TV_CLOUD]: null }).catch(e => console.error('[TagVerify] reset failed', e));
+        }
+        let _tvSyncStarted = false, _tvSyncRetries = 0, _tvFirstSnap = true;
+        function startTvSync() {
+            if (_tvSyncStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB || !window.dbRef) {
+                if (_tvSyncRetries++ < 20) setTimeout(startTvSync, 500);
+                return;
+            }
+            _tvSyncStarted = true;
+            window.dbOnValue(window.dbRef(window.firebaseDB, TV_CLOUD), snap => {
+                const raw = snap.val() || {}, cloud = {};
+                for (const k in raw) {
+                    const v = raw[k]; if (!v) continue;
+                    let code = v.c;
+                    if (!code) { try { code = k.replace(/%([0-9A-F]{2})/g, (m, h) => String.fromCharCode(parseInt(h, 16))); } catch (e) { code = k; } }
+                    cloud[code] = { t: v.t || 0, st: v.st || 'ok' };
+                }
+                // First load only: push tags that were scanned on this device before sync existed
+                if (_tvFirstSnap) {
+                    _tvFirstSnap = false;
+                    let migrated = false; try { migrated = !!localStorage.getItem('suhagTagVerifyCloud'); } catch (e) {}
+                    if (!migrated) {
+                        for (const c in _tv.scanned) if (!cloud[c]) { cloud[c] = _tv.scanned[c]; tvCloudSet(c, _tv.scanned[c]); }
+                        try { localStorage.setItem('suhagTagVerifyCloud', '1'); } catch (e) {}
+                    }
+                }
+                // Cloud is the shared truth (so a Reset on one device clears all). In read-only
+                // mode nothing can be written, so keep local scans and just merge in the cloud's.
+                _tv.scanned = window._writeAllowed ? cloud : Object.assign({}, _tv.scanned, cloud);
+                tvSave();
+                if (document.getElementById('tv-list')) {
+                    tvUpdate();
+                    const m = document.getElementById('tv-modal');
+                    if (m && m.style.display === 'flex') tvPopRender();
+                }
+            }, err => console.error('[TagVerify] read error', err));
+        }
         // tags that should be on the shelf: in the stock list, not sold / issued / held for an installment
         function tvExpected(force) {
             if (_tvExp && !force && _tvExp._scope === _tv.scope) return _tvExp;
@@ -6861,7 +6912,7 @@
         }
         function tvSetScope(sc) { _tv.scope = sc; tvSave(); _tvExp = null; _tvOpen = {}; tvUpdate(); tvPopRender(); }
         function tvReset() {
-            showCustomConfirm('Forget all scanned tags and start the count again?', 'Reset stock check', () => { _tv.scanned = {}; tvSave(); _tvExp = null; _tvOpen = {}; tvUpdate(); tvPopRender(); });
+            showCustomConfirm('Forget all scanned tags and start the count again?', 'Reset stock check', () => { _tv.scanned = {}; tvSave(); tvCloudClear(); _tvExp = null; _tvOpen = {}; tvUpdate(); tvPopRender(); });
         }
         // =============== END TAG WEIGHT ===============
 
