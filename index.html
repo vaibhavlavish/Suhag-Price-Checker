@@ -2833,6 +2833,16 @@
         </div>
     </div>
 
+    <div id="tw-sold-modal" onclick="twSoldClose()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:2500; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:360px; width:100%; padding:26px 18px 20px; text-align:center; box-sizing:border-box; border-top:8px solid #C62828; box-shadow:0 10px 40px rgba(0,0,0,.4);">
+            <div style="font-size:54px; line-height:1;">🚫</div>
+            <div style="font-size:30px; font-weight:800; color:#C62828; margin-top:8px;">ITEM SOLD</div>
+            <div id="tw-sold-code" style="font-size:16px; font-weight:700; color:#888; margin-top:8px; letter-spacing:.04em;"></div>
+            <div id="tw-sold-name" style="font-size:18px; font-weight:700; color:#333; margin-top:2px;"></div>
+            <button onclick="twSoldClose(); event.stopPropagation();" style="margin:18px 0 0; width:100%; padding:14px; border:none; border-radius:12px; background:#C62828; color:white; font-size:16px; font-weight:800; cursor:pointer;">OK</button>
+        </div>
+    </div>
+
     <div id="tw-pack-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
         <div style="background:white; border-radius:16px; margin:16px; max-width:420px; width:100%; max-height:86vh; padding:16px; display:flex; flex-direction:column; box-sizing:border-box;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -6655,6 +6665,7 @@
         // =============== TAG WEIGHT (scan one tag: gross + packing weight) ===============
         let _twLast = null;   // { code, d } of the tag on screen, so edits in the packing popup refresh it
         function openTagWeight() {
+            twSoldClose();
             showSection('tag-weight');
             _twLast = null;
             tvLoad(); tvUpdate();
@@ -6684,7 +6695,29 @@
             _twLast = { code, d: d || null, sold, dup: !!prev };
             tvUpdate();
             twRender();
+            if (sold) twSoldShow(code, d); else twSoldClose();
             const i = document.getElementById('tw-barcode'); if (i) { i.value = ''; i.focus(); }
+        }
+        // Pop-up shown when a scanned tag is already sold. Closes on OK / tap,
+        // and automatically when the next tag is scanned. Scan box keeps focus.
+        function twSoldShow(code, d) {
+            const m = document.getElementById('tw-sold-modal'); if (!m) return;
+            document.getElementById('tw-sold-code').textContent = code;
+            document.getElementById('tw-sold-name').textContent = ((d && d.itemName) || '').trim();
+            m.style.display = 'flex';
+            try { if (navigator.vibrate) navigator.vibrate([200, 100, 200]); } catch (e) {}
+            try {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (AC) { const c = new AC(), o = c.createOscillator(), g = c.createGain();
+                    o.type = 'square'; o.frequency.value = 330; g.gain.value = 0.15;
+                    o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + 0.35);
+                    setTimeout(() => { try { c.close(); } catch (e) {} }, 600); }
+            } catch (e) {}
+        }
+        function twSoldClose() {
+            const m = document.getElementById('tw-sold-modal');
+            if (m) m.style.display = 'none';
+            const i = document.getElementById('tw-barcode'); if (i) i.focus();
         }
         function twRender() {
             const box = document.getElementById('tw-result'); if (!box) return;
