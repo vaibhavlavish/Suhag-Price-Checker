@@ -2819,6 +2819,17 @@
         </div>
     </div>
 
+    <div id="sk-modal" onclick="if(event.target===this)closeSkPop()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1550; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:12px; width:100%; max-width:480px; max-height:88vh; display:flex; flex-direction:column; box-sizing:border-box; padding:16px 16px 12px;">
+            <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+                <div id="sk-title" style="flex:1; min-width:0; font-size:19px; font-weight:800; color:#333;"></div>
+                <button onclick="closeSkPop()" style="margin:0; width:36px; height:36px; padding:0; border-radius:50%; border:1px solid #ddd; background:white; font-size:18px; cursor:pointer;">✕</button>
+            </div>
+            <div id="sk-body" style="overflow:auto; flex:1; min-height:0;"></div>
+            <button onclick="closeSkPop()" style="margin:10px 0 0; width:100%; padding:12px; border:none; border-radius:10px; background:#eee; color:#333; font-size:15px; font-weight:700; cursor:pointer;">Close</button>
+        </div>
+    </div>
+
     <div id="tv-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
         <div style="background:white; border-radius:16px; margin:16px; max-width:440px; width:100%; max-height:90vh; padding:16px; display:flex; flex-direction:column; box-sizing:border-box;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px;">
@@ -2828,7 +2839,7 @@
             </div>
             <div style="display:flex; gap:6px;" id="tv-scope"></div>
             <div id="tv-summary" style="font-size:14px; color:#555; margin:10px 0 8px;"></div>
-            <input type="text" id="tv-search" placeholder="Search item or tag..." oninput="tvPopRender()" style="width:100%; padding:9px 13px; margin-bottom:6px; border:1px solid #ddd; border-radius:20px; font-size:14px; box-sizing:border-box;">
+            <input type="text" id="tv-search" placeholder="Search item or tag..." oninput="tvPopRender()" onkeydown="tvSearchKey(event)" style="width:100%; padding:9px 13px; margin-bottom:6px; border:1px solid #ddd; border-radius:20px; font-size:14px; box-sizing:border-box;">
             <div id="tv-list" style="overflow-y:auto; -webkit-overflow-scrolling:touch; flex:1; min-height:0;"></div>
         </div>
     </div>
@@ -6592,7 +6603,7 @@
                 const tr = document.createElement('tr');
                 tr.style.cssText = `background:${isHidden ? '#fafafa' : (idx % 2 === 1 ? '#fbfbfb' : 'white')}; opacity:${isHidden ? '0.55' : '1'}; border-bottom:1px solid #f0f0f0;`;
                 tr.innerHTML = `
-                    <td style="padding:8px 8px; font-weight:700; color:#333; position:sticky; left:0; background:${isHidden ? '#fafafa' : (idx % 2 === 1 ? '#fbfbfb' : 'white')};">${escHtml(row.name)}</td>
+                    <td onclick="openSkPop(${idx})" title="Tap for size / design / weight breakdown" style="padding:8px 8px; font-weight:700; color:#333; position:sticky; left:0; cursor:pointer; background:${isHidden ? '#fafafa' : (idx % 2 === 1 ? '#fbfbfb' : 'white')};">${escHtml(row.name)}</td>
                     <td id="stock-calc-tot-${idx}" style="padding:8px 8px; text-align:right; font-weight:800; color:#4CAF50;">${total.toFixed(2)}</td>
                     <td style="padding:8px 8px; text-align:right; font-weight:600;">${row.pc}</td>
                     <td class="stockcalc-detail-col" style="padding:8px 6px; text-align:right;">
@@ -6622,6 +6633,65 @@
             });
 
             recalcStockCalcSummary();
+        }
+
+        // ---- Item breakdown (tap an item name): pieces available in stock by Size / Design / Weight ----
+        let _skName = '', _skMode = 's', _skStep = 0;
+        const _SK_MODES = [['s', 'Size'], ['d', 'Design'], ['w', 'Weight'], ['sw', 'Size × Wt'], ['dw', 'Design × Wt'], ['sd', 'Size × Design'], ['sdw', 'Size × Design × Wt']];
+        function openSkPop(idx) {
+            const row = stockCalcRows[idx]; if (!row) return;
+            _skName = row.name; _skMode = 's'; _skStep = 0;
+            document.getElementById('sk-modal').style.display = 'flex';
+            skPopRender();
+        }
+        function closeSkPop() { document.getElementById('sk-modal').style.display = 'none'; }
+        function skPopMode(m) { _skMode = m; skPopRender(); }
+        function skPopStep(v) { v = parseFloat(v); _skStep = v > 0 ? v : 0; skPopRender(); }
+        function _skNz(v) { v = String(v == null ? '' : v).trim(); if (!v) return ''; return /^\d+(\.\d+)?$/.test(v) ? String(parseFloat(v)) : v.toUpperCase(); }
+        // available tags only: sold / issued / installment-held tags are left out, same as the stock list
+        function _skStock(name) {
+            const key = name.trim().toLowerCase(), soldSet = getSoldBarcodesForStock(), held = getInstallmentHeldBarcodes(), tl = [];
+            for (const bc in productData) {
+                const up = String(bc).trim().toUpperCase();
+                if (soldSet.has(up) || held.has(up)) continue;
+                const d = productData[bc];
+                if ((d.metal || '').toLowerCase() !== stockCalcMetal) continue;
+                if (String(d.itemName || '').trim().toLowerCase() !== key) continue;
+                tl.push({ w: d.netWeight || 0, s: _skNz(d.size), d: _skNz(d.design) });
+            }
+            return tl;
+        }
+        function skPopRender() {
+            const tl = _skStock(_skName), E = escHtml;
+            const m = _SK_MODES.find(x => x[0] === _skMode) || _SK_MODES[0], dims = m[0], hasW = dims.includes('w');
+            const fmt = x => String(parseFloat(x.toFixed(2)));
+            let step = _skStep;
+            if (hasW && !step) {
+                const ws = tl.map(x => x.w).filter(w => w > 0), range = ws.length ? Math.max.apply(null, ws) - Math.min.apply(null, ws) : 0;
+                step = [0.1, 0.2, 0.25, 0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100, 200].find(n => n >= range / 6) || 200;
+            }
+            const keyOf = x => {
+                const parts = [], lo = hasW && x.w > 0 ? Math.floor(x.w / step + 1e-9) * step : 0;
+                if (dims.includes('s')) { if (!x.s) return null; parts.push('Size ' + x.s); }
+                if (dims.includes('d')) { if (!x.d) return null; parts.push(x.d); }
+                if (hasW) { if (!(x.w > 0)) return null; parts.push(fmt(lo) + '–' + fmt(lo + step) + ' g'); }
+                return { k: parts.join(' · '), lo };
+            };
+            const map = {}; let counted = 0;
+            tl.forEach(x => { const q = keyOf(x); if (q) { const e = map[q.k] = map[q.k] || { n: 0, lo: q.lo }; e.n++; counted++; } });
+            const ents = Object.keys(map).map(l => ({ label: l, n: map[l].n, lo: map[l].lo }))
+                .sort(dims === 'w' ? (a, b) => a.lo - b.lo : (a, b) => b.n - a.n || a.label.localeCompare(b.label, undefined, { numeric: true }));
+            const btn = (on, fn, txt) => `<button onclick="${fn}" style="margin:0; padding:7px 2px; font-size:11px; font-weight:700; border-radius:8px; cursor:pointer; border:1.5px solid ${on ? '#111' : '#cfe8d2'}; background:${on ? '#111' : 'white'}; color:${on ? 'white' : '#2E7D32'};">${txt}</button>`;
+            const row = e => `<div style="display:flex; justify-content:space-between; gap:8px; align-items:center; padding:10px 0; border-top:1px solid #eee;">
+                <div style="font-weight:800; font-size:14px; color:#333; min-width:0;">${E(e.label)}</div>
+                <div style="font-weight:800; font-size:15px; color:#2E7D32; white-space:nowrap;">${e.n} pc${e.n === 1 ? '' : 's'}</div></div>`;
+            document.getElementById('sk-title').textContent = _skName;
+            document.getElementById('sk-body').innerHTML = `
+                <div style="margin-bottom:8px; font-size:13px; color:#333;"><b>${tl.length}</b> pcs in stock</div>
+                <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:8px;">${_SK_MODES.map(x => btn(x[0] === m[0], "skPopMode('" + x[0] + "')", x[1])).join('')}</div>
+                ${hasW ? `<label style="display:flex; align-items:center; gap:8px; font-size:11px; color:#777; margin-bottom:6px;">Weight bucket (g)<input type="number" min="0.05" step="0.05" value="${fmt(step)}" onchange="skPopStep(this.value)" style="margin:0; width:90px; padding:5px 8px; font-size:13px; border:1px solid #ddd; border-radius:6px;"><span>${_skStep ? '' : 'auto'}</span></label>` : ''}
+                <div>${ents.length ? ents.map(row).join('') : '<div style="padding:10px 0; color:#999; font-size:13px;">None recorded for this item.</div>'}</div>
+                <div style="font-size:10.5px; color:#777; margin-top:6px;">${counted} of ${tl.length} pcs have ${m[1].replace(/ × /g, ' + ').toLowerCase()}.</div>`;
         }
 
         function handlePackagingInput(inputEl) {
@@ -6717,7 +6787,9 @@
         function twSoldClose() {
             const m = document.getElementById('tw-sold-modal');
             if (m) m.style.display = 'none';
-            const i = document.getElementById('tw-barcode'); if (i) i.focus();
+            const tm = document.getElementById('tv-modal');
+            const i = (tm && tm.style.display === 'flex') ? document.getElementById('tv-search') : document.getElementById('tw-barcode');
+            if (i) i.focus();
         }
         function twRender() {
             const box = document.getElementById('tw-result'); if (!box) return;
@@ -6867,6 +6939,18 @@
         }
         function openTvPop() { tvExpected(true); _tvOpen = {}; document.getElementById('tv-search').value = ''; document.getElementById('tv-modal').style.display = 'flex'; tvUpdate(); tvPopRender(); }
         function closeTvPop() { document.getElementById('tv-modal').style.display = 'none'; tvUpdate(); const i = document.getElementById('tw-barcode'); if (i) i.focus(); }
+        // Scanning a tag into the Stock check search box (scanner sends Enter): a SOLD tag shows the ITEM SOLD pop-up
+        function tvSearchKey(ev) {
+            if (ev.key !== 'Enter') return;
+            const el = ev.target, code = String(el.value || '').trim().toUpperCase(); if (!code) return;
+            let d = productData[code];
+            if (!d) { const k = Object.keys(productData).find(b => String(b).trim().toUpperCase() === code); if (k) d = productData[k]; }
+            if (d && getSoldBarcodesForStock().has(code)) {
+                ev.preventDefault();
+                el.value = ''; tvPopRender();
+                twSoldShow(code, d);
+            }
+        }
         function tvToggle(i) { const n = _tvNames[i]; _tvOpen[n] = !_tvOpen[n]; tvPopRender(); }
         function _tvNat(a, b) { return a.localeCompare(b, undefined, { numeric: true }); }
         // one row per item group: scanned / total; tap a row to see the tags still to be scanned
@@ -6880,7 +6964,7 @@
                 o.total++; if (_tv.scanned[c]) done++; else o.left.push(c);
             }
             document.getElementById('tv-summary').innerHTML = `✓ <b>${done}</b> / ${total} scanned &nbsp;·&nbsp; <b style="color:${total - done ? '#C62828' : '#2E7D32'}">${total - done}</b> left`;
-            const odd = Object.keys(_tv.scanned).filter(c => _tv.scanned[c].st !== 'ok').sort(_tvNat);
+            const odd = Object.keys(_tv.scanned).filter(c => _tv.scanned[c].st === 'unknown').sort(_tvNat);   // sold tags are not stock: never listed
             _tvNames = Object.keys(g).filter(n => !q || n.toLowerCase().includes(q) || g[n].left.some(t => t.toLowerCase().includes(q)))
                 .sort((a, b) => (g[b].left.length > 0) - (g[a].left.length > 0) || g[b].left.length - g[a].left.length || a.localeCompare(b));
             let html = '';
@@ -7152,7 +7236,9 @@
 
             // Collect all matching items as flat list first
             let allItems = [];
+            const soldTags = getSoldBarcodesForStock();   // sold / issued tags are not stock: never listed here
             for (const barcode in productData) {
+                if (soldTags.has(String(barcode).trim().toUpperCase())) continue;
                 const d = productData[barcode];
                 const name = (d.itemName || 'Unknown').trim();
                 if (searchVal && !name.toLowerCase().includes(searchVal) && !barcode.toLowerCase().includes(searchVal)) continue;
