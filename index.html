@@ -2823,7 +2823,7 @@
         <div style="background:white; border-radius:16px; margin:12px; width:100%; max-width:480px; max-height:88vh; display:flex; flex-direction:column; box-sizing:border-box; padding:16px 16px 12px;">
             <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
                 <div id="sk-title" style="flex:1; min-width:0; font-size:19px; font-weight:800; color:#333;"></div>
-                <button onclick="closeSkPop()" style="margin:0; width:36px; height:36px; padding:0; border-radius:50%; border:1px solid #ddd; background:white; font-size:18px; cursor:pointer;">✕</button>
+                <button onclick="closeSkPop()" aria-label="Close" style="margin:0; width:36px; height:36px; padding:0; border-radius:50%; border:1px solid #ccc; background:#f2f2f2; color:#333; font-size:18px; font-weight:700; line-height:1; cursor:pointer; flex-shrink:0;">✕</button>
             </div>
             <div id="sk-body" style="overflow:auto; flex:1; min-height:0;"></div>
             <button onclick="closeSkPop()" style="margin:10px 0 0; width:100%; padding:12px; border:none; border-radius:10px; background:#eee; color:#333; font-size:15px; font-weight:700; cursor:pointer;">Close</button>
@@ -6636,16 +6636,17 @@
         }
 
         // ---- Item breakdown (tap an item name): pieces available in stock by Size / Design / Weight ----
-        let _skName = '', _skMode = 's', _skStep = 0;
+        let _skName = '', _skMode = 's', _skStep = 0, _skSort = 'name';   // sort: name | most | least
         const _SK_MODES = [['s', 'Size'], ['d', 'Design'], ['w', 'Weight'], ['sw', 'Size × Wt'], ['dw', 'Design × Wt'], ['sd', 'Size × Design'], ['sdw', 'Size × Design × Wt']];
         function openSkPop(idx) {
             const row = stockCalcRows[idx]; if (!row) return;
-            _skName = row.name; _skMode = 's'; _skStep = 0;
+            _skName = row.name; _skMode = 's'; _skStep = 0; _skSort = 'name';
             document.getElementById('sk-modal').style.display = 'flex';
             skPopRender();
         }
         function closeSkPop() { document.getElementById('sk-modal').style.display = 'none'; }
         function skPopMode(m) { _skMode = m; skPopRender(); }
+        function skPopSort(v) { _skSort = v; skPopRender(); }
         function skPopStep(v) { v = parseFloat(v); _skStep = v > 0 ? v : 0; skPopRender(); }
         function _skNz(v) { v = String(v == null ? '' : v).trim(); if (!v) return ''; return /^\d+(\.\d+)?$/.test(v) ? String(parseFloat(v)) : v.toUpperCase(); }
         // available tags only: sold / issued / installment-held tags are left out, same as the stock list
@@ -6675,12 +6676,14 @@
                 if (dims.includes('s')) { if (!x.s) return null; parts.push('Size ' + x.s); }
                 if (dims.includes('d')) { if (!x.d) return null; parts.push(x.d); }
                 if (hasW) { if (!(x.w > 0)) return null; parts.push(fmt(lo) + '–' + fmt(lo + step) + ' g'); }
-                return { k: parts.join(' · '), lo };
+                return { k: parts.join(' · '), lo, s: x.s, d: x.d };
             };
             const map = {}; let counted = 0;
-            tl.forEach(x => { const q = keyOf(x); if (q) { const e = map[q.k] = map[q.k] || { n: 0, lo: q.lo }; e.n++; counted++; } });
-            const ents = Object.keys(map).map(l => ({ label: l, n: map[l].n, lo: map[l].lo }))
-                .sort(dims === 'w' ? (a, b) => a.lo - b.lo : (a, b) => b.n - a.n || a.label.localeCompare(b.label, undefined, { numeric: true }));
+            tl.forEach(x => { const q = keyOf(x); if (q) { const e = map[q.k] = map[q.k] || { n: 0, lo: q.lo, s: q.s, d: q.d }; e.n++; counted++; } });
+            // order: Size (number order) → Design (A–Z) → Weight range (low to high), whichever apply to the chosen tab
+            const sizeCmp = (a, b) => { const x = parseFloat(a), y = parseFloat(b); return (!isNaN(x) && !isNaN(y) && x !== y) ? x - y : String(a).localeCompare(String(b), undefined, { numeric: true }); };
+            const ents = Object.keys(map).map(l => ({ label: l, n: map[l].n, lo: map[l].lo, s: map[l].s, d: map[l].d }))
+                .sort((a, b) => (_skSort === 'most' ? b.n - a.n : _skSort === 'least' ? a.n - b.n : 0) || (dims.includes('s') ? sizeCmp(a.s, b.s) : 0) || (dims.includes('d') ? String(a.d).localeCompare(String(b.d), undefined, { numeric: true }) : 0) || (hasW ? a.lo - b.lo : 0));
             const btn = (on, fn, txt) => `<button onclick="${fn}" style="margin:0; padding:7px 2px; font-size:11px; font-weight:700; border-radius:8px; cursor:pointer; border:1.5px solid ${on ? '#111' : '#cfe8d2'}; background:${on ? '#111' : 'white'}; color:${on ? 'white' : '#2E7D32'};">${txt}</button>`;
             const row = e => `<div style="display:flex; justify-content:space-between; gap:8px; align-items:center; padding:10px 0; border-top:1px solid #eee;">
                 <div style="font-weight:800; font-size:14px; color:#333; min-width:0;">${E(e.label)}</div>
@@ -6689,6 +6692,7 @@
             document.getElementById('sk-body').innerHTML = `
                 <div style="margin-bottom:8px; font-size:13px; color:#333;"><b>${tl.length}</b> pcs in stock</div>
                 <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:8px;">${_SK_MODES.map(x => btn(x[0] === m[0], "skPopMode('" + x[0] + "')", x[1])).join('')}</div>
+                <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;"><span style="font-size:11px; color:#777; white-space:nowrap;">Sort by</span>${[['name', 'Name'], ['most', 'Most pcs'], ['least', 'Fewest pcs']].map(x => `<button onclick="skPopSort('${x[0]}')" style="margin:0; flex:1; padding:6px 2px; font-size:11px; font-weight:700; border-radius:8px; cursor:pointer; border:1.5px solid ${_skSort === x[0] ? '#2E7D32' : '#ddd'}; background:${_skSort === x[0] ? '#e8f5e9' : 'white'}; color:${_skSort === x[0] ? '#2E7D32' : '#555'};">${x[1]}</button>`).join('')}</div>
                 ${hasW ? `<label style="display:flex; align-items:center; gap:8px; font-size:11px; color:#777; margin-bottom:6px;">Weight bucket (g)<input type="number" min="0.05" step="0.05" value="${fmt(step)}" onchange="skPopStep(this.value)" style="margin:0; width:90px; padding:5px 8px; font-size:13px; border:1px solid #ddd; border-radius:6px;"><span>${_skStep ? '' : 'auto'}</span></label>` : ''}
                 <div>${ents.length ? ents.map(row).join('') : '<div style="padding:10px 0; color:#999; font-size:13px;">None recorded for this item.</div>'}</div>
                 <div style="font-size:10.5px; color:#777; margin-top:6px;">${counted} of ${tl.length} pcs have ${m[1].replace(/ × /g, ' + ').toLowerCase()}.</div>`;
