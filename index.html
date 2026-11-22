@@ -1810,6 +1810,9 @@
             <button onclick="openPriceDisplay()" data-menu-key="price-display">
                 <span class="menu-icon" style="background:#fff8e1;">💎</span> Price Display
             </button>
+            <button onclick="toggleFinalRate(!_finalRateOn()); closeOptions();" data-menu-key="final-rate">
+                <span class="menu-icon" style="background:#e8f5e9;">🧮</span> <span id="final-rate-menu-label">Final Rate: OFF</span>
+            </button>
             <button onclick="openAccountsModal()" data-menu-key="accounts">
                 <span class="menu-icon" style="background:#e0f2f1;">📒</span> Accounts
             </button>
@@ -1928,7 +1931,13 @@
                 📷
             </button>
         </div>
-        <div id="product-code" onclick="toggleProductInfo()"></div> <h1 id="price-display">0.00</h1>
+        <div id="product-code" onclick="toggleProductInfo()"></div>
+        <div id="price-row" style="display:flex; justify-content:center; width:100%;">
+            <div id="price-wrap" style="position:relative; display:inline-block;">
+                <h1 id="price-display">0.00</h1>
+                <span id="final-rate-small" style="display:none; position:absolute; left:100%; bottom:7px; margin-left:6px; font-size:13px; font-weight:600; color:#757575; white-space:nowrap; letter-spacing:0; line-height:1;"></span>
+            </div>
+        </div>
 
         <div id="main-buttons-container">
             <button onclick="clearAll()" class="clear-btn full-width-btn" id="clear-screen-btn">Clear Screen</button>
@@ -5206,6 +5215,20 @@
             _tgForget(ks);
             const m = document.getElementById('tg-gone-modal'); if (m) m.remove(); _tgGoneSig = '';
         }
+        // Firebase keys cannot contain . # $ [ ] / or control characters. ONE such barcode makes the whole multi-path save fail,
+        // which would stop rates, packaging weights etc. from syncing too. Used by the Excel import and as a guard when saving.
+        function _fbBadKey(k) { return /[.#$\[\]\/\u0000-\u001f\u007f]/.test(String(k)); }
+        function _fbSafeProducts(p) {
+            if (!p) return p;
+            let bad = null;
+            for (const k in p) { if (_fbBadKey(k)) { (bad = bad || []).push(k); } }
+            if (!bad) return p;
+            const o = {};
+            for (const k in p) { if (!_fbBadKey(k)) o[k] = p[k]; }
+            console.error('[Save] products with Firebase-illegal barcodes were left out of the cloud save:', bad);
+            try { window._showDebugBanner && window._showDebugBanner('⚠️ ' + bad.length + ' product(s) have a barcode with a forbidden character (. # $ [ ] /) and were NOT saved: ' + bad.slice(0, 5).join(', ')); } catch (e) {}
+            return o;
+        }
         // Copy of the products WITHOUT tag-generator entries — used for every save/cache
         function _tgStrip(p) {
             if (!p) return p;
@@ -5947,7 +5970,7 @@
             update['jewelryData/config/menuPrefs']        = menuPrefs || {};
             update['jewelryData/config/upiId']            = shopUpiId || null;
             update['jewelryData/config/upiIds']           = (shopUpiIds && shopUpiIds.length) ? shopUpiIds : null;
-            update['jewelryData/products']                = _tgStrip(productData) || {};
+            update['jewelryData/products']                = _fbSafeProducts(_tgStrip(productData)) || {};
             update['jewelryData/config/productDataImportedAt'] = productDataImportedAt || 0;
             window.dbSafeUpdate(update)
                 .then(() => { clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false; window._presetStockDirty = false; })
@@ -6314,6 +6337,7 @@
             { key: 'profiles',       label: 'Making Profiles',    icon: '⚙️', action: () => openProfileModal() },
             { key: 'device-access',  label: 'Device Access',      icon: '🔒', action: () => showDeviceAccessSection() },
             { key: 'price-display',  label: 'Price Display',      icon: '💎', action: () => openPriceDisplay() },
+            { key: 'final-rate',     label: 'Final Rate (after old jewellery)', icon: '🧮', action: () => toggleFinalRate(!_finalRateOn()) },
             { key: 'accounts',       label: 'Accounts',           icon: '📒', action: () => openAccountsModal() },
             { key: 'custom-items',   label: 'Custom Items',       icon: '🧩', action: () => openCustomItemsModal() },
             { key: 'upi-setting',    label: 'Set UPI IDs',        icon: '📱', action: () => openUpiIdSetting() },
@@ -9091,11 +9115,54 @@
             pdSyncFromMain();
             document.getElementById('price-display').textContent = `${final.toFixed(2)}`;
             document.getElementById('price-display').classList.add('show');
+            updateFinalRate();
             document.getElementById('detail-btn').style.display = 'block';
             document.getElementById('add-to-cart-btn').style.display = 'block';
             document.getElementById('quick-checkout-btn').style.display = 'block';
             document.getElementById('clear-screen-btn').style.display = 'block';
         }
+
+        /* ===== FINAL RATE (switch in the More menu) =====
+           When ON, the amount AFTER deducting the old jewellery added with the "+" button is shown in small letters
+           beside the main rate. It only reads values — nothing is saved or changed. The main rate is untouched. */
+        const FINAL_RATE_KEY = 'suhagFinalRateOn';
+        function _finalRateOn() { try { return localStorage.getItem(FINAL_RATE_KEY) === '1'; } catch (e) { return false; } }
+        function toggleFinalRate(on) {
+            try { localStorage.setItem(FINAL_RATE_KEY, on ? '1' : '0'); } catch (e) {}
+            updateFinalRate();
+        }
+        function updateFinalRate() {
+            const el = document.getElementById('final-rate-small'), pd = document.getElementById('price-display');
+            if (!el || !pd) return;
+            const ml = document.getElementById('final-rate-menu-label'), lt = 'Final Rate: ' + (_finalRateOn() ? 'ON' : 'OFF');
+            if (ml && ml.textContent !== lt) ml.textContent = lt;
+            let txt = '';
+            if (_finalRateOn() && pd.classList.contains('show')) {
+                const price = parseFloat(pd.textContent);
+                if (!isNaN(price)) {
+                    let og = 0; try { oldGoldItems.forEach(i => og += (+i.value || 0)); } catch (e) {}
+                    txt = 'Final ₹' + (price - og).toFixed(2);
+                }
+            }
+            if (el.textContent !== txt) el.textContent = txt;
+            const show = txt ? 'block' : 'none'; if (el.style.display !== show) el.style.display = show;
+            if (txt) {
+                // The small text is out of the layout flow, so the main rate never moves. Right after the main rate if there is room,
+                // otherwise directly under it (centred).
+                const wrap = document.getElementById('price-wrap');
+                const fits = wrap && (wrap.getBoundingClientRect().right + 6 + el.offsetWidth <= document.documentElement.clientWidth - 6);
+                const mode = fits ? 'side' : 'below';
+                if (el.dataset.pos !== mode) {
+                    el.dataset.pos = mode;
+                    if (fits) { el.style.left = '100%'; el.style.right = 'auto'; el.style.top = 'auto'; el.style.bottom = '7px'; el.style.marginLeft = '6px'; el.style.transform = 'none'; }
+                    else      { el.style.left = '50%'; el.style.right = 'auto'; el.style.top = '100%'; el.style.bottom = 'auto'; el.style.marginLeft = '0'; el.style.transform = 'translateX(-50%)'; }
+                }
+            }
+        }
+        // The price and the old jewellery list are changed from many places (scan, alter, custom item, "+", checkout, restore), so a light check
+        // twice a second keeps this display right everywhere. It only touches the screen when the text actually changes.
+        setInterval(updateFinalRate, 500);
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', updateFinalRate); else updateFinalRate();
 
         // NEW: Function to toggle product info display
         function toggleProductInfo() {
@@ -12935,6 +13002,7 @@
                 });
             }
             document.getElementById('old-gold-total-display').textContent = '₹' + total.toFixed(2);
+            updateFinalRate();
         }
         // --------------------------
 
@@ -13095,7 +13163,7 @@
                 }
                 let count = 0;
                 let newProductData = {};
-                let skippedTotals = 0, mrpCleared = 0, metalAuto = 0;
+                let skippedTotals = 0, mrpCleared = 0, metalAuto = 0; const badKeyRows = [];
                 const unknownStamps = new Set();
                 const _cellTxt = (row, c) => (c !== -1 && row[c] != null) ? row[c].toString().trim() : '';
                 // Fallback only when a stamp is not in the rates tables (the rates tables are checked first)
@@ -13104,6 +13172,7 @@
                     const row = json[i] || [];
                     const tagNo = (row[cols.tagNo] || '').toString().trim().toUpperCase();
                     if (!tagNo) continue;
+                    if (_fbBadKey(tagNo)) { badKeyRows.push(tagNo); continue; } // cannot be stored in Firebase — skipped and reported below
                     // Summary line at the bottom of the export: a bare number (the piece count) in the tag column
                     // with no item name, or a line that starts with "Total" — not a real item.
                     const _nameTxt = _cellTxt(row, cols.itemName);
@@ -13153,6 +13222,7 @@
                 const currentCount = Object.keys(productData).filter(k => !_tgIsTg(productData[k])).length;
                 const _notes = [];
                 if (headerRow > 0) _notes.push(`Headings found on line ${headerRow + 1} (title/blank lines above were ignored)`);
+                if (badKeyRows.length) _notes.push(`<span style="color:#C62828;"><b>${badKeyRows.length} row${badKeyRows.length > 1 ? 's' : ''} skipped</b> — barcode contains a character that cannot be saved (. # $ [ ] /): ${badKeyRows.slice(0, 10).map(x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;')).join(', ')}${badKeyRows.length > 10 ? ' …' : ''}. Fix these in the sheet and import again.</span>`);
                 if (skippedTotals) _notes.push(`${skippedTotals} total/summary line${skippedTotals > 1 ? 's' : ''} skipped`);
                 if (mrpCleared) _notes.push(`MRP ignored on ${mrpCleared} stamped item${mrpCleared > 1 ? 's' : ''}`);
                 if (metalAuto) _notes.push(`Metal set automatically on ${metalAuto} item${metalAuto > 1 ? 's' : ''}`);
