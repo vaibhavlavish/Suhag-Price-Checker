@@ -5139,13 +5139,21 @@
             _tgPersistTimer = setTimeout(() => { try { _idbSet(FULL_CACHE_STORE, 'tgKnownTags', _tgKnown).catch(e => console.warn('[TG] safety copy not saved', e)); } catch (e) {} }, 2000);
         }
         function _tgForget(keys) { keys.forEach(k => { delete _tgKnown[k]; delete _tgKnownStr[k]; }); _tgPersist(); _tgMerge(); }
-        // Rebuild the tag-generator entries inside productData (a real POS record with the same barcode always wins)
+        // A normal POS record with the same barcode stays the POS's own record (otherCharge, voucher and date are kept),
+        // but the details the Tag Generator manages follow it - so an edit made there shows up here too.
+        function _tgSync(ex, t, no) {
+            const p = _tgToProduct(t, no);
+            if (!p.itemName) return;
+            ['itemName', 'size', 'grossWeight', 'netWeight', 'makingPercent', 'makingWastage', 'makingPerGram', 'makingPerPc', 'mrp', 'metal', 'stamp', 'HUID', 'design']
+                .forEach(f => { ex[f] = p[f]; });
+        }
+        // Rebuild the tag-generator entries inside productData (a real POS record keeps its own extras but takes the Tag Generator's details)
         function _tgMerge() {
             try {
                 for (const k in productData) { if (_tgIsTg(productData[k])) delete productData[k]; }
                 const T = window._tgTags || {};
-                const add = (no, t) => { const key = String(t.tagNo || no).trim().toUpperCase(); if (!key || productData[key]) return; productData[key] = _tgToProduct(t, no); };
-                for (const no in T) { const t = T[no]; if (t && t.status !== 'archived') add(no, t); }
+                const add = (no, t, live) => { const key = String(t.tagNo || no).trim().toUpperCase(); if (!key) return; const ex = productData[key]; if (ex) { if (live && !_tgIsTg(ex)) _tgSync(ex, t, no); return; } productData[key] = _tgToProduct(t, no); };
+                for (const no in T) { const t = T[no]; if (t && t.status !== 'archived') add(no, t, true); }
                 for (const no in _tgKnown) { const t = T[no]; if (t && t.status !== 'archived') continue; add(no, _tgKnown[no]); } // gone from the tag generator: still served from the safety copy
             } catch (e) { console.error('[TG] merge failed', e); }
         }
@@ -5256,7 +5264,7 @@
                 const dt = T[g[0]].ts ? new Date(+T[g[0]].ts).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
                 return `<div style="background:#f3f3f3; padding:6px 8px; margin-top:8px; border-radius:8px; font-size:12.5px; font-weight:800;">Voucher ${_tgEsc(v)} · ${g.length} tag${g.length > 1 ? 's' : ''} · ${gw.toFixed(3)} g <span style="font-weight:600; color:#777;">· ${_tgEsc(dt)}</span></div>` +
                     g.map(k => { const t = T[k], no = String(t.tagNo || k).toUpperCase(), dup = productData[no] && !_tgIsTg(productData[no]);
-                        return `<div style="display:flex; gap:10px; align-items:center; padding:6px 4px; border-bottom:1px solid #eee; font-size:13px;"><span style="font-family:monospace; font-weight:700; min-width:70px;">${_tgEsc(no)}</span><span style="flex:1; color:#555;">${_tgEsc(t.name || t.item || '')} ${_tgEsc(t.size || '')}</span><span style="color:#888; font-size:11px; white-space:nowrap;">${_tgNum(t.gw).toFixed(3)} g${t.stamp ? ' · ' + _tgEsc(t.stamp) : ''}</span><button data-k="${_tgEsc(k)}" onclick="tgRemoveOne(this.dataset.k)" title="Remove this tag" style="background:#fdecea; color:#C62828; border:none; border-radius:6px; padding:4px 8px; font-size:13px; cursor:pointer; width:auto; margin:0;">🗑</button>${dup ? '<span title="A normal POS stock record with this number already exists, so the tag generator version is not used" style="color:#E65100; font-size:11px; font-weight:700;">⚠ in POS</span>' : ''}</div>`; }).join('');
+                        return `<div style="display:flex; gap:10px; align-items:center; padding:6px 4px; border-bottom:1px solid #eee; font-size:13px;"><span style="font-family:monospace; font-weight:700; min-width:70px;">${_tgEsc(no)}</span><span style="flex:1; color:#555;">${_tgEsc(t.name || t.item || '')} ${_tgEsc(t.size || '')}</span><span style="color:#888; font-size:11px; white-space:nowrap;">${_tgNum(t.gw).toFixed(3)} g${t.stamp ? ' · ' + _tgEsc(t.stamp) : ''}</span><button data-k="${_tgEsc(k)}" onclick="tgRemoveOne(this.dataset.k)" title="Remove this tag" style="background:#fdecea; color:#C62828; border:none; border-radius:6px; padding:4px 8px; font-size:13px; cursor:pointer; width:auto; margin:0;">🗑</button>${dup ? '<span title="This number is also normal POS stock; its details follow the Tag Generator" style="color:#E65100; font-size:11px; font-weight:700;">⚠ in POS</span>' : ''}</div>`; }).join('');
             }).join('');
             if (old) old.remove();
             const w = document.createElement('div');
