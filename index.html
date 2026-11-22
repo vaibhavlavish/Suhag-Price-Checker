@@ -5216,6 +5216,36 @@
             for (const k in p) { if (!_tgIsTg(p[k])) o[k] = p[k]; }
             return o;
         }
+        /* LIVE REFRESH: when a tag is edited in the tag generator (making, weight, stamp, ...), the listener below already updates productData.
+           This makes whatever is on screen follow it at once, with no reload: the item currently shown on the Main screen is re-priced,
+           and the Stock View / Stock Calculator are redrawn if open. Cart lines are NOT touched (they keep the terms they were added with). */
+        let _tgSigs = {};
+        function _tgChangedKeys() {
+            const T = window._tgTags || {}, next = {}, changed = new Set();
+            for (const no in T) {
+                const t = T[no]; if (!t) continue;
+                const key = String(t.tagNo || no).trim().toUpperCase();
+                const sg = t.status === 'archived' ? 'archived' : JSON.stringify(t);
+                next[key] = sg;
+                if (_tgSigs[key] !== sg) changed.add(key);
+            }
+            for (const key in _tgSigs) { if (!(key in next)) changed.add(key); }
+            _tgSigs = next;
+            return changed;
+        }
+        function _tgLiveRefresh(changed) {
+            if (!changed || !changed.size) return;
+            try {
+                const bc = String(currentBarcode || '').trim().toUpperCase();
+                if (bc && !currentCustomItem && changed.has(bc)) runPriceCalculation();
+            } catch (e) { console.warn('[TG] live price refresh failed', e); }
+            try {
+                const sv = document.getElementById('stock-view');
+                if (sv && sv.style.display !== 'none' && typeof renderStockView === 'function') renderStockView();
+                const sc = document.getElementById('stock-calc');
+                if (stockCalcMetal && sc && sc.style.display !== 'none' && typeof renderStockCalc === 'function') renderStockCalc();
+            } catch (e) { console.warn('[TG] live stock refresh failed', e); }
+        }
         async function startTgSync() {
             if (_tgStarted) return;
             if (!window.dbOnValue || !window.firebaseDB || !window.dbRef) { setTimeout(startTgSync, 1000); return; }
@@ -5227,6 +5257,7 @@
                 try { if (localStorage.getItem(TG_SEEN_KEY) === null) { const T0 = window._tgTags; localStorage.setItem(TG_SEEN_KEY, String(_tgLiveKeys().reduce((m, k) => Math.max(m, +T0[k].ts || 0), 0))); } } catch (e) {} // first run on this device: start from today's tags, no pop-up for old ones
                 _tgUpdateKnown();
                 _tgMerge();
+                _tgLiveRefresh(_tgChangedKeys());
                 _tgRefreshLabel();
                 _tgNewPopup();
                 _tgGoneSoon();
@@ -5334,7 +5365,7 @@
                 _tgSay('Fetching…');
                 const s = await window.dbGet(window.dbRef(window.firebaseDB, 'tagsoft/tags'));
                 window._tgTags = s.val() || {}; window._tgLoaded = true; window._tgError = '';
-                _tgUpdateKnown(); _tgMerge(); _tgRefreshLabel(); _tgGoneSoon();
+                _tgUpdateKnown(); _tgMerge(); _tgLiveRefresh(_tgChangedKeys()); _tgRefreshLabel(); _tgGoneSoon();
                 const live = _tgLiveKeys().length;
                 let inPos = 0; for (const k in productData) { if (_tgIsTg(productData[k])) inPos++; }
                 _tgSay(live + ' live tags fetched. ' + inPos + ' scannable now' + (live > inPos ? ' (' + (live - inPos) + ' already exist as normal POS stock and were left as they are)' : '') + '.', '#2E7D32');
