@@ -5286,14 +5286,31 @@
                 } catch (e) { showCustomAlert('Remove failed: ' + _tgEsc(e && e.message ? e.message : e)); }
             });
         }
+        /* Remove by tag number — works for live tag-generator tags, tags the POS still serves after they vanished from the tag generator,
+           and tags that were "kept" as normal POS stock (those are plain POS records now, so they are removed from POS stock itself). */
         function tgRemoveByNo() {
             const el = document.getElementById('tg-rm-no'), no = ((el && el.value) || '').trim().toUpperCase();
             if (!no) { showCustomAlert('Type the tag number first.'); return; }
             const T = window._tgTags || {};
-            const key = Object.keys(T).find(k => T[k] && T[k].status !== 'archived' && String(T[k].tagNo || k).toUpperCase() === no);
-            if (!key) { showCustomAlert('Tag ' + _tgEsc(no) + ' was not found among the live tags. Press Fetch Tags and try again.'); return; }
-            tgRemoveOne(key);
-            if (el) el.value = '';
+            const same = (t, k) => String(t.tagNo || k).trim().toUpperCase() === no;
+            const key = Object.keys(T).find(k => T[k] && T[k].status !== 'archived' && same(T[k], k));
+            if (key) { tgRemoveOne(key); if (el) el.value = ''; return; }
+            const pk = Object.keys(productData).find(k => String(k).trim().toUpperCase() === no);
+            if (!pk) { showCustomAlert('Tag ' + _tgEsc(no) + ' was not found in the tag generator or in the POS stock.'); return; }
+            const p = productData[pk];
+            if (getSoldBarcodesForStock().has(no)) { showCustomAlert('Tag ' + _tgEsc(no) + ' is sold or issued in the POS, so it cannot be removed here.'); return; }
+            if (!checkPin()) return;
+            const gone = _tgIsTg(p); // still served from the safety copy (deleted in the tag generator)
+            showCustomConfirm('Remove tag <b>' + _tgEsc(pk) + '</b> ' + _tgEsc(p.itemName || '') + ' (' + _tgNum(p.grossWeight).toFixed(3) + ' g) from the <b>POS stock</b>?<br><span style="font-size:12px;">' + (gone ? 'It is no longer in the tag generator.' : 'It is not a live tag-generator tag any more; it is a normal POS stock record.') + ' Sales history is not changed.</span>', 'Remove from POS', () => {
+                if (gone) { _tgForget(Object.keys(_tgKnown).filter(k => String(_tgKnown[k].tagNo || k).trim().toUpperCase() === no)); }
+                else {
+                    if (!window._writeAllowed) { showCustomAlert('Read-only copy — open the official page to remove tags.'); return; }
+                    delete productData[pk];
+                    try { saveAllDataToCloud(); } catch (e) { console.error('[TG] remove save failed', e); }
+                }
+                _tgSay('Tag ' + no + ' removed from the POS stock.', '#2E7D32');
+                if (el) el.value = '';
+            });
         }
         function tgMarkSeen() {
             const T = window._tgTags || {};
