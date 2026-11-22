@@ -1798,6 +1798,9 @@
             <button onclick="showStockSection()" data-menu-key="stock-view">
                 <span class="menu-icon" style="background:#e8f5e9;">📦</span> Stock View
             </button>
+            <button onclick="showTgFetch()" data-menu-key="tg-fetch">
+                <span class="menu-icon" style="background:#fce4ec;">🏷️</span> Tag Fetch / Delete
+            </button>
             <button onclick="showStockCalcSection()" data-menu-key="stock-calc">
                 <span class="menu-icon" style="background:#fff3e0;">⚖️</span> Stock Weight Calc
             </button>
@@ -2737,6 +2740,14 @@
             </div>
         </div>
         <div id="stock-body"></div>
+    </div>
+
+    <div id="tg-fetch" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:480px; margin:0 auto; min-height:0;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
+            <h2 style="margin:0; font-size:20px;">🏷️ Tag Fetch / Delete</h2>
+            <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:20px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap;">← Back</button>
+        </div>
+        <div id="tg-fetch-body"></div>
     </div>
 
     <div id="stock-calc" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:480px; margin:0 auto; min-height:0;">
@@ -4976,6 +4987,7 @@
             try {
                 const cachePayload = {
                     ...data,
+                    ...(data && data.products ? { products: _tgStrip(data.products) } : {}),
                     _cachedAt: new Date().toISOString()
                 };
                 await _idbSet(FULL_CACHE_STORE, FULL_CACHE_KEY, cachePayload);
@@ -5083,6 +5095,176 @@
             }
         });
 
+        /* ===== TAG GENERATOR LINK — start =====
+           Live-reads tagsoft/tags (written by the tag generator) and shows every
+           non-archived tag as a product record IN MEMORY ONLY (_src:'tg').
+           These entries are stripped before anything is saved to jewelryData/products
+           or the local cache, so they are never copied into POS data. ============== */
+        window._tgTags = window._tgTags || {};
+        let _tgStarted = false;
+        function _tgNum(v) { const x = parseFloat(v); return isNaN(x) ? 0 : x; }
+        function _tgIsTg(p) { return !!(p && p._src === 'tg'); }
+        function _tgToProduct(t, no) {
+            const stamp = String(t.stamp || '').trim().toUpperCase();
+            const cat = String(t.cat || '').toUpperCase();
+            let metal = /GOLD/.test(cat) ? 'gold' : (/SILVER/.test(cat) ? 'silver' : '');
+            if (stamp) { // same rule as the Excel import: the rates tables decide when the stamp is unambiguous
+                const inG = !!(rates && rates.gold && rates.gold[stamp] !== undefined);
+                const inS = !!(rates && rates.silver && rates.silver[stamp] !== undefined);
+                if (inG && !inS) metal = 'gold'; else if (inS && !inG) metal = 'silver';
+            }
+            if (!metal) metal = 'silver';
+            const gw = _tgNum(t.gw);
+            const nw = (t.nw !== undefined && t.nw !== null && t.nw !== '') ? _tgNum(t.nw) : gw;
+            let tagDate = '';
+            if (t.ts) { try { tagDate = new Date(+t.ts).toLocaleDateString('en-CA'); } catch (e) {} }
+            return {
+                itemName: String(t.name || t.item || '').trim(),
+                size: String(t.size || '').trim(),
+                grossWeight: gw, netWeight: nw,
+                makingPercent: _tgNum(t.sp), makingWastage: _tgNum(t.sw),
+                makingPerGram: _tgNum(t.swt), makingPerPc: _tgNum(t.srs),
+                mrp: stamp ? 0 : _tgNum(t.mrp), // stamped items ignore MRP, same as the Excel import
+                otherCharge: 0, metal, stamp,
+                HUID: String(t.huid || '').trim().toUpperCase(),
+                design: String(t.design || '').trim(),
+                vouchNo: String(t.vou === undefined || t.vou === null ? '' : t.vou).trim(),
+                voucherType: String(t.vtype || 'TG').trim(),
+                tagDate, _src: 'tg', _tgNo: no
+            };
+        }
+        // Rebuild the tag-generator entries inside productData (a real POS record with the same barcode always wins)
+        function _tgMerge() {
+            try {
+                for (const k in productData) { if (_tgIsTg(productData[k])) delete productData[k]; }
+                const T = window._tgTags || {};
+                for (const no in T) {
+                    const t = T[no];
+                    if (!t || t.status === 'archived') continue;
+                    const key = String(t.tagNo || no).trim().toUpperCase();
+                    if (!key || productData[key]) continue;
+                    productData[key] = _tgToProduct(t, no);
+                }
+            } catch (e) { console.error('[TG] merge failed', e); }
+        }
+        // Copy of the products WITHOUT tag-generator entries — used for every save/cache
+        function _tgStrip(p) {
+            if (!p) return p;
+            let has = false;
+            for (const k in p) { if (_tgIsTg(p[k])) { has = true; break; } }
+            if (!has) return p;
+            const o = {};
+            for (const k in p) { if (!_tgIsTg(p[k])) o[k] = p[k]; }
+            return o;
+        }
+        function startTgSync() {
+            if (_tgStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB || !window.dbRef) { setTimeout(startTgSync, 1000); return; }
+            _tgStarted = true;
+            window.dbOnValue(window.dbRef(window.firebaseDB, 'tagsoft/tags'), (snap) => {
+                window._tgTags = snap.val() || {};
+                window._tgLoaded = true;
+                _tgMerge();
+                const s = document.getElementById('tg-fetch');
+                if (s && s.style.display !== 'none') tgfRender();
+            }, (err) => { console.warn('[TG] tag listener failed', err); window._tgError = String((err && err.message) || err); });
+        }
+
+        /* ---- Tag Fetch / Delete screen ---- */
+        const TGF = { vf: '', vt: '', tf: '', tt: '', item: '', df: '', dt: '', stock: 'all', res: null, sel: {} };
+        function showTgFetch() { closeOptions(); showSection('tg-fetch'); tgfRender(); }
+        function _tgfNo(s) { const m = /^(.*?)(\d+)$/.exec(String(s || '').trim().toUpperCase()); return m ? { p: m[1], n: +m[2] } : null; }
+        function _tgfEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+        function _tgfLive() { const T = window._tgTags || {}; return Object.keys(T).filter(k => T[k] && T[k].status !== 'archived'); }
+        function tgfRead() {
+            ['vf', 'vt', 'tf', 'tt', 'item', 'df', 'dt', 'stock'].forEach(x => { const e = document.getElementById('tgf_' + x); if (e) TGF[x] = e.value.trim(); });
+        }
+        function tgfGo() {
+            tgfRead();
+            const a = _tgfNo(TGF.tf || TGF.tt), b = _tgfNo(TGF.tt || TGF.tf);
+            if ((TGF.tf && !_tgfNo(TGF.tf)) || (TGF.tt && !_tgfNo(TGF.tt))) { showCustomAlert('Tag numbers must end with digits, for example GRG25'); return; }
+            if (a && b && a.p !== b.p) { showCustomAlert('From and To tag numbers must have the same prefix'); return; }
+            const T = window._tgTags || {}, sold = getSoldBarcodesForStock();
+            const d1 = TGF.df ? new Date(TGF.df + 'T00:00:00').getTime() : 0;
+            const d2 = TGF.dt ? new Date(TGF.dt + 'T23:59:59.999').getTime() : 0;
+            const res = _tgfLive().filter(k => {
+                const t = T[k], no = String(t.tagNo || k);
+                const v = +t.vou;
+                if (TGF.vf && !(v >= +TGF.vf)) return false;
+                if (TGF.vt && !(v <= +TGF.vt)) return false;
+                if (a) { const x = _tgfNo(no); if (!x || x.p !== a.p || x.n < a.n || x.n > b.n) return false; }
+                if (TGF.item && String(t.item || t.name || '') !== TGF.item) return false;
+                if (d1 || d2) { const ts = +t.ts || 0; if (!ts || (d1 && ts < d1) || (d2 && ts > d2)) return false; }
+                const isSold = sold.has(no.toUpperCase());
+                if (TGF.stock === 'stock' && isSold) return false;
+                if (TGF.stock === 'sold' && !isSold) return false;
+                return true;
+            });
+            res.sort((x, y) => { const p = _tgfNo(x), q = _tgfNo(y); if (p && q && p.p === q.p) return p.n - q.n; return x < y ? -1 : x > y ? 1 : 0; });
+            TGF.res = res; TGF.sel = {}; tgfRender();
+        }
+        function tgfClear() { Object.assign(TGF, { vf: '', vt: '', tf: '', tt: '', item: '', df: '', dt: '', stock: 'all', res: null, sel: {} }); tgfRender(); }
+        function tgfTog(k, c) { TGF.sel[k] = c; tgfRender(); }
+        function tgfAll(c) { TGF.sel = {}; if (c) (TGF.res || []).forEach(k => TGF.sel[k] = true); tgfRender(); }
+        function tgfReload() {
+            if (!window.dbGet || !window.firebaseDB) return;
+            window.dbGet(window.dbRef(window.firebaseDB, 'tagsoft/tags')).then(s => { window._tgTags = s.val() || {}; _tgMerge(); tgfGo(); })
+                .catch(e => showCustomAlert('Could not reload: ' + (e && e.message ? e.message : e)));
+        }
+        function tgfRender() {
+            const el = document.getElementById('tg-fetch-body'); if (!el) return;
+            const T = window._tgTags || {}, live = _tgfLive();
+            const items = Array.from(new Set(live.map(k => String(T[k].item || T[k].name || '')).filter(Boolean))).sort();
+            const inp = (id, l, ph, type) => `<div style="flex:1; min-width:120px;"><label style="font-size:12px; color:#666;">${l}</label><input id="tgf_${id}" ${type ? `type="${type}"` : ''} value="${_tgfEsc(TGF[id])}" ${ph ? `placeholder="${ph}"` : ''} onkeydown="if(event.key==='Enter')tgfGo()" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:8px; box-sizing:border-box;"></div>`;
+            let h = `<div style="font-size:12px; color:#555; margin-bottom:8px;">${window._tgLoaded ? `Tag generator: <b>${live.length}</b> live tags (scannable in the POS)` : (window._tgError ? `<span style="color:#C62828;">Could not read tags: ${_tgfEsc(window._tgError)}</span>` : 'Loading tags…')} <button onclick="tgfReload()" style="margin-left:6px; border:1px solid #bbb; background:#fff; border-radius:12px; padding:3px 10px; font-size:12px; cursor:pointer;">Reload</button></div>
+            <div style="background:#fff; border-radius:12px; padding:12px; display:flex; flex-wrap:wrap; gap:8px;">
+              ${inp('vf', 'Voucher from')}${inp('vt', 'Voucher to')}${inp('tf', 'Tag no from', 'e.g. GRG1')}${inp('tt', 'Tag no to', 'e.g. GRG50')}
+              <div style="flex:1; min-width:120px;"><label style="font-size:12px; color:#666;">Item</label><select id="tgf_item" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:8px;"><option value="">All</option>${items.map(i => `<option value="${_tgfEsc(i)}" ${i === TGF.item ? 'selected' : ''}>${_tgfEsc(i)}</option>`).join('')}</select></div>
+              <div style="flex:1; min-width:120px;"><label style="font-size:12px; color:#666;">Status</label><select id="tgf_stock" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:8px;">${[['all', 'All'], ['stock', 'In stock'], ['sold', 'Sold / issued']].map(o => `<option value="${o[0]}" ${o[0] === TGF.stock ? 'selected' : ''}>${o[1]}</option>`).join('')}</select></div>
+              ${inp('df', 'Date from', '', 'date')}${inp('dt', 'Date to', '', 'date')}
+              <div style="width:100%; display:flex; gap:8px;"><button onclick="tgfGo()" style="flex:1; padding:10px; border:none; border-radius:10px; background:#2e7d32; color:#fff; font-weight:700; cursor:pointer;">Fetch</button><button onclick="tgfClear()" style="padding:10px 16px; border:none; border-radius:10px; background:#9e9e9e; color:#fff; font-weight:700; cursor:pointer;">Clear</button></div>
+            </div>`;
+            if (TGF.res) {
+                const rs = TGF.res.filter(k => T[k] && T[k].status !== 'archived'), sold = getSoldBarcodesForStock();
+                const nSel = rs.filter(k => TGF.sel[k]).length, gw = rs.reduce((s, k) => s + _tgNum(T[k].gw), 0);
+                h += `<div style="margin:10px 0 6px; font-size:13px;"><b>${rs.length}</b> tags &nbsp;|&nbsp; Gross <b>${gw.toFixed(3)}</b> g &nbsp;|&nbsp; Selected <b>${nSel}</b></div>
+                <div style="display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap;"><button onclick="tgfAll(true)" style="padding:7px 12px; border:1px solid #bbb; border-radius:8px; background:#fff; cursor:pointer;">Select all</button><button onclick="tgfAll(false)" style="padding:7px 12px; border:1px solid #bbb; border-radius:8px; background:#fff; cursor:pointer;">Select none</button><button onclick="tgfDelete()" style="padding:7px 12px; border:none; border-radius:8px; background:#c62828; color:#fff; font-weight:700; cursor:pointer;">Delete selected</button></div>`;
+                h += rs.slice(0, 300).map(k => {
+                    const t = T[k], no = String(t.tagNo || k), isSold = sold.has(no.toUpperCase());
+                    const dt = t.ts ? new Date(+t.ts).toLocaleDateString('en-GB') : '';
+                    return `<label style="display:flex; align-items:center; gap:8px; background:#fff; border-radius:10px; padding:8px 10px; margin-bottom:5px; font-size:13px; cursor:pointer;"><input type="checkbox" ${TGF.sel[k] ? 'checked' : ''} onchange="tgfTog('${_tgfEsc(k).replace(/'/g, '&#39;')}', this.checked)"><span style="flex:1;"><b>${_tgfEsc(no)}</b> ${_tgfEsc(t.name || t.item || '')} ${_tgfEsc(t.size || '')}<br><span style="color:#777; font-size:12px;">${_tgNum(t.gw).toFixed(3)} g · ${_tgfEsc(t.stamp || '')} · Vou ${_tgfEsc(t.vou == null ? '' : t.vou)} · ${dt}</span></span>${isSold ? '<span style="background:#fde8e8; color:#c62828; border-radius:8px; padding:2px 7px; font-size:11px; font-weight:700;">SOLD</span>' : ''}</label>`;
+                }).join('') + (rs.length > 300 ? `<div style="font-size:12px; color:#777; padding:6px;">Showing the first 300 of ${rs.length}. "Select all" selects all ${rs.length}.</div>` : '');
+                if (!rs.length) h += '<div style="color:#777; padding:12px;">No tags match.</div>';
+            }
+            el.innerHTML = h;
+        }
+        // Delete = archive in the tag generator (number stays blocked). Sold/issued tags are never deleted from here.
+        function tgfDelete() {
+            const sold = getSoldBarcodesForStock(), T = window._tgTags || {};
+            const all = Object.keys(TGF.sel).filter(k => TGF.sel[k] && T[k] && T[k].status !== 'archived');
+            if (!all.length) { showCustomAlert('Select tags first'); return; }
+            const ks = all.filter(k => !sold.has(String(T[k].tagNo || k).toUpperCase()));
+            const skipped = all.length - ks.length;
+            if (!ks.length) { showCustomAlert('All selected tags are sold or issued. They cannot be deleted here.'); return; }
+            if (!window._writeAllowed) { showCustomAlert('Read-only copy — open the official page to delete.'); return; }
+            if (!navigator.onLine) { showCustomAlert('No internet connection. Nothing was deleted.'); return; }
+            showCustomConfirm(`Delete ${ks.length} tag${ks.length > 1 ? 's' : ''} from the tag generator?<br><span style="font-size:12px;">Their numbers stay blocked and are never reused.</span>` + (skipped ? `<br><span style="font-size:12px; color:#C62828;">${skipped} sold/issued tag${skipped > 1 ? 's' : ''} will be skipped.</span>` : ''), 'Delete tags', async () => {
+                if (ks.length >= 20 && (prompt('Type DELETE to delete ' + ks.length + ' tags') || '').trim() !== 'DELETE') { showCustomAlert('Cancelled. Nothing was deleted.'); return; }
+                try {
+                    for (let i = 0; i < ks.length; i += 400) {
+                        const b = {};
+                        ks.slice(i, i + 400).forEach(k => { b['tagsoft/tags/' + k + '/status'] = 'archived'; });
+                        await window.dbSafeUpdate(b);
+                    }
+                    TGF.sel = {};
+                    TGF.res = (TGF.res || []).filter(k => ks.indexOf(k) < 0);
+                    tgfRender();
+                    showCustomAlert(ks.length + ' tag' + (ks.length > 1 ? 's' : '') + ' deleted.');
+                } catch (e) { showCustomAlert('Delete failed: ' + (e && e.message ? e.message : e)); }
+            });
+        }
+        /* ===== TAG GENERATOR LINK — end ===== */
+
         // Accepts either a flat snapshot (old single-key format) or the merged
         // object produced by readSplitKeys() below.
         function applyDataSnapshot(cloudData) {
@@ -5093,6 +5275,7 @@
             printPhoneNumber = cloudData.printPhoneNumber ?? null;
             _ensureCustomFullPageBgCached();
             productData = cloudData.products || {};
+            _tgMerge(); // tag-generator tags (memory only)
             productDataImportedAt = cloudData.productDataImportedAt || 0;
             // Per-item invoice settings (HSN override + custom print name), keyed
             // by URI-encoded item name (Firebase keys can't contain . # $ [ ] /).
@@ -5597,7 +5780,7 @@
             update['jewelryData/config/menuPrefs']        = menuPrefs || {};
             update['jewelryData/config/upiId']            = shopUpiId || null;
             update['jewelryData/config/upiIds']           = (shopUpiIds && shopUpiIds.length) ? shopUpiIds : null;
-            update['jewelryData/products']                = productData || {};
+            update['jewelryData/products']                = _tgStrip(productData) || {};
             update['jewelryData/config/productDataImportedAt'] = productDataImportedAt || 0;
             window.dbSafeUpdate(update)
                 .then(() => { clearPendingSync(); setDataSourceBadge('live'); window._packagingWeightsDirty = false; window._presetStockDirty = false; })
@@ -5830,6 +6013,7 @@
             document.getElementById('loose-calculator').style.display = 'none';
             document.getElementById('stock-view').style.display = 'none';
             document.getElementById('stock-calc').style.display = 'none';
+            document.getElementById('tg-fetch').style.display = 'none';
             document.getElementById('tag-weight').style.display = 'none';
             document.getElementById('profiles-section').style.display = 'none';
             document.getElementById('bulk-check').style.display = 'none';
@@ -5868,7 +6052,7 @@
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'tag-weight' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen' || section === 'savings-screen' || section === 'credit-screen') ? 'flex' : 'block';
+                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'tag-weight' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen' || section === 'savings-screen' || section === 'credit-screen' || section === 'tg-fetch') ? 'flex' : 'block';
             }
 
             if (section === 'installments-screen') {
@@ -5960,6 +6144,7 @@
             { key: 'update-rates',   label: 'Update Rates',       icon: '💰', action: () => showSection('update-rates') },
             { key: 'excel-upload',   label: 'Upload Excel',       icon: '📂', action: () => showSection('excel-upload') },
             { key: 'stock-view',     label: 'Stock View',         icon: '📦', action: () => showStockSection() },
+            { key: 'tg-fetch',       label: 'Tag Fetch / Delete', icon: '🏷️', action: () => showTgFetch() },
             { key: 'stock-calc',     label: 'Stock Weight Calc',  icon: '⚖️', action: () => showStockCalcSection() },
             { key: 'profiles',       label: 'Making Profiles',    icon: '⚙️', action: () => openProfileModal() },
             { key: 'device-access',  label: 'Device Access',      icon: '🔒', action: () => showDeviceAccessSection() },
@@ -12800,7 +12985,7 @@
                 }
 
                 // --- SAFETY CONFIRMATION BEFORE OVERWRITE ---
-                const currentCount = Object.keys(productData).length;
+                const currentCount = Object.keys(productData).filter(k => !_tgIsTg(productData[k])).length;
                 const _notes = [];
                 if (headerRow > 0) _notes.push(`Headings found on line ${headerRow + 1} (title/blank lines above were ignored)`);
                 if (skippedTotals) _notes.push(`${skippedTotals} total/summary line${skippedTotals > 1 ? 's' : ''} skipped`);
@@ -12812,6 +12997,7 @@
                     'Confirm Replacement',
                     () => {
                         productData = newProductData;
+                        _tgMerge();
                         productDataImportedAt = Date.now();
                         saveAllDataToCloud();
                         invSyncCatalogueAvailability();
@@ -13063,6 +13249,7 @@
 
             // --- Start Firebase Sync ---
             syncData();
+            startTgSync();
             startInstallmentsSync();
             startSavingsSync();
             startCreditSync();
