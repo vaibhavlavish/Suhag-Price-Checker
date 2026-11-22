@@ -5122,19 +5122,81 @@
                 tagDate, _src: 'tg', _tgNo: no
             };
         }
+        /* SAFETY COPY: every live tag is also remembered on this device (IndexedDB). A tag that disappears from the tag generator
+           (deleted there, or its stock wiped) is NOT removed from the POS automatically — it stays in POS stock and the POS asks you. */
+        let _tgKnown = {}, _tgKnownStr = {}, _tgPersistTimer = null, _tgGoneTimer = null, _tgGoneSig = '';
+        function _tgUpdateKnown() {
+            const T = window._tgTags || {}; let dirty = false;
+            for (const no in T) {
+                const t = T[no]; if (!t || t.status === 'archived') continue;
+                const s = JSON.stringify(t);
+                if (_tgKnownStr[no] !== s) { _tgKnown[no] = t; _tgKnownStr[no] = s; dirty = true; }
+            }
+            if (dirty) _tgPersist();
+        }
+        function _tgPersist() {
+            clearTimeout(_tgPersistTimer);
+            _tgPersistTimer = setTimeout(() => { try { _idbSet(FULL_CACHE_STORE, 'tgKnownTags', _tgKnown).catch(e => console.warn('[TG] safety copy not saved', e)); } catch (e) {} }, 2000);
+        }
+        function _tgForget(keys) { keys.forEach(k => { delete _tgKnown[k]; delete _tgKnownStr[k]; }); _tgPersist(); _tgMerge(); }
         // Rebuild the tag-generator entries inside productData (a real POS record with the same barcode always wins)
         function _tgMerge() {
             try {
                 for (const k in productData) { if (_tgIsTg(productData[k])) delete productData[k]; }
                 const T = window._tgTags || {};
-                for (const no in T) {
-                    const t = T[no];
-                    if (!t || t.status === 'archived') continue;
-                    const key = String(t.tagNo || no).trim().toUpperCase();
-                    if (!key || productData[key]) continue;
-                    productData[key] = _tgToProduct(t, no);
-                }
+                const add = (no, t) => { const key = String(t.tagNo || no).trim().toUpperCase(); if (!key || productData[key]) return; productData[key] = _tgToProduct(t, no); };
+                for (const no in T) { const t = T[no]; if (t && t.status !== 'archived') add(no, t); }
+                for (const no in _tgKnown) { const t = T[no]; if (t && t.status !== 'archived') continue; add(no, _tgKnown[no]); } // gone from the tag generator: still served from the safety copy
             } catch (e) { console.error('[TG] merge failed', e); }
+        }
+        // Tags the POS remembers that the tag generator no longer has (sold/issued ones are ignored: they are not stock anyway)
+        function _tgGoneKeys() {
+            if (!window._tgLoaded) return [];
+            const T = window._tgTags || {}; let sold; try { sold = getSoldBarcodesForStock(); } catch (e) { sold = new Set(); }
+            return Object.keys(_tgKnown).filter(no => { const t = T[no]; if (t && t.status !== 'archived') return false; return !sold.has(String(_tgKnown[no].tagNo || no).toUpperCase()); })
+                .sort((a, c) => a.localeCompare(c, undefined, { numeric: true }));
+        }
+        function _tgGoneSoon() { clearTimeout(_tgGoneTimer); _tgGoneTimer = setTimeout(_tgGonePopup, 4000); } // wait a moment so the sales history is loaded first
+        function _tgGonePopup() {
+            const old = document.getElementById('tg-gone-modal');
+            const ks = _tgGoneKeys();
+            if (!ks.length) { if (old) old.remove(); _tgGoneSig = ''; return; }
+            const sig = ks.join('|'); if (sig === _tgGoneSig && old) return;
+            _tgGoneSig = sig;
+            let gw = 0; ks.forEach(k => gw += _tgNum(_tgKnown[k].gw));
+            if (old) old.remove();
+            const w = document.createElement('div');
+            w.id = 'tg-gone-modal';
+            w.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:999; display:flex; align-items:center; justify-content:center; padding:12px;';
+            w.innerHTML = `<div style="background:#fff; border-radius:14px; width:100%; max-width:620px; max-height:92vh; display:flex; flex-direction:column; box-shadow:0 10px 40px rgba(0,0,0,.35);">
+                <div style="padding:14px 16px; border-bottom:1px solid #eee;"><div style="font-size:16px; font-weight:800; color:#C62828;">⚠ ${ks.length} tag${ks.length > 1 ? 's are' : ' is'} no longer in the Tag Generator</div>
+                <div style="font-size:12.5px; color:#555; margin-top:4px;">${gw.toFixed(3)} g gross. They were deleted there, or the tag generator stock was wiped. <b>Nothing was removed from the POS</b> — these tags still scan here. Choose what to do:</div></div>
+                <div style="overflow-y:auto; padding:6px 16px; flex:1;">${ks.slice(0, 100).map(k => { const t = _tgKnown[k]; return `<div style="display:flex; gap:10px; padding:5px 4px; border-bottom:1px solid #eee; font-size:13px;"><span style="font-family:monospace; font-weight:700; min-width:70px;">${_tgEsc(String(t.tagNo || k).toUpperCase())}</span><span style="flex:1; color:#555;">${_tgEsc(t.name || t.item || '')} ${_tgEsc(t.size || '')}</span><span style="color:#888; font-size:11px;">${_tgNum(t.gw).toFixed(3)} g</span></div>`; }).join('')}${ks.length > 100 ? `<div style="padding:6px; color:#777; font-size:12px;">…and ${ks.length - 100} more</div>` : ''}</div>
+                <div style="padding:12px 16px; border-top:1px solid #eee; display:flex; flex-direction:column; gap:8px;">
+                    <button onclick="tgGoneKeep()" style="padding:11px; border:none; border-radius:8px; background:#2E7D32; color:#fff; font-weight:800; cursor:pointer; margin:0;">Keep in POS stock (save them permanently here)</button>
+                    <button onclick="tgGoneRemove()" style="padding:11px; border:none; border-radius:8px; background:#C62828; color:#fff; font-weight:800; cursor:pointer; margin:0;">Remove from POS (they were deleted on purpose)</button>
+                    <button onclick="document.getElementById('tg-gone-modal').remove()" style="padding:9px; border:none; border-radius:8px; background:#9e9e9e; color:#fff; font-weight:700; cursor:pointer; margin:0;">Decide later</button></div></div>`;
+            document.body.appendChild(w);
+        }
+        // Keep = turn them into normal POS stock records (saved to jewelryData/products by the POS itself, an explicit choice)
+        function tgGoneKeep() {
+            const ks = _tgGoneKeys(); let n = 0;
+            ks.forEach(no => {
+                const t = _tgKnown[no], key = String(t.tagNo || no).trim().toUpperCase();
+                if (productData[key] && !_tgIsTg(productData[key])) return;
+                const p = _tgToProduct(t, no); delete p._src; delete p._tgNo; productData[key] = p; n++;
+            });
+            _tgForget(ks);
+            try { saveAllDataToCloud(); } catch (e) { console.error('[TG] keep save failed', e); }
+            const m = document.getElementById('tg-gone-modal'); if (m) m.remove(); _tgGoneSig = '';
+            showCustomAlert(n + ' tag' + (n === 1 ? '' : 's') + ' kept as normal POS stock.');
+        }
+        function tgGoneRemove() {
+            const ks = _tgGoneKeys(); if (!ks.length) return;
+            if (!checkPin()) return;
+            if (ks.length >= 20 && (prompt('Type DELETE to remove ' + ks.length + ' tags from the POS') || '').trim() !== 'DELETE') { showCustomAlert('Cancelled. Nothing was removed.'); return; }
+            _tgForget(ks);
+            const m = document.getElementById('tg-gone-modal'); if (m) m.remove(); _tgGoneSig = '';
         }
         // Copy of the products WITHOUT tag-generator entries — used for every save/cache
         function _tgStrip(p) {
@@ -5146,17 +5208,20 @@
             for (const k in p) { if (!_tgIsTg(p[k])) o[k] = p[k]; }
             return o;
         }
-        function startTgSync() {
+        async function startTgSync() {
             if (_tgStarted) return;
             if (!window.dbOnValue || !window.firebaseDB || !window.dbRef) { setTimeout(startTgSync, 1000); return; }
             _tgStarted = true;
+            try { const k = await _idbGet(FULL_CACHE_STORE, 'tgKnownTags'); if (k && typeof k === 'object') { _tgKnown = k; for (const no in k) _tgKnownStr[no] = JSON.stringify(k[no]); _tgMerge(); } } catch (e) { console.warn('[TG] safety copy not read', e); }
             window.dbOnValue(window.dbRef(window.firebaseDB, 'tagsoft/tags'), (snap) => {
                 window._tgTags = snap.val() || {};
                 window._tgLoaded = true;
                 try { if (localStorage.getItem(TG_SEEN_KEY) === null) { const T0 = window._tgTags; localStorage.setItem(TG_SEEN_KEY, String(_tgLiveKeys().reduce((m, k) => Math.max(m, +T0[k].ts || 0), 0))); } } catch (e) {} // first run on this device: start from today's tags, no pop-up for old ones
+                _tgUpdateKnown();
                 _tgMerge();
                 _tgRefreshLabel();
                 _tgNewPopup();
+                _tgGoneSoon();
             }, (err) => { console.warn('[TG] tag listener failed', err); window._tgError = String((err && err.message) || err); });
         }
 
@@ -5216,6 +5281,7 @@
             showCustomConfirm('Remove tag <b>' + _tgEsc(no) + '</b> ' + _tgEsc(t.name || t.item || '') + ' (' + _tgNum(t.gw).toFixed(3) + ' g)?<br><span style="font-size:12px;">It disappears from the tag generator and the POS. The number stays blocked and is never reused.</span>', 'Remove tag', async () => {
                 try {
                     await window.dbSafeUpdate({ ['tagsoft/tags/' + key + '/status']: 'archived' });
+                    _tgForget([key]);
                     _tgSay('Tag ' + no + ' removed.', '#2E7D32');
                 } catch (e) { showCustomAlert('Remove failed: ' + _tgEsc(e && e.message ? e.message : e)); }
             });
@@ -5243,7 +5309,7 @@
                 _tgSay('Fetching…');
                 const s = await window.dbGet(window.dbRef(window.firebaseDB, 'tagsoft/tags'));
                 window._tgTags = s.val() || {}; window._tgLoaded = true; window._tgError = '';
-                _tgMerge(); _tgRefreshLabel();
+                _tgUpdateKnown(); _tgMerge(); _tgRefreshLabel(); _tgGoneSoon();
                 const live = _tgLiveKeys().length;
                 let inPos = 0; for (const k in productData) { if (_tgIsTg(productData[k])) inPos++; }
                 _tgSay(live + ' live tags fetched. ' + inPos + ' scannable now' + (live > inPos ? ' (' + (live - inPos) + ' already exist as normal POS stock and were left as they are)' : '') + '.', '#2E7D32');
@@ -5303,6 +5369,7 @@
                     ks.slice(i, i + 400).forEach(k => { b['tagsoft/tags/' + k + '/status'] = 'archived'; });
                     await window.dbSafeUpdate(b);
                 }
+                _tgForget(ks);
                 _tgCloseReview();
                 _tgSay(ks.length + ' tag' + (ks.length > 1 ? 's' : '') + ' deleted from the tag generator.', '#2E7D32');
             } catch (e) { showCustomAlert('Delete failed: ' + _tgEsc(e && e.message ? e.message : e)); }
