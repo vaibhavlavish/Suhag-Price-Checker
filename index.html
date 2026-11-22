@@ -1798,9 +1798,6 @@
             <button onclick="showStockSection()" data-menu-key="stock-view">
                 <span class="menu-icon" style="background:#e8f5e9;">📦</span> Stock View
             </button>
-            <button onclick="showTgFetch()" data-menu-key="tg-fetch">
-                <span class="menu-icon" style="background:#fce4ec;">🏷️</span> Tag Fetch / Delete
-            </button>
             <button onclick="showStockCalcSection()" data-menu-key="stock-calc">
                 <span class="menu-icon" style="background:#fff3e0;">⚖️</span> Stock Weight Calc
             </button>
@@ -2740,14 +2737,6 @@
             </div>
         </div>
         <div id="stock-body"></div>
-    </div>
-
-    <div id="tg-fetch" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:480px; margin:0 auto; min-height:0;">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px;">
-            <h2 style="margin:0; font-size:20px;">🏷️ Tag Fetch / Delete</h2>
-            <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:20px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap;">← Back</button>
-        </div>
-        <div id="tg-fetch-body"></div>
     </div>
 
     <div id="stock-calc" style="display:none; flex:1; flex-direction:column; padding:16px; background:#f5f5f5; overflow-y:auto; -webkit-overflow-scrolling:touch; width:100%; max-width:480px; margin:0 auto; min-height:0;">
@@ -5164,104 +5153,159 @@
             window.dbOnValue(window.dbRef(window.firebaseDB, 'tagsoft/tags'), (snap) => {
                 window._tgTags = snap.val() || {};
                 window._tgLoaded = true;
+                try { if (localStorage.getItem(TG_SEEN_KEY) === null) { const T0 = window._tgTags; localStorage.setItem(TG_SEEN_KEY, String(_tgLiveKeys().reduce((m, k) => Math.max(m, +T0[k].ts || 0), 0))); } } catch (e) {} // first run on this device: start from today's tags, no pop-up for old ones
                 _tgMerge();
-                const s = document.getElementById('tg-fetch');
-                if (s && s.style.display !== 'none') tgfRender();
+                _tgRefreshLabel();
+                _tgNewPopup();
             }, (err) => { console.warn('[TG] tag listener failed', err); window._tgError = String((err && err.message) || err); });
         }
 
-        /* ---- Tag Fetch / Delete screen ---- */
-        const TGF = { vf: '', vt: '', tf: '', tt: '', item: '', df: '', dt: '', stock: 'all', res: null, sel: {} };
-        function showTgFetch() { closeOptions(); showSection('tg-fetch'); tgfRender(); }
-        function _tgfNo(s) { const m = /^(.*?)(\d+)$/.exec(String(s || '').trim().toUpperCase()); return m ? { p: m[1], n: +m[2] } : null; }
-        function _tgfEsc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
-        function _tgfLive() { const T = window._tgTags || {}; return Object.keys(T).filter(k => T[k] && T[k].status !== 'archived'); }
-        function tgfRead() {
-            ['vf', 'vt', 'tf', 'tt', 'item', 'df', 'dt', 'stock'].forEach(x => { const e = document.getElementById('tgf_' + x); if (e) TGF[x] = e.value.trim(); });
+        /* ---- Tag Generator panel (Invoice Settings > MMI Link, Track B) ---- */
+        function _tgSay(msg, color) { const el = document.getElementById('tg-status'); if (el) { el.textContent = msg || ''; el.style.color = color || '#555'; } }
+        function _tgEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+        function _tgLiveKeys() { const T = window._tgTags || {}; return Object.keys(T).filter(k => T[k] && T[k].status !== 'archived'); }
+        function _tgRefreshLabel() {
+            const el = document.getElementById('tg-count-status'); if (!el) return;
+            el.textContent = window._tgLoaded ? (_tgLiveKeys().length + ' live tags in the tag generator') : (window._tgError ? 'Could not read tags: ' + window._tgError : 'Loading tags…');
         }
-        function tgfGo() {
-            tgfRead();
-            const a = _tgfNo(TGF.tf || TGF.tt), b = _tgfNo(TGF.tt || TGF.tf);
-            if ((TGF.tf && !_tgfNo(TGF.tf)) || (TGF.tt && !_tgfNo(TGF.tt))) { showCustomAlert('Tag numbers must end with digits, for example GRG25'); return; }
-            if (a && b && a.p !== b.p) { showCustomAlert('From and To tag numbers must have the same prefix'); return; }
-            const T = window._tgTags || {}, sold = getSoldBarcodesForStock();
-            const d1 = TGF.df ? new Date(TGF.df + 'T00:00:00').getTime() : 0;
-            const d2 = TGF.dt ? new Date(TGF.dt + 'T23:59:59.999').getTime() : 0;
-            const res = _tgfLive().filter(k => {
-                const t = T[k], no = String(t.tagNo || k);
-                const v = +t.vou;
-                if (TGF.vf && !(v >= +TGF.vf)) return false;
-                if (TGF.vt && !(v <= +TGF.vt)) return false;
-                if (a) { const x = _tgfNo(no); if (!x || x.p !== a.p || x.n < a.n || x.n > b.n) return false; }
-                if (TGF.item && String(t.item || t.name || '') !== TGF.item) return false;
-                if (d1 || d2) { const ts = +t.ts || 0; if (!ts || (d1 && ts < d1) || (d2 && ts > d2)) return false; }
-                const isSold = sold.has(no.toUpperCase());
-                if (TGF.stock === 'stock' && isSold) return false;
-                if (TGF.stock === 'sold' && !isSold) return false;
-                return true;
+        /* New tags = tags made in the tag generator after the last "Mark all seen" on THIS device (older MMI-imported tags have no date and never count as new) */
+        const TG_SEEN_KEY = 'tgSeenTs';
+        function _tgSeenTs() { try { return +localStorage.getItem(TG_SEEN_KEY) || 0; } catch (e) { return 0; } }
+        function _tgNewKeys() {
+            const T = window._tgTags || {}, seen = _tgSeenTs();
+            return _tgLiveKeys().filter(k => +T[k].ts > seen).sort((a, b) => (+T[b].ts - +T[a].ts) || String(b).localeCompare(String(a), undefined, { numeric: true }));
+        }
+        let _tgShownSig = '';
+        /* Pop-up: appears by itself when tags the tag generator made are not yet marked as seen on this device */
+        function _tgNewPopup() {
+            const T = window._tgTags || {}, ks = _tgNewKeys();
+            const old = document.getElementById('tg-new-modal');
+            if (!ks.length) { if (old) old.remove(); _tgShownSig = ''; return; }
+            const sig = ks.join('|'); if (sig === _tgShownSig) return; // same tags as the pop-up already shows
+            _tgShownSig = sig;
+            const groups = {}, order = [];
+            ks.forEach(k => { const v = String(T[k].vou == null ? '' : T[k].vou); if (!groups[v]) { groups[v] = []; order.push(v); } groups[v].push(k); });
+            let totGw = 0;
+            const body = order.map(v => {
+                const g = groups[v], gw = g.reduce((s, k) => s + _tgNum(T[k].gw), 0); totGw += gw;
+                const dt = T[g[0]].ts ? new Date(+T[g[0]].ts).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+                return `<div style="background:#f3f3f3; padding:6px 8px; margin-top:8px; border-radius:8px; font-size:12.5px; font-weight:800;">Voucher ${_tgEsc(v)} · ${g.length} tag${g.length > 1 ? 's' : ''} · ${gw.toFixed(3)} g <span style="font-weight:600; color:#777;">· ${_tgEsc(dt)}</span></div>` +
+                    g.map(k => { const t = T[k], no = String(t.tagNo || k).toUpperCase(), dup = productData[no] && !_tgIsTg(productData[no]);
+                        return `<div style="display:flex; gap:10px; align-items:center; padding:6px 4px; border-bottom:1px solid #eee; font-size:13px;"><span style="font-family:monospace; font-weight:700; min-width:70px;">${_tgEsc(no)}</span><span style="flex:1; color:#555;">${_tgEsc(t.name || t.item || '')} ${_tgEsc(t.size || '')}</span><span style="color:#888; font-size:11px; white-space:nowrap;">${_tgNum(t.gw).toFixed(3)} g${t.stamp ? ' · ' + _tgEsc(t.stamp) : ''}</span><button data-k="${_tgEsc(k)}" onclick="tgRemoveOne(this.dataset.k)" title="Remove this tag" style="background:#fdecea; color:#C62828; border:none; border-radius:6px; padding:4px 8px; font-size:13px; cursor:pointer; width:auto; margin:0;">🗑</button>${dup ? '<span title="A normal POS stock record with this number already exists, so the tag generator version is not used" style="color:#E65100; font-size:11px; font-weight:700;">⚠ in POS</span>' : ''}</div>`; }).join('');
+            }).join('');
+            if (old) old.remove();
+            const w = document.createElement('div');
+            w.id = 'tg-new-modal';
+            w.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:999; display:flex; align-items:center; justify-content:center; padding:12px;';
+            w.innerHTML = `<div style="background:#fff; border-radius:14px; width:100%; max-width:620px; max-height:92vh; display:flex; flex-direction:column; box-shadow:0 10px 40px rgba(0,0,0,.35);">
+                <div style="padding:14px 16px; border-bottom:1px solid #eee;"><div style="font-size:16px; font-weight:800;">🆕 New tags added to stock</div>
+                <div style="font-size:12.5px; color:#666; margin-top:4px;">${ks.length} tags · ${order.length} voucher${order.length > 1 ? 's' : ''} · ${totGw.toFixed(3)} g gross · from the Tag Generator, scannable now.</div></div>
+                <div style="overflow-y:auto; padding:6px 16px 12px; flex:1;">${body}</div>
+                <div style="padding:12px 16px; border-top:1px solid #eee;"><button onclick="tgMarkSeen()" style="width:100%; padding:11px; border:none; border-radius:8px; background:#2E7D32; color:#fff; font-weight:800; cursor:pointer; margin:0;">OK</button></div></div>`;
+            document.body.appendChild(w);
+        }
+        /* Remove ONE tag (archive in the tag generator; the number stays blocked). Sold/issued tags cannot be removed. */
+        function tgRemoveOne(key) {
+            const T = window._tgTags || {}, t = T[key];
+            if (!t || t.status === 'archived') { showCustomAlert('That tag is not in the tag generator any more.'); return; }
+            const no = String(t.tagNo || key).toUpperCase();
+            if (getSoldBarcodesForStock().has(no)) { showCustomAlert('Tag ' + _tgEsc(no) + ' is sold or issued in the POS, so it cannot be removed here.'); return; }
+            if (!window._writeAllowed) { showCustomAlert('Read-only copy — open the official page to remove tags.'); return; }
+            if (!navigator.onLine) { showCustomAlert('No internet connection. Nothing was removed.'); return; }
+            if (!checkPin()) return;
+            showCustomConfirm('Remove tag <b>' + _tgEsc(no) + '</b> ' + _tgEsc(t.name || t.item || '') + ' (' + _tgNum(t.gw).toFixed(3) + ' g)?<br><span style="font-size:12px;">It disappears from the tag generator and the POS. The number stays blocked and is never reused.</span>', 'Remove tag', async () => {
+                try {
+                    await window.dbSafeUpdate({ ['tagsoft/tags/' + key + '/status']: 'archived' });
+                    _tgSay('Tag ' + no + ' removed.', '#2E7D32');
+                } catch (e) { showCustomAlert('Remove failed: ' + _tgEsc(e && e.message ? e.message : e)); }
             });
-            res.sort((x, y) => { const p = _tgfNo(x), q = _tgfNo(y); if (p && q && p.p === q.p) return p.n - q.n; return x < y ? -1 : x > y ? 1 : 0; });
-            TGF.res = res; TGF.sel = {}; tgfRender();
         }
-        function tgfClear() { Object.assign(TGF, { vf: '', vt: '', tf: '', tt: '', item: '', df: '', dt: '', stock: 'all', res: null, sel: {} }); tgfRender(); }
-        function tgfTog(k, c) { TGF.sel[k] = c; tgfRender(); }
-        function tgfAll(c) { TGF.sel = {}; if (c) (TGF.res || []).forEach(k => TGF.sel[k] = true); tgfRender(); }
-        function tgfReload() {
-            if (!window.dbGet || !window.firebaseDB) return;
-            window.dbGet(window.dbRef(window.firebaseDB, 'tagsoft/tags')).then(s => { window._tgTags = s.val() || {}; _tgMerge(); tgfGo(); })
-                .catch(e => showCustomAlert('Could not reload: ' + (e && e.message ? e.message : e)));
+        function tgRemoveByNo() {
+            const el = document.getElementById('tg-rm-no'), no = ((el && el.value) || '').trim().toUpperCase();
+            if (!no) { showCustomAlert('Type the tag number first.'); return; }
+            const T = window._tgTags || {};
+            const key = Object.keys(T).find(k => T[k] && T[k].status !== 'archived' && String(T[k].tagNo || k).toUpperCase() === no);
+            if (!key) { showCustomAlert('Tag ' + _tgEsc(no) + ' was not found among the live tags. Press Fetch Tags and try again.'); return; }
+            tgRemoveOne(key);
+            if (el) el.value = '';
         }
-        function tgfRender() {
-            const el = document.getElementById('tg-fetch-body'); if (!el) return;
-            const T = window._tgTags || {}, live = _tgfLive();
-            const items = Array.from(new Set(live.map(k => String(T[k].item || T[k].name || '')).filter(Boolean))).sort();
-            const inp = (id, l, ph, type) => `<div style="flex:1; min-width:120px;"><label style="font-size:12px; color:#666;">${l}</label><input id="tgf_${id}" ${type ? `type="${type}"` : ''} value="${_tgfEsc(TGF[id])}" ${ph ? `placeholder="${ph}"` : ''} onkeydown="if(event.key==='Enter')tgfGo()" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:8px; box-sizing:border-box;"></div>`;
-            let h = `<div style="font-size:12px; color:#555; margin-bottom:8px;">${window._tgLoaded ? `Tag generator: <b>${live.length}</b> live tags (scannable in the POS)` : (window._tgError ? `<span style="color:#C62828;">Could not read tags: ${_tgfEsc(window._tgError)}</span>` : 'Loading tags…')} <button onclick="tgfReload()" style="margin-left:6px; border:1px solid #bbb; background:#fff; border-radius:12px; padding:3px 10px; font-size:12px; cursor:pointer;">Reload</button></div>
-            <div style="background:#fff; border-radius:12px; padding:12px; display:flex; flex-wrap:wrap; gap:8px;">
-              ${inp('vf', 'Voucher from')}${inp('vt', 'Voucher to')}${inp('tf', 'Tag no from', 'e.g. GRG1')}${inp('tt', 'Tag no to', 'e.g. GRG50')}
-              <div style="flex:1; min-width:120px;"><label style="font-size:12px; color:#666;">Item</label><select id="tgf_item" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:8px;"><option value="">All</option>${items.map(i => `<option value="${_tgfEsc(i)}" ${i === TGF.item ? 'selected' : ''}>${_tgfEsc(i)}</option>`).join('')}</select></div>
-              <div style="flex:1; min-width:120px;"><label style="font-size:12px; color:#666;">Status</label><select id="tgf_stock" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:8px;">${[['all', 'All'], ['stock', 'In stock'], ['sold', 'Sold / issued']].map(o => `<option value="${o[0]}" ${o[0] === TGF.stock ? 'selected' : ''}>${o[1]}</option>`).join('')}</select></div>
-              ${inp('df', 'Date from', '', 'date')}${inp('dt', 'Date to', '', 'date')}
-              <div style="width:100%; display:flex; gap:8px;"><button onclick="tgfGo()" style="flex:1; padding:10px; border:none; border-radius:10px; background:#2e7d32; color:#fff; font-weight:700; cursor:pointer;">Fetch</button><button onclick="tgfClear()" style="padding:10px 16px; border:none; border-radius:10px; background:#9e9e9e; color:#fff; font-weight:700; cursor:pointer;">Clear</button></div>
-            </div>`;
-            if (TGF.res) {
-                const rs = TGF.res.filter(k => T[k] && T[k].status !== 'archived'), sold = getSoldBarcodesForStock();
-                const nSel = rs.filter(k => TGF.sel[k]).length, gw = rs.reduce((s, k) => s + _tgNum(T[k].gw), 0);
-                h += `<div style="margin:10px 0 6px; font-size:13px;"><b>${rs.length}</b> tags &nbsp;|&nbsp; Gross <b>${gw.toFixed(3)}</b> g &nbsp;|&nbsp; Selected <b>${nSel}</b></div>
-                <div style="display:flex; gap:6px; margin-bottom:8px; flex-wrap:wrap;"><button onclick="tgfAll(true)" style="padding:7px 12px; border:1px solid #bbb; border-radius:8px; background:#fff; cursor:pointer;">Select all</button><button onclick="tgfAll(false)" style="padding:7px 12px; border:1px solid #bbb; border-radius:8px; background:#fff; cursor:pointer;">Select none</button><button onclick="tgfDelete()" style="padding:7px 12px; border:none; border-radius:8px; background:#c62828; color:#fff; font-weight:700; cursor:pointer;">Delete selected</button></div>`;
-                h += rs.slice(0, 300).map(k => {
-                    const t = T[k], no = String(t.tagNo || k), isSold = sold.has(no.toUpperCase());
-                    const dt = t.ts ? new Date(+t.ts).toLocaleDateString('en-GB') : '';
-                    return `<label style="display:flex; align-items:center; gap:8px; background:#fff; border-radius:10px; padding:8px 10px; margin-bottom:5px; font-size:13px; cursor:pointer;"><input type="checkbox" ${TGF.sel[k] ? 'checked' : ''} onchange="tgfTog('${_tgfEsc(k).replace(/'/g, '&#39;')}', this.checked)"><span style="flex:1;"><b>${_tgfEsc(no)}</b> ${_tgfEsc(t.name || t.item || '')} ${_tgfEsc(t.size || '')}<br><span style="color:#777; font-size:12px;">${_tgNum(t.gw).toFixed(3)} g · ${_tgfEsc(t.stamp || '')} · Vou ${_tgfEsc(t.vou == null ? '' : t.vou)} · ${dt}</span></span>${isSold ? '<span style="background:#fde8e8; color:#c62828; border-radius:8px; padding:2px 7px; font-size:11px; font-weight:700;">SOLD</span>' : ''}</label>`;
-                }).join('') + (rs.length > 300 ? `<div style="font-size:12px; color:#777; padding:6px;">Showing the first 300 of ${rs.length}. "Select all" selects all ${rs.length}.</div>` : '');
-                if (!rs.length) h += '<div style="color:#777; padding:12px;">No tags match.</div>';
-            }
-            el.innerHTML = h;
+        function tgMarkSeen() {
+            const T = window._tgTags || {};
+            const mx = _tgLiveKeys().reduce((m, k) => Math.max(m, +T[k].ts || 0), 0);
+            try { localStorage.setItem(TG_SEEN_KEY, String(mx)); } catch (e) {}
+            _tgShownSig = '';
+            const m = document.getElementById('tg-new-modal'); if (m) m.remove();
         }
-        // Delete = archive in the tag generator (number stays blocked). Sold/issued tags are never deleted from here.
-        function tgfDelete() {
-            const sold = getSoldBarcodesForStock(), T = window._tgTags || {};
-            const all = Object.keys(TGF.sel).filter(k => TGF.sel[k] && T[k] && T[k].status !== 'archived');
-            if (!all.length) { showCustomAlert('Select tags first'); return; }
-            const ks = all.filter(k => !sold.has(String(T[k].tagNo || k).toUpperCase()));
-            const skipped = all.length - ks.length;
-            if (!ks.length) { showCustomAlert('All selected tags are sold or issued. They cannot be deleted here.'); return; }
+        async function tgFetchTags() {
+            if (!_mmiAllowed()) return;
+            if (!window.dbGet || !window.firebaseDB) { showCustomAlert('Not connected to the cloud.'); return; }
+            try {
+                _tgSay('Fetching…');
+                const s = await window.dbGet(window.dbRef(window.firebaseDB, 'tagsoft/tags'));
+                window._tgTags = s.val() || {}; window._tgLoaded = true; window._tgError = '';
+                _tgMerge(); _tgRefreshLabel();
+                const live = _tgLiveKeys().length;
+                let inPos = 0; for (const k in productData) { if (_tgIsTg(productData[k])) inPos++; }
+                _tgSay(live + ' live tags fetched. ' + inPos + ' scannable now' + (live > inPos ? ' (' + (live - inPos) + ' already exist as normal POS stock and were left as they are)' : '') + '.', '#2E7D32');
+            } catch (e) { _tgSay(e.message || String(e), '#C62828'); showCustomAlert(_tgEsc(e.message || e), 'Fetch Tags'); }
+        }
+        // Delete = archive in the tag generator (number stays blocked). Only tags sold/issued in the POS before the chosen date are offered.
+        function tgAdjustTags() {
+            if (!_mmiAllowed() || !checkPin()) return;
+            const beforeVal = (document.getElementById('tg-before') || {}).value || '';
+            if (!beforeVal) { showCustomAlert('Pick the date first: tags sold or issued before that date will be listed.'); return; }
+            const cutoff = new Date(beforeVal + 'T00:00:00').getTime();
+            if (isNaN(cutoff) || cutoff > Date.now() + 86400000) { showCustomAlert('That date is in the future. Pick a date up to today.'); return; }
+            if (!window._tgLoaded) { showCustomAlert('Tags are not loaded yet. Press Fetch Tags first.'); return; }
+            const ev = _mmiCollectGoneTags(), T = window._tgTags || {};
+            const rows = [];
+            _tgLiveKeys().forEach(k => {
+                const t = T[k], no = String(t.tagNo || k).toUpperCase(), e = ev[no];
+                if (!e || !(e.last < cutoff)) return;
+                if (t.ts && +t.ts > e.last) return; // tag made AFTER that sale = reused number, not the sold item
+                rows.push({ k, no, name: t.name || t.item || '', gw: _tgNum(t.gw), date: _mmiYmd(e.first) });
+            });
+            rows.sort((a, b) => a.no.localeCompare(b.no, undefined, { numeric: true }));
+            const beforeTxt = new Date(cutoff).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+            if (!rows.length) { _tgSay('No sold or issued tags before ' + beforeTxt + '.', '#555'); showCustomAlert('No sold or issued tags before ' + beforeTxt + ' to remove.'); return; }
+            _tgSay('');
+            _tgShowReview(rows, beforeTxt);
+        }
+        function _tgCloseReview() { const m = document.getElementById('tg-review'); if (m) m.remove(); }
+        function _tgReviewCount() {
+            const n = document.querySelectorAll('.tg-chk:checked').length;
+            const b = document.getElementById('tg-del-btn'); if (b) { b.textContent = '🗑 Delete ticked (' + n + ')'; b.disabled = !n; b.style.opacity = n ? 1 : .5; }
+        }
+        function _tgReviewAll(c) { document.querySelectorAll('.tg-chk').forEach(x => x.checked = c); _tgReviewCount(); }
+        function _tgShowReview(rows, beforeTxt) {
+            _tgCloseReview();
+            const w = document.createElement('div');
+            w.id = 'tg-review';
+            w.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:999; display:flex; align-items:center; justify-content:center; padding:12px;';
+            w.innerHTML = `<div style="background:#fff; border-radius:14px; width:100%; max-width:620px; max-height:92vh; display:flex; flex-direction:column; box-shadow:0 10px 40px rgba(0,0,0,.35);">
+                <div style="padding:14px 16px; border-bottom:1px solid #eee;"><div style="font-size:16px; font-weight:800;">🧹 Adjust Tags — remove from Tag Generator</div>
+                <div style="font-size:12.5px; color:#666; margin-top:4px;">${rows.length} tags sold/issued before ${_tgEsc(beforeTxt)}. Their numbers stay blocked and are never reused.</div>
+                <div style="margin-top:8px; display:flex; gap:8px;"><button onclick="_tgReviewAll(true)" style="padding:6px 12px; border:1px solid #bbb; background:#fff; border-radius:8px; font-size:12.5px; cursor:pointer; width:auto; margin:0;">Tick all</button><button onclick="_tgReviewAll(false)" style="padding:6px 12px; border:1px solid #bbb; background:#fff; border-radius:8px; font-size:12.5px; cursor:pointer; width:auto; margin:0;">Untick all</button></div></div>
+                <div style="overflow-y:auto; padding:6px 16px; flex:1;">${rows.map(r => `<label style="display:flex; gap:10px; align-items:center; padding:7px 4px; border-bottom:1px solid #eee; font-size:13px;"><input type="checkbox" class="tg-chk" data-k="${_tgEsc(r.k)}" checked onchange="_tgReviewCount()" style="width:18px; height:18px; flex:none;"><span style="font-family:monospace; font-weight:700; min-width:70px;">${_tgEsc(r.no)}</span><span style="flex:1; color:#555;">${_tgEsc(r.name)}</span><span style="color:#888; font-size:11px; white-space:nowrap;">${r.gw.toFixed(3)} g · ${_tgEsc(r.date)}</span></label>`).join('')}</div>
+                <div style="padding:12px 16px; border-top:1px solid #eee; display:flex; gap:8px;"><button onclick="_tgCloseReview()" style="flex:1; padding:11px; border:none; border-radius:8px; background:#9e9e9e; color:#fff; font-weight:800; cursor:pointer; margin:0;">Cancel</button><button id="tg-del-btn" onclick="tgDeleteTicked()" style="flex:2; padding:11px; border:none; border-radius:8px; background:#C62828; color:#fff; font-weight:800; cursor:pointer; margin:0;"></button></div></div>`;
+            document.body.appendChild(w);
+            _tgReviewCount();
+        }
+        async function tgDeleteTicked() {
+            const ks = Array.from(document.querySelectorAll('.tg-chk:checked')).map(x => x.getAttribute('data-k'));
+            if (!ks.length) return;
             if (!window._writeAllowed) { showCustomAlert('Read-only copy — open the official page to delete.'); return; }
             if (!navigator.onLine) { showCustomAlert('No internet connection. Nothing was deleted.'); return; }
-            showCustomConfirm(`Delete ${ks.length} tag${ks.length > 1 ? 's' : ''} from the tag generator?<br><span style="font-size:12px;">Their numbers stay blocked and are never reused.</span>` + (skipped ? `<br><span style="font-size:12px; color:#C62828;">${skipped} sold/issued tag${skipped > 1 ? 's' : ''} will be skipped.</span>` : ''), 'Delete tags', async () => {
-                if (ks.length >= 20 && (prompt('Type DELETE to delete ' + ks.length + ' tags') || '').trim() !== 'DELETE') { showCustomAlert('Cancelled. Nothing was deleted.'); return; }
-                try {
-                    for (let i = 0; i < ks.length; i += 400) {
-                        const b = {};
-                        ks.slice(i, i + 400).forEach(k => { b['tagsoft/tags/' + k + '/status'] = 'archived'; });
-                        await window.dbSafeUpdate(b);
-                    }
-                    TGF.sel = {};
-                    TGF.res = (TGF.res || []).filter(k => ks.indexOf(k) < 0);
-                    tgfRender();
-                    showCustomAlert(ks.length + ' tag' + (ks.length > 1 ? 's' : '') + ' deleted.');
-                } catch (e) { showCustomAlert('Delete failed: ' + (e && e.message ? e.message : e)); }
-            });
+            if (ks.length >= 20 && (prompt('Type DELETE to delete ' + ks.length + ' tags') || '').trim() !== 'DELETE') { showCustomAlert('Cancelled. Nothing was deleted.'); return; }
+            try {
+                for (let i = 0; i < ks.length; i += 400) {
+                    const b = {};
+                    ks.slice(i, i + 400).forEach(k => { b['tagsoft/tags/' + k + '/status'] = 'archived'; });
+                    await window.dbSafeUpdate(b);
+                }
+                _tgCloseReview();
+                _tgSay(ks.length + ' tag' + (ks.length > 1 ? 's' : '') + ' deleted from the tag generator.', '#2E7D32');
+            } catch (e) { showCustomAlert('Delete failed: ' + _tgEsc(e && e.message ? e.message : e)); }
         }
         /* ===== TAG GENERATOR LINK — end ===== */
 
@@ -6013,7 +6057,6 @@
             document.getElementById('loose-calculator').style.display = 'none';
             document.getElementById('stock-view').style.display = 'none';
             document.getElementById('stock-calc').style.display = 'none';
-            document.getElementById('tg-fetch').style.display = 'none';
             document.getElementById('tag-weight').style.display = 'none';
             document.getElementById('profiles-section').style.display = 'none';
             document.getElementById('bulk-check').style.display = 'none';
@@ -6052,7 +6095,7 @@
                 calculateLoosePrice();
                 setTimeout(() => document.getElementById('loose-weight').focus(), 100);
             } else {
-                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'tag-weight' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen' || section === 'savings-screen' || section === 'credit-screen' || section === 'tg-fetch') ? 'flex' : 'block';
+                document.getElementById(section).style.display = (section === 'stock-view' || section === 'stock-calc' || section === 'tag-weight' || section === 'device-access' || section === 'invoice-screen' || section === 'reminders' || section === 'installments-screen' || section === 'savings-screen' || section === 'credit-screen') ? 'flex' : 'block';
             }
 
             if (section === 'installments-screen') {
@@ -6144,7 +6187,6 @@
             { key: 'update-rates',   label: 'Update Rates',       icon: '💰', action: () => showSection('update-rates') },
             { key: 'excel-upload',   label: 'Upload Excel',       icon: '📂', action: () => showSection('excel-upload') },
             { key: 'stock-view',     label: 'Stock View',         icon: '📦', action: () => showStockSection() },
-            { key: 'tg-fetch',       label: 'Tag Fetch / Delete', icon: '🏷️', action: () => showTgFetch() },
             { key: 'stock-calc',     label: 'Stock Weight Calc',  icon: '⚖️', action: () => showStockCalcSection() },
             { key: 'profiles',       label: 'Making Profiles',    icon: '⚙️', action: () => openProfileModal() },
             { key: 'device-access',  label: 'Device Access',      icon: '🔒', action: () => showDeviceAccessSection() },
@@ -23529,6 +23571,20 @@
             <button id="mmi-manual-btn" onclick="mmiShowManualList()" style="background:#FFF8E1; color:#8D6E00; border:1px solid #F0C040; border-radius:8px; padding:10px; font-size:13.5px; font-weight:800; cursor:pointer; width:100%; margin:8px 0 0;">📋 Manual tags list (0)</button>
             <div id="mmi-status" style="font-size:12.5px; margin-top:8px; min-height:16px;"></div>
         </div>
+        <div id="tg-panel" style="background:#fdf6f0; border:1px solid #E0A878; border-radius:10px; padding:12px; margin:12px 0 0;">
+            <div style="font-weight:800; font-size:14px; margin-bottom:2px;">🏷️ Tag Generator link</div>
+            <div id="tg-count-status" style="font-size:12px; color:#666; margin-bottom:8px;">Loading tags…</div>
+            <button onclick="tgFetchTags()" style="background:#2E7D32; color:#fff; border:none; border-radius:8px; padding:11px; font-size:14px; font-weight:800; cursor:pointer; width:100%; margin:0 0 8px;">🔄 Fetch Tags from Tag Generator</button>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px; font-size:12.5px; color:#444;">
+                Remove tags sold/issued <b>before</b> <input type="date" id="tg-before" style="padding:5px; margin:0;">
+            </div>
+            <button onclick="tgAdjustTags()" style="background:#C62828; color:#fff; border:none; border-radius:8px; padding:11px; font-size:14px; font-weight:800; cursor:pointer; width:100%; margin:0;">🧹 Adjust Tags (remove sold/issued from Tag Generator)</button>
+            <div style="display:flex; gap:8px; margin-top:10px;">
+                <input id="tg-rm-no" placeholder="Tag no. e.g. GRG25" onkeydown="if(event.key==='Enter')tgRemoveByNo()" style="flex:1; padding:8px; margin:0; border:1px solid #ccc; border-radius:8px; min-width:0;">
+                <button onclick="tgRemoveByNo()" style="background:#fff; color:#C62828; border:1.5px solid #C62828; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:800; cursor:pointer; width:auto; margin:0; white-space:nowrap;">🗑 Remove tag</button>
+            </div>
+            <div id="tg-status" style="font-size:12.5px; margin-top:8px; min-height:16px;"></div>
+        </div>
         </div>
     </div>
 
@@ -23978,7 +24034,7 @@ function invOpenMmiModal() {
     if (!_mmiAllowed()) return;
     document.getElementById('inv-settings-modal').style.display = 'none';
     document.getElementById('inv-mmi-modal').style.display = 'flex';
-    _mmiRefreshFolderLabel(); _mmiUpdateManualBadge();
+    _mmiRefreshFolderLabel(); _mmiUpdateManualBadge(); _tgRefreshLabel();
 }
 
 function _mmiSay(msg, color) {
