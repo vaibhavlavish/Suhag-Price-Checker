@@ -5119,7 +5119,7 @@
             let tagDate = '';
             if (t.ts) { try { tagDate = new Date(+t.ts).toLocaleDateString('en-CA'); } catch (e) {} }
             return {
-                itemName: String(t.name || t.item || '').trim(),
+                itemName: String(t.item || t.name || '').trim(), // item name (same as old barcodes) — NOT the print name; invoice print-name/HSN overrides are keyed by this item name
                 stockName: String(t.item || '').trim(), // Stock view groups by the Tag Generator item (e.g. S PAYAL H), not the print name
                 size: String(t.size || '').trim(),
                 grossWeight: gw, netWeight: nw,
@@ -21301,6 +21301,7 @@
             const f = _invFindTgTag(barcode);
             if (!f) { invToast('Tag ' + barcode + ' not found in Tag Generator'); return; }
             if (!window._writeAllowed) { invToast('Cannot print — this copy is read-only'); return; }
+            if (!checkPin()) return; // PIN gate: quick print from Track B invoices needs the admin PIN
             try {
                 const ps = await window.dbGet(window.dbRef(window.firebaseDB, 'tagsoft/printServer'));
                 const v = ps.val();
