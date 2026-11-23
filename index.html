@@ -21280,6 +21280,38 @@
             return ' (' + String(m).toUpperCase() + ')';
         }
 
+        // Tag Generator tag for a barcode (exact match first, then case-insensitive). Archived (retired) numbers don't count.
+        function _invFindTgTag(barcode) {
+            const T = window._tgTags || {}, b = String(barcode || '').trim();
+            if (!b) return null;
+            const k = T[b] ? b : Object.keys(T).find(x => x.toLowerCase() === b.toLowerCase());
+            if (!k || !T[k] || T[k].status === 'archived') return null;
+            return { key: k, tag: T[k] };
+        }
+        // Small "Print" button beside the tag no — only when that tag exists in Tag Generator.
+        function _invTagPrintBtn(barcode) {
+            if (!_invFindTgTag(barcode)) return '';
+            return ` <button data-b="${invEscH(barcode)}" onclick="event.stopPropagation();invPrintTag(this.dataset.b)" style="background:#1D6BB5;color:white;border:none;border-radius:6px;padding:1px 8px;font-size:11px;font-weight:700;cursor:pointer;box-shadow:none;margin:0 0 0 4px;width:auto;vertical-align:middle;">🖨 Print</button>`;
+        }
+        // Sends the tag to Tag Generator's print queue (same job format Tag Generator uses itself);
+        // the PC running Tag Generator with "Print server" on prints it.
+        async function invPrintTag(barcode) {
+            const f = _invFindTgTag(barcode);
+            if (!f) { invToast('Tag ' + barcode + ' not found in Tag Generator'); return; }
+            if (!window._writeAllowed) { invToast('Cannot print — this copy is read-only'); return; }
+            try {
+                const ps = await window.dbGet(window.dbRef(window.firebaseDB, 'tagsoft/printServer'));
+                const v = ps.val();
+                if (!v || !v.ok || Math.abs(Date.now() - (+v.ts || 0)) >= 45000) {
+                    if (!confirm('The tag printing PC does not look ready (Tag Generator closed, Print server off, or printer helper not running).\n\nSend anyway? The job is cancelled if it is not picked up within 10 minutes.')) return;
+                }
+                const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('pos' + Date.now() + Math.random().toString(36).slice(2));
+                const t = JSON.parse(JSON.stringify({ ...f.tag, tagNo: f.tag.tagNo || f.key }));
+                await window.dbSet(window.dbRef(window.firebaseDB, 'tagsoft/printQueue/' + id), { id, status: 'pending', ts: Date.now(), by: 'POS', n: 1, tags: [t] });
+                invToast('Tag ' + f.key + ' sent to printer');
+            } catch (e) { invToast('Could not send tag: ' + (e.message || e)); }
+        }
+
         function invOpenBillDetail(id) {
             const inv = invoiceHistory.find(i => i.id === id);
             if (!inv) return;
@@ -21312,7 +21344,7 @@
                 <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">${dt} · ${invEscH(inv.custName)}</div>
                 <div style="background:#f8f8f8;border-radius:10px;padding:12px;margin-bottom:12px;">
                   ${(inv.items||[]).map(r => `<div style="display:flex;justify-content:space-between;padding:3px 0;font-size:13px;border-bottom:1px solid #eee;">
-                    <span>${invEscH(r.desc)}${r.barcode?` <span style="color:#999;font-size:11px;font-weight:600;">(${invEscH(r.barcode)})</span>`:''}</span><span style="font-weight:700;">₹${invTaxableVal(r).toFixed(2)}</span>
+                    <span>${invEscH(r.desc)}${r.barcode?` <span style="color:#999;font-size:11px;font-weight:600;">(${invEscH(r.barcode)})</span>${_invTagPrintBtn(r.barcode)}`:''}</span><span style="font-weight:700;">₹${invTaxableVal(r).toFixed(2)}</span>
                   </div>`).join('')}
                 </div>
                 ${t.disc>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#ff8a65;margin-bottom:6px;"><span>Discount</span><span>-₹${t.disc.toFixed(2)}</span></div>`:''}
