@@ -24439,6 +24439,28 @@ function _mmiYmd(ts) {
     const d = new Date(ts); if (isNaN(d)) return '';
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+/* Publishes the list of SOLD / ISSUED Tag Generator tags to tagsoft/sold so the Tag Generator can HIDE them from its stock view.
+   Hiding only: nothing is deleted or archived. Same "gone" rule as Adjust Tags (returned / installment-held tags and reused tag numbers do not count). */
+let _tgSoldSig = '';
+function _tgPublishSold() {
+    try {
+        if (!window._writeAllowed || !window._tgLoaded || !navigator.onLine || !window.dbSafeUpdate) return;
+        const T = window._tgTags || {}, ev = _mmiCollectGoneTags(), out = {};
+        Object.keys(T).forEach(k => {
+            const t = T[k]; if (!t || t.status === 'archived') return;
+            const no = String(t.tagNo || k).trim().toUpperCase(), e = ev[no];
+            if (!e) return;
+            if (t.ts && +t.ts > e.last) return; // tag made AFTER that sale = reused number, not the sold item
+            out[String(t.tagNo || k)] = 1;
+        });
+        const keys = Object.keys(out).sort(); if (!keys.length) return; // never wipe the list while sales data may still be loading
+        const sig = keys.join('|'); if (sig === _tgSoldSig) return;
+        window.dbSafeUpdate({ 'tagsoft/sold': out }).then(() => { _tgSoldSig = sig; }).catch(e => console.warn('[TG] sold list not published', e));
+    } catch (e) { console.warn('[TG] sold publish failed', e); }
+}
+setInterval(_tgPublishSold, 20000);
+setTimeout(_tgPublishSold, 8000);
+
 // tag -> { first: earliest sale/issue ms, last: latest sale/issue ms }
 function _mmiCollectGoneTags() {
     const ev = {};
