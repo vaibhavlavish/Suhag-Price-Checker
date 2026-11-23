@@ -2160,6 +2160,7 @@
                         <option value="per_g">₹ Per Gram</option>
                         <option value="per_pc">₹ Fixed (Pc)</option>
                         <option value="mrp">MRP (Direct) — fixed ₹ amount</option>
+                        <option value="srate">SRATE — fixed ₹/gram rate</option>
 
                     </select>
                 </div>
@@ -2222,6 +2223,7 @@
                 <option value="per_g">₹ Per Gram</option>
                 <option value="per_pc">₹ Fixed (Pc)</option>
                 <option value="mrp">MRP (Direct) — fixed ₹ amount</option>
+                        <option value="srate">SRATE — fixed ₹/gram rate</option>
             </select>
             <label for="preset-modal-making-value" style="font-size:12px; margin: 0 0 2px 0;">Making Value:</label>
             <input type="number" id="preset-modal-making-value" placeholder="e.g. 35" step="0.25" style="margin:0 0 6px 0; padding:8px; border:1px solid #ddd; border-radius:8px; font-size:14px; width:100%; box-sizing:border-box;">
@@ -5123,6 +5125,7 @@
                 makingPercent: _tgNum(t.sp), makingWastage: _tgNum(t.sw),
                 makingPerGram: _tgNum(t.swt), makingPerPc: _tgNum(t.srs),
                 mrp: stamp ? 0 : _tgNum(t.mrp), // stamped items ignore MRP, same as the Excel import
+                srate: _tgNum(t.srate), // fixed per-gram sale rate: price = net weight x srate + tax (metal rate ignored)
                 otherCharge: 0, metal, stamp,
                 HUID: String(t.huid || '').trim().toUpperCase(),
                 design: String(t.design || '').trim(),
@@ -5153,7 +5156,7 @@
         function _tgSync(ex, t, no) {
             const p = _tgToProduct(t, no);
             if (!p.itemName) return;
-            ['itemName', 'size', 'grossWeight', 'netWeight', 'makingPercent', 'makingWastage', 'makingPerGram', 'makingPerPc', 'mrp', 'metal', 'stamp', 'HUID', 'design']
+            ['itemName', 'size', 'grossWeight', 'netWeight', 'makingPercent', 'makingWastage', 'makingPerGram', 'makingPerPc', 'mrp', 'srate', 'metal', 'stamp', 'HUID', 'design']
                 .forEach(f => { ex[f] = p[f]; });
         }
         // Rebuild the tag-generator entries inside productData (a real POS record keeps its own extras but takes the Tag Generator's details)
@@ -7385,7 +7388,15 @@
         // (e.g. loose stones, findings). If an Excel row has both a stamp AND an MRP
         // figure, the stamp wins and MRP is ignored for pricing purposes.
         function _productUsesMrp(d) {
-            return !!(d && d.mrp > 0 && !d.stamp);
+            // SRATE (set in the Tag Generator) makes the item fixed-priced too: net weight x SRATE + tax.
+            // The gold/silver rate tables are never used for it, whatever the stamp is.
+            return !!(d && (d.srate > 0 || (d.mrp > 0 && !d.stamp)));
+        }
+        function _srateOf(d) { return (d && d.srate > 0) ? d.srate : 0; }
+        // Taxable base of a fixed-price item: weight x SRATE when SRATE is set, otherwise the MRP.
+        function _fixedBase(d, w) {
+            const s = _srateOf(d);
+            return s > 0 ? (parseFloat(w != null ? w : d.netWeight) || 0) * s : (d.mrp || 0);
         }
 
         // Silver items priced on "Making %" and under 15 g show the item's total making
@@ -7403,9 +7414,9 @@
             const weight = d.netWeight || 0;
 
             if (_productUsesMrp(d)) {
-                const total = d.mrp + otherCharge;
+                const total = _fixedBase(d, weight) + otherCharge;
                 final = total + total * (taxRate / 100);
-                return { final, makingType: 'MRP', makingInput: d.mrp };
+                return { final, makingType: 'MRP', makingInput: _fixedBase(d, weight) };
             }
 
             const mKey = d.metal, stamp = d.stamp;
@@ -7450,9 +7461,9 @@
             const weight = d.netWeight || 0;
 
             if (_productUsesMrp(d)) {
-                const total = d.mrp + otherCharge;
+                const total = _fixedBase(d, weight) + otherCharge;
                 final = total + total * (taxRate / 100) + productHmCharge(d);
-                return { final, makingType: 'MRP', makingInput: d.mrp };
+                return { final, makingType: 'MRP', makingInput: _fixedBase(d, weight) };
             }
 
             const mKey = d.metal, stamp = d.stamp;
@@ -8171,6 +8182,7 @@
             else if(makingType === 'wastage') makingDisplayStr = `${makingValue}% (Wastage)`;
             else if(makingType === 'per_g') makingDisplayStr = `₹${makingValue}/g`;
             else if(makingType === 'mrp') makingDisplayStr = `MRP ₹${makingValue} (Direct)`;
+            else if(makingType === 'srate') makingDisplayStr = `SRATE ₹${makingValue}/g`;
             else makingDisplayStr = `₹${makingValue} (Fixed)`;
             document.getElementById('loose-making-display').textContent = `Making: ${makingDisplayStr}`;
 
@@ -8206,6 +8218,35 @@
                     makingType: 'mrp', makingValue: mrpAmt,
                     subtotal: mrpAmt / (1 + taxRate / 100), taxRateApplied: taxRate,
                     presetName: _mrpName ? null : (currentLoosePresetName || null),
+                    pieceCount: parseInt(document.getElementById('loose-piece-count').value, 10) || 1
+                };
+                return;
+            }
+
+            // SRATE: the value typed in the Making/SRATE box is a fixed ₹/gram selling rate.
+            // Price = weight x SRATE + GST. Metal rate and making play no part; on the invoice
+            // the SRATE goes straight into the RATE column and the making column stays blank.
+            if (makingType === 'srate') {
+                const srateVal = (!isNaN(makingValue) && makingValue > 0) ? makingValue : 0;
+                if (srateVal <= 0) {
+                    priceDisplay.textContent = '0.00';
+                    currentLooseItem = null;
+                    return;
+                }
+                const _srName = document.getElementById('loose-print-name').value.trim();
+                const srSubtotal = weight * srateVal;
+                const srFinal = srSubtotal + srSubtotal * (taxRate / 100);
+                priceDisplay.textContent = srFinal.toFixed(2);
+                currentLooseItem = {
+                    type: 'loose',
+                    id: crypto.randomUUID(),
+                    itemName: _srName || `Loose ${metal.charAt(0).toUpperCase() + metal.slice(1)} ${stamp}`,
+                    weight: weight,
+                    finalPrice: srFinal,
+                    metal: metal, stamp: stamp,
+                    rate: srateVal, makingType: 'srate', makingValue: srateVal,
+                    subtotal: srSubtotal, taxRateApplied: taxRate,
+                    presetName: _srName ? null : (currentLoosePresetName || null),
                     pieceCount: parseInt(document.getElementById('loose-piece-count').value, 10) || 1
                 };
                 return;
@@ -8952,6 +8993,7 @@
                     else if(preset.makingType === 'wastage') makingDisplay = `${preset.makingValue}% Wastage`;
                     else if(preset.makingType === 'per_g') makingDisplay = `₹${preset.makingValue}/g`;
                     else if(preset.makingType === 'mrp') makingDisplay = `MRP ₹${preset.makingValue}`;
+                    else if(preset.makingType === 'srate') makingDisplay = `SRATE ₹${preset.makingValue}/g`;
                     else makingDisplay = `₹${preset.makingValue} Fixed`;
 
                     row.innerHTML = `
@@ -9019,7 +9061,7 @@
                 // turning the MRP price into ₹0.00.
                 currentMakingType = '';
                 currentMakingInput = 0;
-                let total = d.mrp + otherCharge;
+                let total = _fixedBase(d, weight) + otherCharge;
                 currentTaxAmount = total * (taxRate / 100);
                 final = total + currentTaxAmount + hmAmt;
             } else {
@@ -9460,6 +9502,16 @@
                     <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;"><span>Final Total:</span><span>₹${d.finalPrice.toFixed(2)}</span></div></div>`, 'Complete Price Breakdown');
                 return;
             }
+            if (d.makingType === 'srate') {
+                const _srTax = d.finalPrice - d.subtotal;
+                showCustomAlert(`<div style="text-align:left; font-size:15px; background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee; margin-top:10px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">Weight:</span><strong>${d.weight.toFixed(3)} gm</strong></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">SRATE:</span><strong>₹${d.rate.toFixed(2)} /g</strong></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">Wt × SRATE:</span><strong>₹${d.subtotal.toFixed(2)}</strong></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">GST (${d.taxRateApplied}%):</span><strong>₹${_srTax.toFixed(2)}</strong></div>
+                    <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;"><span>Final Total:</span><span>₹${d.finalPrice.toFixed(2)}</span></div></div>`, 'Complete Price Breakdown');
+                return;
+            }
             const rate = d.rate;
             const metalVal = d.weight * rate;
             const makingType = d.makingType; // '%', 'wastage', 'per_g', 'per_pc'
@@ -9575,7 +9627,7 @@
             if (_productUsesMrp(d)) {
                 html += `
                     <p><strong>Type:</strong> <span>Fixed Rate</span></p>
-                    <p><strong>Rate:</strong> <span>${d.mrp.toFixed(2)}</span></p>
+                    <p><strong>Rate:</strong> <span>${_srateOf(d) ? _srateOf(d).toFixed(2) + ' /g' : d.mrp.toFixed(2)}</span></p>
                     <hr>
                     <p><strong>Tax (${taxRate}%):</strong> <span>${currentTaxAmount.toFixed(2)}</span></p>
                     <p><strong>Final Amount:</strong> <span>${currentFinalPrice.toFixed(2)}</span></p>
@@ -9914,6 +9966,15 @@
                     <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;"><span>Final Total:</span><span>₹${item.finalPrice.toFixed(2)}</span></div></div>`, 'Complete Price Breakdown');
                 return;
             }
+            if (item.type === 'loose' && item.makingType === 'srate') {
+                const _cSub = item.subtotal != null ? item.subtotal : (item.weight || 0) * (item.rate || 0);
+                const _cTax = item.finalPrice - _cSub;
+                showCustomAlert(`<div style="text-align:left; font-size:15px; background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee; margin-top:10px;">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">Wt × SRATE (${(item.rate || 0).toFixed(2)}/g):</span><strong>₹${_cSub.toFixed(2)}</strong></div>
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">GST:</span><strong>₹${_cTax.toFixed(2)}</strong></div>
+                    <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;"><span>Final Total:</span><span>₹${item.finalPrice.toFixed(2)}</span></div></div>`, 'Complete Price Breakdown');
+                return;
+            }
             if (item.type === 'loose') {
                 rate = (rates[item.metal] && rates[item.metal][item.stamp]) || 0;
                 pureRate = getPureRate(item.metal) || 0;
@@ -9940,7 +10001,7 @@
                 if (_productUsesMrp(d) && !item.makingOverride) {
                     showCustomAlert(`<div style="text-align:left; font-size:15px; background:#f9f9f9; padding:15px; border-radius:8px; border:1px solid #eee; margin-top:10px;">
                         ${tagRowHtml}
-                        <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">MRP:</span><strong>₹${d.mrp.toFixed(2)}</strong></div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">${_srateOf(d) ? 'Wt × SRATE (' + _srateOf(d).toFixed(2) + '/g):' : 'MRP:'}</span><strong>₹${_fixedBase(d, item.weightOverride != null ? item.weightOverride : weight).toFixed(2)}</strong></div>
                         ${otherCharge ? `<div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span style="color:#555;">Other Charges:</span><strong>₹${otherCharge.toFixed(2)}</strong></div>` : ''}
                         <div style="display:flex; justify-content:space-between; border-top:2px solid #333; padding-top:12px; font-size:18px; color:#4CAF50; font-weight:bold;">
                             <span>Final Total:</span><span>₹${item.finalPrice.toFixed(2)}</span>
@@ -11193,6 +11254,7 @@
 
             if (item.type === 'loose') {
                 if (item.makingType === 'mrp') return item.finalPrice; // fixed MRP — rates/weight never change it
+                if (item.makingType === 'srate') return item.finalPrice; // fixed SRATE x weight — metal rates never change it
                 if (!item.metal || !item.stamp) return item.finalPrice;
                 const rate = resolveRate(item.metal, item.stamp);
                 if (!rate) return item.finalPrice;
@@ -13249,6 +13311,7 @@
             }
             return -1;
         }
+
 
         function switchRateTab(tab){
             const currentBtn = document.getElementById('rtab-current-btn');
@@ -15486,7 +15549,7 @@
                 return;
             }
             if (_productUsesMrp(d)) {
-                final = d.mrp + otherCharge + (d.mrp + otherCharge) * (taxRate / 100) + productHmCharge(d);
+                final = _fixedBase(d, weight) + otherCharge + (_fixedBase(d, weight) + otherCharge) * (taxRate / 100) + productHmCharge(d);
             } else {
                 const mKey = d.metal, stamp = d.stamp;
                 if (!mKey || !stamp || !rates[mKey] || !rates[mKey][stamp]) {
@@ -18942,7 +19005,7 @@
                 invRows[i].barcode = key; // store barcode separately from display name
                 invRows[i].grWt = parseFloat(gw.toFixed(3));
                 invRows[i].nlWt = parseFloat(nw.toFixed(3));
-                invRows[i].rate = parseFloat(rv.toFixed(2));
+                invRows[i].rate = parseFloat((_srateOf(d) || rv).toFixed(2)); // SRATE items use their own rate, not the metal rate
                 // Wastage is charged on the pure 24K rate, not the karat rate (same as the cart path)
                 invRows[i].pureRate = parseFloat((getPureRate(metal) || 0).toFixed(2));
                 invRows[i].makingType = mk.makingType;
@@ -19344,6 +19407,7 @@
         }
 
         function invMakingFromProduct(d) {
+            if (_srateOf(d) > 0)     return (d.otherCharge > 0) ? { makingType:'per_pc', makingPct: d.otherCharge } : { makingType:'%', makingPct: 0 }; // SRATE: Nt.Wt x Rate/g (= SRATE), nothing else
             if (_productUsesMrp(d))  return { makingType:'mrp', makingPct: d.mrp };
             if (d.makingPerPc > 0)   return { makingType:'per_pc', makingPct: d.makingPerPc };
             if (d.makingWastage > 0) return { makingType:'wastage', makingPct: d.makingWastage };
@@ -19838,6 +19902,22 @@
                             isLoose: true
                         };
                     }
+                    if (item.makingType === 'srate') {
+                        // SRATE: the fixed rate goes straight into the RATE column; making is 0 (prints blank).
+                        return {
+                            desc: looseDesc,
+                            hsn: '7113', pc: item.pieceCount || 1,
+                            grWt: parseFloat((item.weight || 0).toFixed(3)),
+                            nlWt: parseFloat((item.weight || 0).toFixed(3)),
+                            rate: parseFloat((item.makingValue || item.rate || 0).toFixed(2)),
+                            makingType: '%',
+                            makingPct: 0,
+                            metal: item.metal || '',
+                            stamp: item.stamp || '',
+                            isLoose: true,
+                            isSrate: true
+                        };
+                    }
                     if (item.rate !== undefined && item.subtotal !== undefined) {
                         const typeMap = { '%':'%', per_g:'per_g', per_pc:'per_pc' };
                         if (typeMap[item.makingType]) {
@@ -19903,7 +19983,10 @@
                 const nw = (item.weightOverride != null) ? item.weightOverride : (parseFloat(d.netWeight) || 0);
                 const gw = (item.grossWeightOverride != null) ? item.grossWeightOverride : (parseFloat(d.grossWeight) || nw);
                 let mk;
-                if (_productUsesMrp(d)) {
+                if (_srateOf(d) > 0) {
+                    // SRATE product: invoiced as Nt.Wt x Rate/g (rate = SRATE), no making - same as the manual builder
+                    mk = invMakingFromProduct(d);
+                } else if (_productUsesMrp(d)) {
                     // MRP-priced product (MRP > 0, no stamp): the whole price is
                     // MRP + other charge, exactly what the main screen/cart priced.
                     // Always invoice it that way, ignoring any frozen making
@@ -19928,7 +20011,7 @@
                     desc: itmSettings.printName,
                     hsn: itmSettings.hsn, pc: 1,
                     grWt: parseFloat(gw.toFixed(3)), nlWt: parseFloat(nw.toFixed(3)),
-                    rate: parseFloat(rv.toFixed(2)),
+                    rate: parseFloat((_srateOf(d) || rv).toFixed(2)), // SRATE items use their own rate, not the metal rate
                     pureRate: parseFloat((pureRate || 0).toFixed(2)),
                     makingType: mk.makingType, makingPct: parseFloat((mk.makingPct || 0).toFixed(2)),
                     metal: metal,
@@ -20628,7 +20711,7 @@
                     const pre = (typeof loosePresets !== 'undefined' && loosePresets || []).find(pp => pp && pp.name === (r.presetName || r.desc));
                     return { type: 'loose', id, itemName: r.desc || 'Loose Jewellery', presetName: pre ? pre.name : null,
                              weight: r.nlWt || 0, metal: r.metal || '', stamp: r.stamp || '',
-                             rate: r.rate || 0, makingType: r.makingType || '%', makingValue: r.makingPct || 0,
+                             rate: r.rate || 0, makingType: (r.isSrate && (r.makingType || '%') === '%' && !r.makingPct) ? 'srate' : (r.makingType || '%'), makingValue: (r.isSrate && (r.makingType || '%') === '%' && !r.makingPct) ? (r.rate || 0) : (r.makingPct || 0),
                              subtotal: parseFloat(taxable.toFixed(2)), taxRateApplied: tax,
                              finalPrice: price, pieceCount: r.pc || 1 };
                 }
@@ -22256,7 +22339,7 @@
             // 3) Loose Calculator presets - fill metal, stamp, rate and making
             (loosePresets || []).forEach(function(pr) {
                 if (!pr || !(pr.name || '').trim()) return;
-                var mk = { '%': '%', wastage: '% (W)', per_g: '\u20b9/g', per_pc: '\u20b9/pc', mrp: 'MRP' }[pr.makingType] || pr.makingType;
+                var mk = { '%': '%', wastage: '% (W)', per_g: '\u20b9/g', per_pc: '\u20b9/pc', mrp: 'MRP', srate: 'SRATE/g' }[pr.makingType] || pr.makingType;
                 entries.push({ label: pr.name.trim(), sub: 'Preset \u00b7 ' + (pr.stamp || '') + ' \u00b7 ' + (pr.makingValue || 0) + ' ' + mk, kind: 'preset', key: pr.id });
             });
             if (!entries.length) { invToast('No stock item names found'); return; }
@@ -22291,7 +22374,7 @@
         // Clears everything a previous pick may have left on a row (barcode / HUID / flags).
         function _invResetRowIdentity(r) {
             r.barcode = null; r.huid = ''; r.size = ''; r.design = ''; r.tagDate = ''; r.hm = 0;
-            r.isLoose = false; r.isCustom = false; r.customItemId = null; r.customCategory = '';
+            r.isLoose = false; r.isSrate = false; r.isCustom = false; r.customItemId = null; r.customCategory = '';
             r.presetName = null; r.itemName = '';
         }
 
@@ -22317,6 +22400,8 @@
             r.rate = parseFloat(rv.toFixed(2));
             r.pureRate = parseFloat((getPureRate(metal) || 0).toFixed(2));
             r.makingType = mt; r.makingPct = parseFloat(mv.toFixed(2));
+            r.isSrate = false;
+            if (mt === 'srate') { r.rate = parseFloat(mv.toFixed(2)); r.makingType = '%'; r.makingPct = 0; r.isSrate = true; rv = r.rate; } // SRATE preset: rate = SRATE, no making
             invRenderRows();
             invRecalc();
             invToast((rv || mt === 'mrp') ? ('Loaded preset: ' + pr.name + ' \u2014 enter weight') : ('\u26a0\ufe0f No rate set for ' + (pr.metal || '') + ' ' + stamp));
