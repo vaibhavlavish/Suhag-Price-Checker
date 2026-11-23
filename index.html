@@ -6468,15 +6468,21 @@
         // timestamp, e.g. legacy billHistory, are treated as pre-dating any import).
         function getSoldBarcodesForStock() {
             const sold = new Set();
+            const lastSale = {}; // barcode -> latest sale/issue time (ms), used for the reused-tag-number rule below
+            const noteSale = (bc, ts) => {
+                let t = (typeof ts === 'number') ? ts : new Date(ts).getTime();
+                if (!t || isNaN(t)) return;
+                if (!(lastSale[bc] >= t)) lastSale[bc] = t;
+            };
             (billHistory || []).forEach(bill => {
                 (bill.items || []).forEach(item => {
-                    if (item && item.barcode) sold.add(String(item.barcode).trim().toUpperCase());
+                    if (item && item.barcode) { const bc = String(item.barcode).trim().toUpperCase(); sold.add(bc); noteSale(bc, bill.timestamp || bill.date); }
                 });
             });
             (invoiceHistory || []).forEach(inv => {
                 if (inv.draft) return;
                 (inv.items || []).forEach(item => {
-                    if (item && item.barcode) sold.add(String(item.barcode).trim().toUpperCase());
+                    if (item && item.barcode) { const bc = String(item.barcode).trim().toUpperCase(); sold.add(bc); noteSale(bc, inv.timestamp || inv.date); }
                 });
             });
             // Issued items (damaged/lost/etc., not a sale) are excluded
@@ -6484,9 +6490,17 @@
             // the whole point, their weight shouldn't count toward
             // available stock anymore even though nothing was actually sold.
             const issued = window._issuedBarcodes || {};
-            Object.keys(issued).forEach(bc => sold.add(bc.toUpperCase()));
+            Object.keys(issued).forEach(bc => { const u = bc.toUpperCase(); sold.add(u); const r = issued[bc] || {}; noteSale(u, r.ts || (r.date ? r.date + 'T12:00:00' : 0)); });
             const returned = window._returnedBarcodes || {};
             Object.keys(returned).forEach(bc => sold.delete(bc.toUpperCase()));
+            // Reused tag number: a Tag Generator tag created AFTER the last sale of that number is a brand-new item,
+            // not the sold one - it is stock. Same rule as the sold list published to the Tag Generator (_tgPublishSold).
+            const TGT = window._tgTags || {};
+            for (const k in TGT) {
+                const t = TGT[k]; if (!t || t.status === 'archived' || !t.ts) continue;
+                const no = String(t.tagNo || k).trim().toUpperCase();
+                if (sold.has(no) && lastSale[no] && +t.ts > lastSale[no]) sold.delete(no);
+            }
             return sold;
         }
 
