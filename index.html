@@ -5120,6 +5120,7 @@
             if (t.ts) { try { tagDate = new Date(+t.ts).toLocaleDateString('en-CA'); } catch (e) {} }
             return {
                 itemName: String(t.name || t.item || '').trim(),
+                stockName: String(t.item || '').trim(), // Stock view groups by the Tag Generator item (e.g. S PAYAL H), not the print name
                 size: String(t.size || '').trim(),
                 grossWeight: gw, netWeight: nw,
                 makingPercent: _tgNum(t.sp), makingWastage: _tgNum(t.sw),
@@ -5308,6 +5309,7 @@
         let _tgShownSig = '';
         /* Pop-up: appears by itself when tags the tag generator made are not yet marked as seen on this device */
         function _tgNewPopup() {
+            { const m = document.getElementById('tg-new-modal'); if (m) m.remove(); _tgShownSig = ''; return; } // pop-up switched off: new tags are simply in stock, no warning
             const T = window._tgTags || {}, ks = _tgNewKeys();
             const old = document.getElementById('tg-new-modal');
             if (!ks.length) { if (old) old.remove(); _tgShownSig = ''; return; }
@@ -7629,8 +7631,8 @@
             for (const barcode in productData) {
                 if (soldTags.has(String(barcode).trim().toUpperCase())) continue;
                 const d = productData[barcode];
-                const name = (d.itemName || 'Unknown').trim();
-                if (searchVal && !name.toLowerCase().includes(searchVal) && !barcode.toLowerCase().includes(searchVal)) continue;
+                const name = (d.stockName || d.itemName || 'Unknown').trim();
+                if (searchVal && !name.toLowerCase().includes(searchVal) && !String(d.itemName || '').toLowerCase().includes(searchVal) && !barcode.toLowerCase().includes(searchVal)) continue;
                 const priceResult = calcProductFinalPriceForActiveProfile(barcode);
                 allItems.push({ barcode, d, name, priceResult, effectivePrice: stockEffectivePrice(barcode, priceResult) });
             }
