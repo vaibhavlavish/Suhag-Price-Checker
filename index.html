@@ -2727,6 +2727,7 @@
                 style="flex:1; padding:9px 13px; border:1px solid #ddd; border-radius:20px; font-size:14px; background:white; box-shadow:0 1px 4px rgba(0,0,0,0.08);">
             <button onclick="showSection('main')" style="background:#555; color:white; border:none; border-radius:20px; padding:9px 14px; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap;">← Back</button>
         </div>
+        <div id="stock-gone-bar" style="display:none; margin-bottom:12px;"></div>
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px; position:relative;">
             <div id="stock-summary" style="flex:1; background:white; border-radius:10px; padding:10px 16px; font-size:14px; color:#555; box-shadow:0 1px 4px rgba(0,0,0,0.08);"></div>
             <button id="sort-toggle-btn" onclick="toggleStockSortMenu()" style="background:white; border:1px solid #ddd; border-radius:10px; padding:10px 14px; font-size:13px; font-weight:700; color:#333; cursor:pointer; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,0.08);">⇕ Sort</button>
@@ -5151,7 +5152,7 @@
             clearTimeout(_tgPersistTimer);
             _tgPersistTimer = setTimeout(() => { try { _idbSet(FULL_CACHE_STORE, 'tgKnownTags', _tgKnown).catch(e => console.warn('[TG] safety copy not saved', e)); } catch (e) {} }, 2000);
         }
-        function _tgForget(keys) { keys.forEach(k => { delete _tgKnown[k]; delete _tgKnownStr[k]; }); _tgPersist(); _tgMerge(); }
+        function _tgForget(keys) { keys.forEach(k => { delete _tgKnown[k]; delete _tgKnownStr[k]; }); _tgPersist(); _tgMerge(); try { const sv = document.getElementById('stock-view'); if (sv && sv.style.display !== 'none') renderStockView(); } catch (e) {} }
         // A normal POS record with the same barcode stays the POS's own record (otherCharge, voucher and date are kept),
         // but the details the Tag Generator manages follow it - so an edit made there shows up here too.
         function _tgSync(ex, t, no) {
@@ -5177,7 +5178,7 @@
             return Object.keys(_tgKnown).filter(no => { const t = T[no]; if (t && t.status !== 'archived') return false; return !sold.has(String(_tgKnown[no].tagNo || no).toUpperCase()); })
                 .sort((a, c) => a.localeCompare(c, undefined, { numeric: true }));
         }
-        function _tgGoneSoon() { clearTimeout(_tgGoneTimer); _tgGoneTimer = setTimeout(_tgGonePopup, 4000); } // wait a moment so the sales history is loaded first
+        function _tgGoneSoon() { clearTimeout(_tgGoneTimer); _tgGoneTimer = setTimeout(() => { try { _tgStockBar(); } catch (e) {} }, 4000); } // no pop-up any more: only the info bar on the Stock screen // wait a moment so the sales history is loaded first
         function _tgGonePopup() {
             const old = document.getElementById('tg-gone-modal');
             const ks = _tgGoneKeys();
@@ -7633,7 +7634,22 @@
             return makingInput || 0;
         }
 
+        // Red bar at the top of Stock: tags deleted in the Tag Generator that are still in POS stock. Stays until deleted/kept.
+        function _tgStockBar() {
+            const el = document.getElementById('stock-gone-bar'); if (!el) return;
+            let ks = []; try { ks = _tgGoneKeys(); } catch (e) {}
+            if (!ks.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+            let gw = 0; ks.forEach(k => gw += _tgNum(_tgKnown[k].gw));
+            el.style.display = 'block';
+            el.innerHTML = `<div style="background:#FFEBEE; border:1.5px solid #C62828; border-radius:10px; padding:10px 12px;">
+                <div style="font-size:13.5px; font-weight:800; color:#C62828;">⚠ ${ks.length} tag${ks.length > 1 ? 's' : ''} deleted from Tag Generator (${gw.toFixed(3)} g) — still in POS stock</div>
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                    <button onclick="tgGoneRemove()" style="flex:1; padding:9px; border:none; border-radius:8px; background:#C62828; color:#fff; font-weight:800; font-size:13px; cursor:pointer; margin:0;">🗑 Delete from here</button>
+                    <button onclick="tgGoneKeep()" style="flex:1; padding:9px; border:none; border-radius:8px; background:#2E7D32; color:#fff; font-weight:700; font-size:13px; cursor:pointer; margin:0;">Keep in POS stock</button>
+                </div></div>`;
+        }
         function renderStockView() {
+            _tgStockBar();
             const searchVal = (document.getElementById('stock-search')?.value || '').toLowerCase();
             const body = document.getElementById('stock-body');
             const summary = document.getElementById('stock-summary');
