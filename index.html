@@ -21202,7 +21202,8 @@
                     // Also search each item's barcode and HUID, since those live
                     // inside inv.items rather than on the top-level invoice record.
                     const itemHay = (inv.items || []).map(it => [it.barcode, it.huid].join(' ')).join(' ');
-                    const hay = [inv.billNo, inv.custName, inv.custMob, inv.custAddr, itemHay].join(' ').toLowerCase();
+                    const _amtR = Math.round(inv.totals?.rounded || 0);
+                    const hay = [inv.billNo, inv.custName, inv.custMob, inv.custAddr, itemHay, _amtR, _amtR.toLocaleString('en-IN')].join(' ').toLowerCase();
                     if (!hay.includes(q)) return false;
                 }
                 return true;
@@ -21464,7 +21465,8 @@
                 if (inv.track === 'B' && !invTrackBUnlocked) return false;
                 if (q) {
                     const itemHay = (inv.items || []).map(it => [it.barcode, it.huid].join(' ')).join(' ');
-                    const hay = [inv.billNo, inv.custName, inv.custMob, inv.custAddr, itemHay].join(' ').toLowerCase();
+                    const _amtR = Math.round(inv.totals?.rounded || 0);
+                    const hay = [inv.billNo, inv.custName, inv.custMob, inv.custAddr, itemHay, _amtR, _amtR.toLocaleString('en-IN')].join(' ').toLowerCase();
                     if (!hay.includes(q)) return false;
                 }
                 if (fromV || toV) {
@@ -23762,7 +23764,7 @@
         <!-- ══ PANE: HISTORY ══ -->
         <div id="inv-pane-history" style="display:none;">
             <div style="position:relative; margin-bottom:12px;">
-                <input type="text" id="inv-hist-search" placeholder="Search by bill no., name, mobile, address, HUID…" oninput="invRenderHistory()" style="margin:0; padding-left:34px;">
+                <input type="text" id="inv-hist-search" placeholder="Search by bill no., name, mobile, address, HUID, amount…" oninput="invRenderHistory()" style="margin:0; padding-left:34px;">
                 <span style="position:absolute; left:11px; top:50%; transform:translateY(-50%); font-size:14px;">🔍</span>
             </div>
             <div style="display:flex; gap:8px; margin-bottom:12px;">
