@@ -20149,6 +20149,31 @@
                 return false;
             }
 
+            // RULE: a NEW bill number can never carry an older date than an earlier-numbered bill of the same track.
+            // (Keeps bill-number order and date order in step — backdated bills were scrambling reports/exports.)
+            if (!(invEditingId && invoiceHistory.some(i => i.id === invEditingId))) {
+                const _ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+                const _numOf = b => { const m = String(b || '').match(/(\d+)\s*$/); return m ? parseInt(m[1], 10) : NaN; };
+                const _newBill = (document.getElementById('inv-bill-no').value || '').trim() || _invNextBillNo(currentInvTrack);
+                const _newNum = _numOf(_newBill);
+                const _newDay = document.getElementById('inv-date').value || _ymd(new Date());
+                if (!isNaN(_newNum)) {
+                    let _latest = null;
+                    invoiceHistory.forEach(i => {
+                        if (i.track !== currentInvTrack || i.draft) return;
+                        const n = _numOf(i.billNo); if (isNaN(n) || n >= _newNum) return;
+                        const d = new Date(i.timestamp); if (isNaN(d)) return;
+                        const day = _ymd(d);
+                        if (!_latest || day > _latest.day) _latest = { day, billNo: i.billNo };
+                    });
+                    if (_latest && _newDay < _latest.day) {
+                        const f = x => x.split('-').reverse().join('/');
+                        showCustomAlert(`Date ${f(_newDay)} is older than ${_latest.billNo} (${f(_latest.day)}). A new invoice number cannot have an older date — set the date to ${f(_latest.day)} or later.`);
+                        return false;
+                    }
+                }
+            }
+
             // This shop never intends to leave an invoice outstanding —
             // so any gap between the bill amount and what's actually
             // received (whether typed directly or split across
@@ -21901,6 +21926,26 @@
         // brand-new Track A invoice. This creates a new record with its own
         // Track A bill number; it does NOT edit, move, or delete the original
         // Track B invoice, which is left exactly as it was.
+        // Copy/Move B→A: Track A bill numbers must never carry an older date than an earlier bill. If the Track B
+        // invoice's date is older than the latest Track A bill, don't block — move the date up to that bill's date and tell the user.
+        function _invClampCopiedDateToTrackA(dateEl) {
+            if (!dateEl || !dateEl.value) return;
+            const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            const num = b => { const m = String(b || '').match(/(\d+)\s*$/); return m ? parseInt(m[1], 10) : -1; };
+            let last = null;
+            invoiceHistory.forEach(i => {
+                if (i.track !== 'A' || i.draft) return;
+                const d = new Date(i.timestamp); if (isNaN(d)) return;
+                const day = ymd(d);
+                if (!last || day > last.day || (day === last.day && num(i.billNo) > num(last.billNo))) last = { day, billNo: i.billNo };
+            });
+            if (!last || dateEl.value >= last.day) return;
+            const f = x => x.split('-').reverse().join('/');
+            const old = dateEl.value;
+            dateEl.value = last.day;
+            showCustomAlert(`Invoice date changed from ${f(old)} to ${f(last.day)} — the date of the last Track A invoice (${last.billNo}). A new Track A number cannot have an older date.`);
+        }
+
         function invCopyToTrackA(id) {
             const inv = invoiceHistory.find(i => i.id === id);
             if (!inv) return;
@@ -21976,6 +22021,7 @@
                 const d = new Date(inv.timestamp);
                 if (!isNaN(d)) dateEl.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
             }
+            _invClampCopiedDateToTrackA(dateEl);
 
             // Bill number is intentionally left as the fresh Track A number that
             // invReset() already filled in — Track A and Track B keep independent
@@ -21987,18 +22033,6 @@
             invRecalc();
             invSwitchTab('new');
             invToast('➡️ Copied to Track A — review and Save to generate the invoice');
-        }
-
-        // Same as Copy above, but the original Track B invoice is deleted once
-        // this copy is actually saved (handled in _invDoActualPrint's onAfterPrint,
-        // where the new record gets committed) — not immediately on this click,
-        // so cancelling out of the review screen leaves the original untouched.
-        function invMoveToTrackA(id) {
-            const inv = invoiceHistory.find(i => i.id === id);
-            if (!inv || inv.track !== 'B') return; // same guard as invCopyToTrackA — only ever meaningful out of Track B
-            invCopyToTrackA(id);
-            window._invMoveSourceId = id;
-            invToast('➡️ Copied to Track A — Save to complete the move (original Track B invoice will then be removed)');
         }
 
         function invDeleteBill(id) {
@@ -22115,7 +22149,13 @@
             });
             if (!inRange.length) { invToast('No invoices in that range'); return; }
 
-            const sorted = [...inRange].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+            // Bill-number order (same as History) — bills can be created out of timestamp order, so timestamp alone breaks the sequence
+            const _bn = inv => { const m = String(inv.billNo || '').match(/(\d+)\s*$/); return m ? parseInt(m[1], 10) : NaN; };
+            const sorted = [...inRange].sort((a,b) => {
+                const na = _bn(a), nb = _bn(b);
+                if (!isNaN(na) && !isNaN(nb) && na !== nb) return na - nb;
+                return new Date(a.timestamp) - new Date(b.timestamp);
+            });
             const pct = invoiceSettings.taxRate || 0;
             const frac = pct / 100;
             // Kills floating-point noise (e.g. 14591.199999999999) before
