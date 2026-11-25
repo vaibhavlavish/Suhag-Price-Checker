@@ -22130,6 +22130,9 @@
             const titleRow = ws.addRow([`SALE REGISTER From:${fromD.toLocaleDateString('en-GB')} To:${toD.toLocaleDateString('en-GB')}`]);
             titleRow.getCell(1).font = { bold: true, size: 13 };
             ws.addRow([]);
+            // ExcelJS stores Dates by their UTC value, so an IST invoice made before 5:30 AM would land on the previous day.
+            // Rebuild the date from its LOCAL y/m/d so Excel shows the same day the POS shows.
+            const _xlLocalDate = ts => { const d = new Date(ts); return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); };
             const headers = ['Date','Bill No.','Name','Taxable Amount','Old Jewellery','Tax','Bill Amount','UPI','Cash','Card','State','Customer GSTIN'];
             const headerRow = ws.addRow(headers);
 
@@ -22172,7 +22175,7 @@
                 upi = r2(upi); cash = r2(cash); card = r2(card);
 
                 const row = ws.addRow([
-                    new Date(inv.timestamp), inv.billNo, inv.custName || 'CASH',
+                    _xlLocalDate(inv.timestamp), inv.billNo, inv.custName || 'CASH',
                     grossAmt, oldJewellery || null, tax, billAmt,
                     upi || null, cash || null, card || null, state, gstin || null
                 ]);
@@ -22242,7 +22245,7 @@
                 const billAmt = r2(t.rounded);
                 const taxableVal = frac > 0 ? r2(billAmt / (1 + frac)) : billAmt;
                 const row = gstWs.addRow([
-                    inv.custGstin, inv.custName || '', inv.billNo, new Date(inv.timestamp),
+                    inv.custGstin, inv.custName || '', inv.billNo, _xlLocalDate(inv.timestamp),
                     billAmt, _gstPlaceOfSupply(inv.state), 'N', '', 'Regular', pct, taxableVal, 0
                 ]);
                 row.getCell(4).numFmt = 'dd/mm/yyyy';
