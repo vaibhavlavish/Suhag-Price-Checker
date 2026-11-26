@@ -4768,6 +4768,7 @@
         let menuPrefs = {}; // which More-menu items are hidden — cloud-synced like other config
         let shopUpiId  = ''; // UPI ID for payment QR — cloud-synced, falls back to localStorage (legacy, mirrors shopUpiIds[0])
         let shopUpiIds = []; // Array of {name, upi} — up to 4 UPI IDs for payment QR, cloud-synced
+        let invUpiBothTracks = (function(){ try { const a = JSON.parse(localStorage.getItem('invUpiBothTracks') || '[]'); return Array.isArray(a) ? a : []; } catch(e) { return []; } })(); // UPI ids (strings) whose Track B sales also get a Track A copy
         // Stock Weight Calculator: per-category packaging weights, manually editable.
         // Keyed by item name (trimmed, uppercase) -> { pWeight, bWeight, extraBag }
         let packagingWeights = {};
@@ -5526,6 +5527,10 @@
             } else {
                 invCheckoutTrackSynced = localStorage.getItem('invCheckoutTrack') || 'B';
             }
+            if (Array.isArray(cloudData.upiBothTracks)) {
+                invUpiBothTracks = cloudData.upiBothTracks.filter(x => typeof x === 'string');
+                localStorage.setItem('invUpiBothTracks', JSON.stringify(invUpiBothTracks));
+            }
             if (cloudData.checkoutFormat === 'invoice1' || cloudData.checkoutFormat === 'invoice2') {
                 invCheckoutFormatSynced = cloudData.checkoutFormat;
                 localStorage.setItem('invCheckoutFormat', invCheckoutFormatSynced);
@@ -5805,6 +5810,7 @@
                 invBillStartNumber: config.invBillStartNumber || null,
                 lastBarcodeListMarked: config.lastBarcodeListMarked || null,
                 checkoutTrack: config.checkoutTrack || null,
+                upiBothTracks: config.upiBothTracks || null,
                 checkoutFormat: config.checkoutFormat || null,
                 ratesListLayout: config.ratesListLayout || null,
                 customItems: config.customItems || {},
@@ -14763,8 +14769,21 @@
         // "Both tracks" mode: after the Track B invoice is saved, file an identical Track A copy
         // (same bill number — A and B share the number by design). The copy has its own id, and
         // carries no creditor link so a credit sale isn't counted twice.
+        // "Manage Track A" → a Track B sale paid (fully or partly) through a UPI ID the owner ticked
+        // also gets a Track A copy, even when checkout is in plain Track-B-only mode.
+        function _invUpiForcesTrackA(rec) {
+            if (!invUpiBothTracks.length || !rec) return false;
+            let entry = null;
+            if (rec.paymentMethod === 'upi') {
+                entry = window._selectedUpiEntry || (shopUpiIds && shopUpiIds.length === 1 ? shopUpiIds[0] : null);
+            } else if (rec.paymentMethod === 'partial' && rec.paymentDetails && rec.paymentDetails.upi > 0) {
+                entry = window._selectedPartialUpiEntry || (shopUpiIds && shopUpiIds.length === 1 ? shopUpiIds[0] : null);
+            }
+            return !!(entry && invUpiBothTracks.indexOf(entry.upi) !== -1);
+        }
         function _invSaveTrackACopy(rec) {
-            if (!invCheckoutBoth() || !rec || rec.track !== 'B') return;
+            if (!rec || rec.track !== 'B') return;
+            if (!invCheckoutBoth() && !_invUpiForcesTrackA(rec)) return;
             const copy = JSON.parse(JSON.stringify(rec));
             copy.id = crypto.randomUUID();
             copy.track = 'A';
@@ -19080,9 +19099,71 @@
             document.getElementById('inv-settings-modal').style.display = 'flex';
             const _mb = document.getElementById('inv-mmi-settings-btn');
             if (_mb) _mb.style.display = (typeof _isTrackBActive === 'function' && _isTrackBActive()) ? 'flex' : 'none';
+            const _ma = document.getElementById('inv-manage-a-btn');
+            if (_ma) _ma.style.display = (typeof _isTrackBActive === 'function' && _isTrackBActive()) ? 'flex' : 'none';
             const bgEl = document.getElementById('inv-with-bg');
             if (bgEl) bgEl.checked = invGetWithBgPref();
             _renderCustomFullPageBgPreview();
+        }
+
+        // ── Manage Track A (Track B settings) ──
+        function invOpenManageA() {
+            document.getElementById('inv-settings-modal').style.display = 'none';
+            document.getElementById('inv-manage-a-modal').style.display = 'flex';
+            const box = document.getElementById('inv-manage-a-upi-list');
+            if (!shopUpiIds || !shopUpiIds.length) {
+                box.innerHTML = '<div style="font-size:12px;color:#bbb;">No UPI IDs saved yet (More → Set UPI IDs).</div>';
+                return;
+            }
+            box.innerHTML = shopUpiIds.map((e, i) => `
+                <label style="display:flex; align-items:center; gap:10px; background:#fafafa; border:1.5px solid var(--border); border-radius:10px; padding:10px; cursor:pointer;">
+                    <input type="checkbox" ${invUpiBothTracks.indexOf(e.upi) !== -1 ? 'checked' : ''} onchange="invToggleUpiBoth(${i}, this.checked)" style="width:18px; height:18px; margin:0;">
+                    <span style="font-size:13px; font-weight:700;">${invEscH(e.name || 'UPI')}<span style="display:block; font-size:11px; font-weight:500; color:#888;">${invEscH(e.upi)}</span></span>
+                </label>`).join('');
+        }
+        function invToggleUpiBoth(idx, on) {
+            const e = shopUpiIds[idx]; if (!e) return;
+            invUpiBothTracks = invUpiBothTracks.filter(u => u !== e.upi);
+            if (on) invUpiBothTracks.push(e.upi);
+            localStorage.setItem('invUpiBothTracks', JSON.stringify(invUpiBothTracks));
+            window.dbSafeUpdate({ 'jewelryData/config/upiBothTracks': invUpiBothTracks.length ? invUpiBothTracks : null });
+            invToast(on ? '✅ ' + (e.name || e.upi) + ' → also saves to Track A' : '↩️ ' + (e.name || e.upi) + ' → Track B only');
+        }
+        // Frees bill number N in Track A: every Track A invoice numbered N or higher moves up by one.
+        // Track B originals linked to those Track A copies (mirrorOf) move with them so A and B keep sharing numbers.
+        function invMakeRoomInTrackA() {
+            const prefix = invoiceSettings.invPrefix || 'SJ-';
+            const N = parseInt(document.getElementById('inv-manage-a-insert-no').value, 10);
+            if (!N || N < 1) { showCustomAlert('Enter the bill number to free up.'); return; }
+            const numOf = b => (b && String(b).startsWith(prefix)) ? parseInt(String(b).slice(prefix.length), 10) : NaN;
+            const aRecs = invoiceHistory.filter(i => i.track === 'A' && !i.draft && !isNaN(numOf(i.billNo)) && numOf(i.billNo) >= N);
+            if (!aRecs.length) { showCustomAlert('No Track A invoice at or after ' + prefix + N + ' — just create it normally.'); return; }
+            const maxNum = Math.max.apply(null, aRecs.map(i => numOf(i.billNo)));
+            showCustomConfirm(
+                aRecs.length + ' Track A invoice(s) will be renumbered: ' + prefix + N + ' → ' + prefix + (N + 1) + ' … ' + prefix + maxNum + ' → ' + prefix + (maxNum + 1) + '. Then you create the missing invoice as ' + prefix + N + '. Continue?',
+                'Make room at ' + prefix + N,
+                () => {
+                    const update = {}, ids = new Set(aRecs.map(i => i.id));
+                    const bump = rec => {
+                        const nb = prefix + (numOf(rec.billNo) + 1);
+                        rec.billNo = nb;
+                        update['jewelryData/invoiceHistory/' + rec.id + '/billNo'] = nb;
+                        update['pmSales/' + rec.id + '/billNo'] = nb;
+                        creditTxns.filter(t => t.invoiceId === rec.id && t.type === 'sale').forEach(t => {
+                            window.dbUpdate(_cdRef('creditTxns/' + t.id), { billNo: nb, note: 'Bill #' + nb })
+                                .catch(e => console.error('[Credit] renumber failed', e));
+                        });
+                    };
+                    const bMirrorIds = new Set(aRecs.map(i => i.mirrorOf).filter(Boolean));
+                    aRecs.forEach(bump);
+                    invoiceHistory.forEach(i => { if (i.track === 'B' && bMirrorIds.has(i.id) && !ids.has(i.id)) bump(i); });
+                    _saveInvoiceLocal();
+                    _durableWrite('invoice_renum_' + Date.now(), update);
+                    document.getElementById('inv-manage-a-modal').style.display = 'none';
+                    if (typeof invRenderHistory === 'function') { try { invRenderHistory(); } catch(e) {} }
+                    showCustomAlert(prefix + N + ' is now free. Switch to Track A → New invoice, type ' + prefix + N + ' in Bill No., set the date, and save.');
+                }
+            );
         }
 
         function invOpenPrintSettingsModal() {
@@ -23936,6 +24017,29 @@
                 <button id="inv-mmi-settings-btn" onclick="invOpenMmiModal()" style="width:100%; text-align:left; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; font-size:14px; font-weight:700; color:var(--text); cursor:pointer; box-shadow:none; margin:0; display:flex; align-items:center; justify-content:space-between; display:none;">
                     <span>🔗 MMI Link (Track B)</span><span style="color:#bbb;">›</span>
                 </button>
+                <button id="inv-manage-a-btn" onclick="invOpenManageA()" style="width:100%; text-align:left; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; font-size:14px; font-weight:700; color:var(--text); cursor:pointer; box-shadow:none; margin:0; display:none; align-items:center; justify-content:space-between;">
+                    <span>🛠️ Manage Track A (Track B)</span><span style="color:#bbb;">›</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MANAGE TRACK A MODAL (Track B settings only) -->
+    <div id="inv-manage-a-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:610; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:18px; margin:16px; max-width:420px; width:100%; max-height:88vh; overflow-y:auto; padding:18px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <button onclick="document.getElementById('inv-manage-a-modal').style.display='none'; document.getElementById('inv-settings-modal').style.display='flex';" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">‹ Back</button>
+                <span style="font-size:16px; font-weight:800; color:var(--text);">🛠️ Manage Track A</span>
+                <span style="width:48px;"></span>
+            </div>
+            <div style="font-size:13px; font-weight:800; margin-bottom:4px;">📱 UPI → also save in Track A</div>
+            <p style="font-size:12px; color:#888; margin:0 0 8px 0;">A Track B checkout paid through a ticked UPI ID is also filed as a Track A invoice (same bill number).</p>
+            <div id="inv-manage-a-upi-list" style="display:flex; flex-direction:column; gap:6px; margin-bottom:18px;"></div>
+            <div style="border-top:1px solid #eee; padding-top:14px;">
+                <div style="font-size:13px; font-weight:800; margin-bottom:4px;">➕ Insert an invoice in Track A</div>
+                <p style="font-size:12px; color:#888; margin:0 0 8px 0;">Enter the bill number you want to free up. That invoice and every Track A invoice after it go up by one number. Then create the missing invoice in Track A with that number.</p>
+                <input type="number" id="inv-manage-a-insert-no" min="1" step="1" placeholder="e.g. 389" style="width:100%; box-sizing:border-box; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:14px; font-family:inherit; margin:0 0 10px 0;">
+                <button onclick="invMakeRoomInTrackA()" style="width:100%; background:var(--gold,#B8922E); border:none; border-radius:11px; padding:13px; font-size:14px; font-weight:700; color:white; cursor:pointer; box-shadow:none; margin:0;">Make room</button>
             </div>
         </div>
     </div>
