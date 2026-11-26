@@ -21429,6 +21429,7 @@
         }
         // Small "Print" button beside the tag no — only when that tag exists in Tag Generator.
         function _invTagPrintBtn(barcode) {
+            if (currentInvTrack !== 'B') return ''; // tag printing is a Track B tool only
             if (!_invFindTgTag(barcode)) return '';
             return ` <button data-b="${invEscH(barcode)}" onclick="event.stopPropagation();invPrintTag(this.dataset.b)" style="background:#1D6BB5;color:white;border:none;border-radius:6px;padding:1px 8px;font-size:11px;font-weight:700;cursor:pointer;box-shadow:none;margin:0 0 0 4px;width:auto;vertical-align:middle;">🖨 Print</button>`;
         }
