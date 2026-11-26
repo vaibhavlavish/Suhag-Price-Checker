@@ -19149,11 +19149,8 @@
             const after = shifted.slice().sort((x, y) => numOf(x.billNo) - numOf(y.billNo))[0];
             const dateRef = before || after;
             const f = ts => { const d = new Date(ts); return ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + d.getFullYear(); };
-            const newTs = dateRef ? dateRef.timestamp : src.timestamp;
-            showCustomConfirm(
-                prefix + S + ' (' + (src.custName || '—') + ') will become ' + prefix + T + ' dated ' + f(newTs) + '. ' + shifted.length + ' invoice(s) from ' + prefix + T + ' to ' + prefix + (S - 1) + ' go up by one number. Continue?',
-                'Insert at ' + prefix + T,
-                () => {
+            let newTs = dateRef ? dateRef.timestamp : src.timestamp;
+            const _run = () => {
                     const update = {};
                     const setNo = (rec, no) => {
                         const nb = prefix + no;
@@ -19184,8 +19181,45 @@
                     document.getElementById('inv-manage-a-modal').style.display = 'none';
                     if (typeof invRenderHistory === 'function') { try { invRenderHistory(); } catch(e) {} }
                     invToast('✅ ' + prefix + S + ' is now ' + prefix + T + ' (' + f(newTs) + ')', 4000);
-                }
+            };
+            // Date limits so bill-number order and date order stay in step: not older than the invoice before, not later than the one after.
+            const ymd = ts => { const d = new Date(ts); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
+            const loDay = before ? ymd(before.timestamp) : '';
+            const hiDay = after ? ymd(after.timestamp) : '';
+            _invAskMoveDate(
+                prefix + S + ' (' + (src.custName || '—') + ') will become ' + prefix + T + '. ' + shifted.length + ' invoice(s) from ' + prefix + T + ' to ' + prefix + (S - 1) + ' go up by one number.',
+                ymd(newTs), loDay, hiDay,
+                day => { if (day !== ymd(newTs)) { const [y, m, d] = day.split('-').map(Number); newTs = new Date(y, m - 1, d, 12, 0, 0).toISOString(); } _run(); }
             );
+        }
+        // Pop-up asking for the invoice date before a move; the date is pre-filled and can be edited.
+        function _invAskMoveDate(msg, defDay, loDay, hiDay, onOk) {
+            const old = document.getElementById('inv-move-date-pop'); if (old) old.remove();
+            const el = document.createElement('div');
+            el.id = 'inv-move-date-pop';
+            el.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:5100; display:flex; align-items:center; justify-content:center;';
+            el.innerHTML = `<div style="background:white; border-radius:18px; margin:16px; max-width:380px; width:100%; padding:18px;">
+                <div style="font-size:16px; font-weight:800; margin-bottom:8px;">Insert invoice</div>
+                <p style="font-size:13px; color:#555; margin:0 0 12px 0;">${invEscH(msg)}</p>
+                <label style="font-size:11px; font-weight:700; color:var(--text2); display:block; margin-bottom:4px;">Invoice date</label>
+                <input type="date" id="inv-move-date-input" value="${defDay}" style="width:100%; box-sizing:border-box; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:14px; font-family:inherit; margin:0 0 6px 0;">
+                <p style="font-size:11px; color:#999; margin:0 0 14px 0;">Pre-filled from the invoice before its new place. Allowed: ${loDay ? loDay.split('-').reverse().join('/') : 'any'} to ${hiDay ? hiDay.split('-').reverse().join('/') : 'any'}.</p>
+                <div style="display:flex; gap:8px;">
+                    <button id="inv-move-date-cancel" style="flex:1; background:#eee; border:none; border-radius:11px; padding:12px; font-size:14px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; margin:0;">Cancel</button>
+                    <button id="inv-move-date-ok" style="flex:1; background:var(--gold,#B8922E); border:none; border-radius:11px; padding:12px; font-size:14px; font-weight:700; color:white; cursor:pointer; box-shadow:none; margin:0;">Move</button>
+                </div></div>`;
+            document.body.appendChild(el);
+            document.getElementById('inv-move-date-cancel').onclick = () => el.remove();
+            document.getElementById('inv-move-date-ok').onclick = () => {
+                const day = document.getElementById('inv-move-date-input').value;
+                if (!day) { showCustomAlert('Pick a date.'); return; }
+                if ((loDay && day < loDay) || (hiDay && day > hiDay)) {
+                    showCustomAlert('Date must be between ' + (loDay ? loDay.split('-').reverse().join('/') : 'any') + ' and ' + (hiDay ? hiDay.split('-').reverse().join('/') : 'any') + ' so bill numbers and dates stay in order.');
+                    return;
+                }
+                el.remove();
+                onOk(day);
+            };
         }
 
         function invOpenPrintSettingsModal() {
