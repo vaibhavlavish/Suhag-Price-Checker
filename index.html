@@ -19129,23 +19129,34 @@
             window.dbSafeUpdate({ 'jewelryData/config/upiBothTracks': invUpiBothTracks.length ? invUpiBothTracks : null });
             invToast(on ? '✅ ' + (e.name || e.upi) + ' → also saves to Track A' : '↩️ ' + (e.name || e.upi) + ' → Track B only');
         }
-        // Frees bill number N in Track A: every Track A invoice numbered N or higher moves up by one.
-        // Track B originals linked to those Track A copies (mirrorOf) move with them so A and B keep sharing numbers.
-        function invMakeRoomInTrackA() {
+        // Moves one Track A invoice (usually a just-created one at the end) up to an earlier number.
+        // Invoices from the target number up to just below the moved one go up by one. The moved invoice
+        // takes the date of the invoice now before it. Linked Track B originals (mirrorOf) follow along.
+        function invMoveInvoiceUpInTrackA() {
             const prefix = invoiceSettings.invPrefix || 'SJ-';
-            const N = parseInt(document.getElementById('inv-manage-a-insert-no').value, 10);
-            if (!N || N < 1) { showCustomAlert('Enter the bill number to free up.'); return; }
+            const S = parseInt(document.getElementById('inv-manage-a-move-from').value, 10);
+            const T = parseInt(document.getElementById('inv-manage-a-move-to').value, 10);
+            if (!S || !T || S < 1 || T < 1) { showCustomAlert('Enter both numbers.'); return; }
+            if (T >= S) { showCustomAlert('The new number must be lower than the invoice you are moving.'); return; }
             const numOf = b => (b && String(b).startsWith(prefix)) ? parseInt(String(b).slice(prefix.length), 10) : NaN;
-            const aRecs = invoiceHistory.filter(i => i.track === 'A' && !i.draft && !isNaN(numOf(i.billNo)) && numOf(i.billNo) >= N);
-            if (!aRecs.length) { showCustomAlert('No Track A invoice at or after ' + prefix + N + ' — just create it normally.'); return; }
-            const maxNum = Math.max.apply(null, aRecs.map(i => numOf(i.billNo)));
+            const aAll = invoiceHistory.filter(i => i.track === 'A' && !i.draft && !isNaN(numOf(i.billNo)));
+            const srcList = aAll.filter(i => numOf(i.billNo) === S);
+            if (srcList.length !== 1) { showCustomAlert(srcList.length ? 'More than one Track A invoice has number ' + prefix + S + ' — fix that first.' : 'No Track A invoice found with number ' + prefix + S + '.'); return; }
+            const src = srcList[0];
+            const shifted = aAll.filter(i => { const n = numOf(i.billNo); return n >= T && n < S; });
+            // Date source: the invoice just before the new place; if there is none, the one it will sit in front of.
+            const before = aAll.filter(i => numOf(i.billNo) < T).sort((x, y) => numOf(y.billNo) - numOf(x.billNo))[0];
+            const after = shifted.slice().sort((x, y) => numOf(x.billNo) - numOf(y.billNo))[0];
+            const dateRef = before || after;
+            const f = ts => { const d = new Date(ts); return ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2) + '/' + d.getFullYear(); };
+            const newTs = dateRef ? dateRef.timestamp : src.timestamp;
             showCustomConfirm(
-                aRecs.length + ' Track A invoice(s) will be renumbered: ' + prefix + N + ' → ' + prefix + (N + 1) + ' … ' + prefix + maxNum + ' → ' + prefix + (maxNum + 1) + '. Then you create the missing invoice as ' + prefix + N + '. Continue?',
-                'Make room at ' + prefix + N,
+                prefix + S + ' (' + (src.custName || '—') + ') will become ' + prefix + T + ' dated ' + f(newTs) + '. ' + shifted.length + ' invoice(s) from ' + prefix + T + ' to ' + prefix + (S - 1) + ' go up by one number. Continue?',
+                'Insert at ' + prefix + T,
                 () => {
-                    const update = {}, ids = new Set(aRecs.map(i => i.id));
-                    const bump = rec => {
-                        const nb = prefix + (numOf(rec.billNo) + 1);
+                    const update = {};
+                    const setNo = (rec, no) => {
+                        const nb = prefix + no;
                         rec.billNo = nb;
                         update['jewelryData/invoiceHistory/' + rec.id + '/billNo'] = nb;
                         update['pmSales/' + rec.id + '/billNo'] = nb;
@@ -19154,14 +19165,25 @@
                                 .catch(e => console.error('[Credit] renumber failed', e));
                         });
                     };
-                    const bMirrorIds = new Set(aRecs.map(i => i.mirrorOf).filter(Boolean));
-                    aRecs.forEach(bump);
-                    invoiceHistory.forEach(i => { if (i.track === 'B' && bMirrorIds.has(i.id) && !ids.has(i.id)) bump(i); });
+                    const setTs = (rec, ts) => {
+                        rec.timestamp = ts;
+                        update['jewelryData/invoiceHistory/' + rec.id + '/timestamp'] = ts;
+                        update['pmSales/' + rec.id + '/timestamp'] = ts;
+                    };
+                    const plan = shifted.map(r => ({ rec: r, no: numOf(r.billNo) + 1 }));
+                    plan.push({ rec: src, no: T, ts: newTs });
+                    plan.forEach(pl => {
+                        // the linked Track B original (if any) follows its Track A copy
+                        const b = pl.rec.mirrorOf ? invoiceHistory.find(i => i.id === pl.rec.mirrorOf && i.track === 'B') : null;
+                        setNo(pl.rec, pl.no);
+                        if (pl.ts) setTs(pl.rec, pl.ts);
+                        if (b) { setNo(b, pl.no); if (pl.ts) setTs(b, pl.ts); }
+                    });
                     _saveInvoiceLocal();
-                    _durableWrite('invoice_renum_' + Date.now(), update);
+                    _durableWrite('invoice_move_up_' + Date.now(), update);
                     document.getElementById('inv-manage-a-modal').style.display = 'none';
                     if (typeof invRenderHistory === 'function') { try { invRenderHistory(); } catch(e) {} }
-                    showCustomAlert(prefix + N + ' is now free. Switch to Track A → New invoice, type ' + prefix + N + ' in Bill No., set the date, and save.');
+                    invToast('✅ ' + prefix + S + ' is now ' + prefix + T + ' (' + f(newTs) + ')', 4000);
                 }
             );
         }
@@ -24037,10 +24059,11 @@
             <p style="font-size:12px; color:#888; margin:0 0 8px 0;">A Track B checkout paid through a ticked UPI ID is also filed as a Track A invoice (same bill number).</p>
             <div id="inv-manage-a-upi-list" style="display:flex; flex-direction:column; gap:6px; margin-bottom:18px;"></div>
             <div style="border-top:1px solid #eee; padding-top:14px;">
-                <div style="font-size:13px; font-weight:800; margin-bottom:4px;">➕ Insert an invoice in Track A</div>
-                <p style="font-size:12px; color:#888; margin:0 0 8px 0;">Enter the bill number you want to free up. That invoice and every Track A invoice after it go up by one number. Then create the missing invoice in Track A with that number.</p>
-                <input type="number" id="inv-manage-a-insert-no" min="1" step="1" placeholder="e.g. 389" style="width:100%; box-sizing:border-box; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:14px; font-family:inherit; margin:0 0 10px 0;">
-                <button onclick="invMakeRoomInTrackA()" style="width:100%; background:var(--gold,#B8922E); border:none; border-radius:11px; padding:13px; font-size:14px; font-weight:700; color:white; cursor:pointer; box-shadow:none; margin:0;">Make room</button>
+                <div style="font-size:13px; font-weight:800; margin-bottom:4px;">⬆️ Insert an invoice in Track A</div>
+                <p style="font-size:12px; color:#888; margin:0 0 8px 0;">Create the missed invoice normally in Track A first (it gets the next number and today's date). Then enter its number and the number it should take. Invoices from that number onward go up by one, and the moved invoice takes the date of the invoice before its new place.</p>
+                <input type="number" id="inv-manage-a-move-from" min="1" step="1" placeholder="Invoice number to move, e.g. 459" style="width:100%; box-sizing:border-box; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:14px; font-family:inherit; margin:0 0 8px 0;">
+                <input type="number" id="inv-manage-a-move-to" min="1" step="1" placeholder="Move to number, e.g. 389" style="width:100%; box-sizing:border-box; border:1.5px solid var(--border); border-radius:10px; padding:10px; font-size:14px; font-family:inherit; margin:0 0 10px 0;">
+                <button onclick="invMoveInvoiceUpInTrackA()" style="width:100%; background:var(--gold,#B8922E); border:none; border-radius:11px; padding:13px; font-size:14px; font-weight:700; color:white; cursor:pointer; box-shadow:none; margin:0;">Move up</button>
             </div>
         </div>
     </div>
