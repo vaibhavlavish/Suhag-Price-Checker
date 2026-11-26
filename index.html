@@ -5527,6 +5527,17 @@
             } else {
                 invCheckoutTrackSynced = localStorage.getItem('invCheckoutTrack') || 'B';
             }
+            // Loose screen saved item names — cloud is the master copy. First time (cloud empty) this device's list seeds it.
+            if (Array.isArray(cloudData.flatNames) || (cloudData.flatNames && typeof cloudData.flatNames === 'object')) {
+                const cn = (Array.isArray(cloudData.flatNames) ? cloudData.flatNames : Object.values(cloudData.flatNames)).filter(x => typeof x === 'string' && x.trim());
+                try { localStorage.setItem(FLAT_NAMES_KEY, JSON.stringify(cn)); } catch (e) {}
+                const _fm = document.getElementById('flat-names-modal');
+                if (_fm && _fm.style.display === 'flex' && typeof flatNamesRender === 'function') flatNamesRender();
+            } else if (!window._flatNamesSeeded) {
+                window._flatNamesSeeded = true;
+                const ln = _flatNamesLoad();
+                if (ln.length) { try { window.dbSafeUpdate({ 'jewelryData/config/flatNames': ln }); } catch (e) {} }
+            }
             if (Array.isArray(cloudData.upiBothTracks)) {
                 invUpiBothTracks = cloudData.upiBothTracks.filter(x => typeof x === 'string');
                 localStorage.setItem('invUpiBothTracks', JSON.stringify(invUpiBothTracks));
@@ -5811,6 +5822,7 @@
                 lastBarcodeListMarked: config.lastBarcodeListMarked || null,
                 checkoutTrack: config.checkoutTrack || null,
                 upiBothTracks: config.upiBothTracks || null,
+                flatNames: config.flatNames || null,
                 checkoutFormat: config.checkoutFormat || null,
                 ratesListLayout: config.ratesListLayout || null,
                 customItems: config.customItems || {},
@@ -8809,7 +8821,10 @@
             try { const a = JSON.parse(localStorage.getItem(FLAT_NAMES_KEY) || '[]'); return Array.isArray(a) ? a.filter(x => typeof x === 'string' && x.trim()) : []; }
             catch (e) { return []; }
         }
-        function _flatNamesSave(a) { try { localStorage.setItem(FLAT_NAMES_KEY, JSON.stringify(a)); } catch (e) {} }
+        function _flatNamesSave(a) {
+            try { localStorage.setItem(FLAT_NAMES_KEY, JSON.stringify(a)); } catch (e) {}   // local cache (works offline)
+            try { window.dbSafeUpdate({ 'jewelryData/config/flatNames': a.length ? a : null }); } catch (e) {}   // cloud copy — survives cache clears / other devices
+        }
         function _flatNamesAdd(name) {            // returns true if newly stored
             name = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 60);
             if (!name || _FLAT_FIXED.includes(name.toLowerCase())) return false;
@@ -8831,7 +8846,13 @@
                 </div>`).join('');
         }
         function flatNameUse(i) { const n = _flatNamesLoad()[i]; if (n == null) return; flatNamePick(n); flatNamesClose(); }
-        function flatNameDel(i) { const a = _flatNamesLoad(); a.splice(i, 1); _flatNamesSave(a); flatNamesRender(); }
+        function flatNameDel(i) {
+            const a = _flatNamesLoad(); if (a[i] == null) return;
+            showCustomConfirm('Delete saved name "' + escHtml(a[i]) + '"?', 'Delete name', () => {
+                const b = _flatNamesLoad(); const k = b.indexOf(a[i]); if (k < 0) return;
+                b.splice(k, 1); _flatNamesSave(b); flatNamesRender();
+            });
+        }
         function flatNameAdd() {
             const inp = document.getElementById('flat-names-new');
             const v = inp.value.trim();
