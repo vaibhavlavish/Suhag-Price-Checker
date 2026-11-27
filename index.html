@@ -1850,6 +1850,9 @@
             <button onclick="showSection('credit-screen')" data-menu-key="credit">
                 <span class="menu-icon" style="background:#FFEBEE;">🧾</span> Credit
             </button>
+            <button onclick="openOrderBook()" data-menu-key="order-book">
+                <span class="menu-icon" style="background:#FFF3E0;">📕</span> Order Book
+            </button>
             <button onclick="openPrintServerModal()" data-menu-key="print-server">
                 <span class="menu-icon" style="background:#E0F2F1;">🖨️</span> Print Server
             </button>
@@ -2279,7 +2282,7 @@
 
     <div id="cart-modal" class="modal">
         <div id="cart-content">
-            <h3 onclick="invHandleSettingsHeadingTap()" class="inv-tap-trigger" style="cursor:pointer;">Shopping Cart</h3>
+            <h3 onclick="invHandleSettingsHeadingTap()" class="inv-tap-trigger" style="cursor:pointer;">Shopping Cart <button id="cart-order-star" type="button" title="Apply booked rate" onclick="event.stopPropagation(); cartOrderUseRate()" style="display:none; width:auto; margin:0 0 0 8px; padding:1px 8px; font-size:15px; line-height:1.3; vertical-align:middle; border-radius:8px; border:1.5px solid #f9a825; background:#fff8e1; color:#b8860b; box-shadow:none;">⭐</button></h3>
             <div id="cart-scroll-body">
             <div id="cart-items-container">
                 </div>
@@ -2290,12 +2293,13 @@
             <div id="cart-customer-panel" style="background:#f5f5f5; border-radius:12px; padding:12px; margin-bottom:10px; border:1.5px solid #e0e0e0;">
                 <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:8px;">
                     <div style="font-size:11px; font-weight:700; letter-spacing:.06em; color:#888; text-transform:uppercase;">Customer</div>
-                    <button id="cart-creditor-btn" onclick="_cartCreditorBtnClick(event)" style="width:auto; margin:0; padding:5px 11px; font-size:12px; font-weight:700; border-radius:8px; border:1.5px solid #c62828; background:#fff; color:#c62828; box-shadow:none; max-width:58%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🧾 Creditor</button>
+                    <button id="cart-creditor-btn" onclick="_cartCreditorBtnClick(event)" style="width:auto; margin:0; padding:5px 11px; font-size:12px; font-weight:700; border-radius:8px; border:1.5px solid #c62828; background:#fff; color:#c62828; box-shadow:none; max-width:58%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🧾 Accounts</button>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:7px;">
                     <input type="text" id="cart-cust-name" placeholder="Customer Name" oninput="syncCartCustomer()" style="margin:0;">
                     <input type="tel" id="cart-cust-mob" placeholder="Mobile" oninput="syncCartCustomer()" style="margin:0;">
                     <input type="text" id="cart-cust-addr" placeholder="Address" oninput="syncCartCustomer()" style="margin:0;">
+                    <div id="cart-adv-line" style="display:none; justify-content:space-between; align-items:center; background:#e8f5e9; border:1.5px solid #a5d6a7; border-radius:8px; padding:7px 10px; font-size:13px; font-weight:700; color:#2e7d32;"></div>
                 </div>
             </div>
 
@@ -3492,6 +3496,7 @@
             if (_bkLoaded.creditors) _d.creditors = creditors;
             if (_bkLoaded.creditTxns) _d.creditTxns = creditTxns;
             if (_bkLoaded.creditorPhotos) _d.creditorPhotos = _creditorPhotos;
+            if (_bkLoaded.orders) _d.orders = orders;
             return _d;
         }
 
@@ -3525,7 +3530,7 @@
         function _stripStockFromRangeBackup(data) {
             data.products = {};
             data.presetStock = {};
-            ['installments', 'savingsPlans', 'creditors', 'creditTxns', 'creditorPhotos'].forEach(k => { delete data[k]; }); // date-range backups stay invoice-only
+            ['installments', 'savingsPlans', 'creditors', 'creditTxns', 'creditorPhotos', 'orders'].forEach(k => { delete data[k]; }); // date-range backups stay invoice-only
             return data;
         }
         function openDateRangeBackupModal() {
@@ -4666,6 +4671,13 @@
                 }
                 _renderHallmarkBtn();
             });
+            watch('advSeparate', v => {
+                if (v === true || v === false) {
+                    invAdvSeparate = v;
+                    localStorage.setItem('invAdvSeparate', v ? '1' : '0');
+                    const c = document.getElementById('inv-adv-sep'); if (c) c.checked = v;
+                }
+            });
             watch('customItems', v => {
                 customItems = (v && typeof v === 'object') ? v : {};
                 const m = document.getElementById('custom-items-modal');
@@ -4812,6 +4824,9 @@
         // NEW: Customer details attached to the active cart (for direct invoice generation at checkout)
         let cartCustomer = { name: '', mobile: '', address: '' };
         let cartCreditorId = null; // creditor account linked to the current cart (Credit feature)
+        let cartAdvance = null; // Order Book advance applied to the cart: {orderId, amount}
+        try { const _ca = JSON.parse(localStorage.getItem('suhagPriceCheckerCartAdvance') || 'null'); if (_ca && _ca.orderId) cartAdvance = _ca; } catch (e) {}
+        let invAdvSeparate = localStorage.getItem('invAdvSeparate') === '1'; // Track B setting (cloud-synced): show advance as its own line on invoices
 
         // ═══ INSTALLMENT PLANS ═══
         // PLACEHOLDER — update this once the customer-facing installment
@@ -6354,6 +6369,7 @@
             { key: 'installments',   label: 'Installment Plans',  icon: '📆', action: () => showSection('installments-screen') },
             { key: 'savings',        label: 'Savings Scheme',     icon: '💰', action: () => showSection('savings-screen') },
             { key: 'credit',         label: 'Credit',             icon: '🧾', action: () => showSection('credit-screen') },
+            { key: 'order-book',     label: 'Order Book',         icon: '📕', action: () => openOrderBook() },
             { key: 'update-rates',   label: 'Update Rates',       icon: '💰', action: () => showSection('update-rates') },
             { key: 'excel-upload',   label: 'Upload Excel',       icon: '📂', action: () => showSection('excel-upload') },
             { key: 'stock-view',     label: 'Stock View',         icon: '📦', action: () => showStockSection() },
@@ -12216,6 +12232,7 @@
             if (cmEl) cmEl.value = cartCustomer.mobile || '';
             if (caEl) caEl.value = cartCustomer.address || '';
             _renderCartCreditorBtn();
+            _cartAdvRender();
 
             const modal = document.getElementById('cart-modal');
             const cartItemsDiv = document.getElementById('cart-items-container');
@@ -12301,6 +12318,16 @@
                 </div>
             `;
 
+            const _advShow = _cartAdvAmt();
+            if (_advShow > 0) {
+                summaryHtml += `
+                    <div style="display:flex; justify-content:space-between; color:#2e7d32;">
+                        <span>Advance:</span><span>- ₹${_advShow.toFixed(2)}</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-weight:bold;">
+                        <span>Balance to Pay:</span><span>₹${(netPayable - _advShow).toFixed(2)}</span>
+                    </div>`;
+            }
             cartTotalSummaryDiv.innerHTML = _cartEditBannerHtml() + summaryHtml;
             // --- REFACTORED CART LOGIC END ---
 
@@ -12883,7 +12910,7 @@
         function openCreditorPicker(target) {
             _cdPickerLedger = false;
             _cdPickerTarget = (target === 'invoice') ? 'invoice' : 'cart';
-            document.getElementById('creditor-picker-title').textContent = '🧾 Select Creditor';
+            document.getElementById('creditor-picker-title').textContent = '🧾 Select Account';
             document.getElementById('creditor-picker-new-btn').style.display = '';
             document.getElementById('creditor-picker-search').value = '';
             renderCreditorPicker();
@@ -12901,6 +12928,18 @@
             const _selCid = _cdPickerTarget === 'invoice' ? invCreditorId : cartCreditorId;
             if (_selCid && !_cdPickerLedger) {
                 html += `<button onclick="${_cdPickerTarget === 'invoice' ? '_setInvCreditor(null)' : '_setCartCreditor(null)'}; _cdHide('creditor-picker-modal');" style="width:100%; text-align:left; padding:12px 14px; background:#fff3e0; border:1.5px solid #ffcc80; border-radius:12px; color:#e65100; font-weight:700; font-size:14px; margin:0; box-shadow:none;">✕ Remove selected creditor</button>`;
+            }
+            if (!_cdPickerLedger) {
+                const os = orders.filter(o => !q || [o.custName, o.custMob].join(' ').toLowerCase().includes(q))
+                    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                if (os.length) {
+                    html += `<div style="font-size:11px; font-weight:800; letter-spacing:.06em; color:#7a5a00; margin:2px 2px 0;">ORDER ADVANCES</div>`;
+                    html += os.map(o => `<button onclick="${_cdPickerTarget === 'invoice' ? 'invOrderApply' : 'cartOrderApply'}('${o.id}'); _cdHide('creditor-picker-modal');" style="width:100%; text-align:left; padding:12px 14px; background:#FFF8E1; border:1.5px solid #ffe082; border-radius:12px; font-family:'Inter',sans-serif; cursor:pointer; margin:0; box-shadow:none; display:flex; justify-content:space-between; gap:10px; align-items:center;">
+                        <span style="min-width:0;"><span style="display:block; font-size:15px; font-weight:700; color:#1a1a1a;">${escHtml(o.custName)}</span><span style="display:block; font-size:12px; color:#888; margin-top:2px;">${escHtml(o.custMob || 'No mobile')} · ${escHtml(o.stamp)} @ ${_ordMoney(o.rate)}/g</span></span>
+                        <span style="font-size:13px; font-weight:800; color:#2e7d32; flex-shrink:0;">${_ordMoney(_ordLeft(o))} adv</span>
+                    </button>`).join('');
+                    if (rows.length) html += `<div style="font-size:11px; font-weight:800; letter-spacing:.06em; color:#c62828; margin:6px 2px 0;">CREDITORS</div>`;
+                }
             }
             html += rows.map(c => {
                 const bal = _creditBalance(c.id);
@@ -12948,6 +12987,7 @@
         }
 
         function _clearCartCreditorState() {
+            _cartClearAdvance();
             cartCreditorId = null;
             try { localStorage.removeItem(CART_CREDITOR_KEY); } catch (e) {}
         }
@@ -12963,7 +13003,7 @@
                 b.style.display = 'inline-flex'; b.style.alignItems = 'center'; b.style.gap = '7px';
                 b.style.background = '#2e7d32'; b.style.color = '#fff'; b.style.borderColor = '#2e7d32';
             } else {
-                b.textContent = '🧾 Creditor';
+                b.textContent = '🧾 Accounts';
                 b.style.display = ''; b.style.alignItems = ''; b.style.gap = '';
                 b.style.background = '#fff'; b.style.color = '#c62828'; b.style.borderColor = '#c62828';
             }
@@ -12985,15 +13025,17 @@
             if (!s) return;
             const c = cartCreditorId ? creditors.find(x => x.id === cartCreditorId) : null;
             if (c) { s.textContent = '→ ' + c.name; s.style.color = '#2e7d32'; }
+            else if (_cartAdvOrder()) { s.textContent = '→ ' + _cartAdvOrder().custName + ' (credit account)'; s.style.color = '#2e7d32'; }
             else { s.textContent = '(tap to select creditor)'; s.style.color = '#c62828'; }
         }
 
         // "Rest" button in the split-payment panel: puts whatever is still unpaid on credit.
         function payCreditFillRemaining() {
+            if (!cartCreditorId) _cartAutoCreditor();
             if (!cartCreditorId) { openCreditorPicker(); return; }
             let total = 0; cart.forEach(i => total += i.finalPrice);
             let og = 0; oldGoldItems.forEach(i => og += i.value);
-            const net = Math.round(total - og - cartAdjustment);
+            const net = Math.round(total - og - cartAdjustment - _cartAdvAmt());
             const cash = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
             const upi  = parseFloat(document.getElementById('pay-upi-amt').value)  || 0;
             const card = parseFloat(document.getElementById('pay-card-amt').value) || 0;
@@ -13610,6 +13652,7 @@
             startInstallmentsSync();
             startSavingsSync();
             startCreditSync();
+            startOrderSync();
             startAcctSync();
             startAreaAliasSync();
             initPrintServerIfEnabled();
@@ -14357,11 +14400,11 @@
             // Calculate net payable and show payment modal
             let total = 0; cart.forEach(i => total += i.finalPrice);
             let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
-            const net = total - oldGoldTotal - cartAdjustment;
+            const net = total - oldGoldTotal - cartAdjustment - _cartAdvAmt();
             // Reset payment modal state
             const netLabel = net < 0
                 ? 'Refund to Customer: ₹' + Math.abs(net).toFixed(0) + ' (old jewellery exceeds item value)'
-                : 'Net Payable: ₹' + net.toFixed(0);
+                : (_cartAdvAmt() > 0 ? 'Balance to Pay: ₹' + net.toFixed(0) + ' (after advance ₹' + _cartAdvAmt().toFixed(0) + ')' : 'Net Payable: ₹' + net.toFixed(0));
             document.getElementById('pay-net-label').textContent = netLabel;
             document.getElementById('pay-partial-section').style.display = 'none';
             document.getElementById('pay-cash-amt').value  = '';
@@ -14414,7 +14457,7 @@
                 // Pre-fill cash with full amount as starting point
                 let total = 0; cart.forEach(i => total += i.finalPrice);
                 let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
-                const net = total - oldGoldTotal - cartAdjustment;
+                const net = total - oldGoldTotal - cartAdjustment - _cartAdvAmt();
                 document.getElementById('pay-cash-amt').value = Math.max(0, net).toFixed(0);
                 document.getElementById('pay-upi-amt').value  = '';
                 document.getElementById('pay-card-amt').value = '';
@@ -14529,7 +14572,7 @@
             // Calculate net payable
             let total = 0; cart.forEach(i => total += i.finalPrice);
             let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
-            const net = Math.max(0, total - oldGoldTotal - cartAdjustment);
+            const net = Math.max(0, total - oldGoldTotal - cartAdjustment - _cartAdvAmt());
 
             _renderUpiQrCore(entry, net, {
                 box: 'pay-upi-qr-box',
@@ -14589,7 +14632,7 @@
         function syncPartialPayment(changed) {
             let total = 0; cart.forEach(i => total += i.finalPrice);
             let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
-            const net = Math.round(total - oldGoldTotal - cartAdjustment);
+            const net = Math.round(total - oldGoldTotal - cartAdjustment - _cartAdvAmt());
             let cash = parseFloat(document.getElementById('pay-cash-amt').value) || 0;
             const upi  = parseFloat(document.getElementById('pay-upi-amt').value)  || 0;
             const card = parseFloat(document.getElementById('pay-card-amt').value) || 0;
@@ -14649,7 +14692,7 @@
                 // receipt = what customer actually pays = net after old gold, rounded
                 // Credit portion (Credit feature) stays outstanding on the invoice.
                 const _crAmt = (paymentMode === 'partial' && paymentSplit && paymentSplit.credit > 0) ? Math.round(paymentSplit.credit) : 0;
-                const receipt = Math.max(0, Math.round(netPayable) - _crAmt);
+                const receipt = Math.max(0, Math.round(netPayable) - _crAmt - _cartAdvAmt());
                 const outstanding = _crAmt;
 
                 // Bill number continues whichever track checkout is currently filing
@@ -14679,7 +14722,8 @@
                     paymentMethod: paymentMode || 'none', paymentDetails,
                     source: 'checkout',
                     cartSnapshot: JSON.parse(JSON.stringify({ items: cartItems, adjustment: cartAdjustment, adjustmentAuto: cartAdjustmentAuto })),
-                    ...(_crAmt > 0 && cartCreditorId ? { creditorId: cartCreditorId, creditAmount: _crAmt } : {})
+                    ...(_crAmt > 0 && cartCreditorId ? { creditorId: cartCreditorId, creditAmount: _crAmt } : {}),
+                    ...(_cartAdvanceForRecord() ? { advance: _cartAdvanceForRecord() } : {})
                 };
                 if (_applyCartEditToRecord(record)) {   // editing the last invoice from the cart → update it, don't create a new one
                     _commitEditedCheckoutRecord(record);
@@ -14810,6 +14854,7 @@
             copy.track = 'A';
             copy.mirrorOf = rec.id;
             delete copy.creditorId; delete copy.creditAmount; delete copy.cartSnapshot;
+            if (copy.advance) copy.advance = Object.assign({}, copy.advance, { orderSnapshot: null, copied: true });
             invoiceHistory.unshift(copy);
             _saveInvoiceLocal();
             _saveInvoiceRecord(copy);
@@ -14963,7 +15008,7 @@
             const { disc, taxable, sgst, cgst, igst, rounded, rndOff, isHome, pct } = t;
             // Credit portion (Credit feature) stays outstanding on the invoice.
             const _crAmt = (paymentMode === 'partial' && paymentSplit && paymentSplit.credit > 0) ? Math.round(paymentSplit.credit) : 0;
-            const receipt = Math.max(0, Math.round(netPayable) - _crAmt); // actual amount paid (after OG and credit)
+            const receipt = Math.max(0, Math.round(netPayable) - _crAmt - _cartAdvAmt()); // actual amount paid now (after OG, credit and order advance)
             const outstanding = _crAmt;
 
             const custName = (cartCustomer && cartCustomer.name) || '—';
@@ -15053,7 +15098,7 @@
             // clipped/overlapped.
             // Every extra payment row (split lines, Outstanding…) also takes height in the
             // totals box, so reserve one less filler row for each — keeps the header intact.
-            const _payRowsC = (invPaymentHtml(receipt, paymentMethod, paymentDetails, outstanding, netPayable).match(/<tr/g) || []).length;
+            const _payRowsC = (_invPayHtmlA(receipt, paymentMethod, paymentDetails, outstanding, netPayable, _cartAdvanceForRecord()).match(/<tr/g) || []).length;
             const TARGET_ROWS = Math.max(4, (ogTotalC > 0 ? 11 : 12) - Math.max(0, _payRowsC - 1));
             const fillerCount = Math.max(0, TARGET_ROWS - rows.length);
             const fillerCellCount = 5 + (showRate ? 1 : 0) + (showMaking ? 1 : 0) + 1; // same column count as headCols
@@ -15183,7 +15228,7 @@
                     ${fp.taxRowsHtml.replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                     ${ogRowsC.replace(/padding:3px 6px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                     <tr><td style="padding:${ROWPAD};font-size:11px;font-weight:800;${HB}">Net Amount</td><td style="padding:${ROWPAD};font-size:11px;font-weight:800;text-align:right;${HB}">₹${netAmtC}</td></tr>
-                    ${invPaymentHtml(receipt, paymentMethod, paymentDetails, outstanding, netPayable).replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
+                    ${_invPayHtmlA(receipt, paymentMethod, paymentDetails, outstanding, netPayable, _cartAdvanceForRecord()).replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                   </table>
                 </div>
               </div>
@@ -15204,7 +15249,8 @@
                 paymentMethod, paymentDetails,
                 source: 'checkout',
                 cartSnapshot: JSON.parse(JSON.stringify({ items: cartItems, adjustment: cartAdjustment, adjustmentAuto: cartAdjustmentAuto })),
-                ...(_crAmt > 0 && cartCreditorId ? { creditorId: cartCreditorId, creditAmount: _crAmt } : {})
+                ...(_crAmt > 0 && cartCreditorId ? { creditorId: cartCreditorId, creditAmount: _crAmt } : {}),
+                    ...(_cartAdvanceForRecord() ? { advance: _cartAdvanceForRecord() } : {})
             };
 
             return { html, record };
@@ -15224,12 +15270,13 @@
                 const credit = parseFloat((document.getElementById('pay-credit-amt') || {}).value) || 0;
                 if (cash < 0 || upi < 0 || card < 0 || credit < 0) { showCustomAlert('Payment amounts cannot be negative.'); return null; }
                 if (cash + upi + card + credit === 0) { showCustomAlert('Enter at least one amount.'); return null; }
+                if (credit > 0 && !cartCreditorId) _cartAutoCreditor();
                 if (credit > 0 && !cartCreditorId) { showCustomAlert('Select a creditor first (tap "select creditor" next to Credit, or use the Creditor button in the cart).'); return null; }
 
                 // Validate that split amounts equal net payable (allow ±1 rounding)
                 let totalForValidation = 0; cart.forEach(i => totalForValidation += i.finalPrice);
                 let oldGoldForValidation = 0; oldGoldItems.forEach(i => oldGoldForValidation += i.value);
-                const netForValidation = Math.round(totalForValidation - oldGoldForValidation - cartAdjustment);
+                const netForValidation = Math.round(totalForValidation - oldGoldForValidation - cartAdjustment - _cartAdvAmt());
                 if (Math.abs(cash + upi + card + credit - netForValidation) > 1) {
                     showCustomAlert('Payment amounts don\'t add up to ₹' + netForValidation + '. Please balance the split before confirming.');
                     return null;
@@ -15311,9 +15358,9 @@
             // site now passes one), dedupe strictly against that instead — it can
             // never collide between two different sales. Only fall back to the old
             // fuzzy amount+time heuristic when no id was passed in at all.
-            const uniqueKey = ef.invoiceId || ef.installmentPaymentId || ef.creditPaymentId || null;
+            const uniqueKey = ef.invoiceId || ef.installmentPaymentId || ef.creditPaymentId || ef.orderAdvanceId || null;
             const _dup = uniqueKey
-                ? ledgerEntries.some(e => e.type === 'sale' && (e.invoiceId === uniqueKey || e.installmentPaymentId === uniqueKey || e.creditPaymentId === uniqueKey))
+                ? ledgerEntries.some(e => e.type === 'sale' && (e.invoiceId === uniqueKey || e.installmentPaymentId === uniqueKey || e.creditPaymentId === uniqueKey || e.orderAdvanceId === uniqueKey))
                 : ledgerEntries.some(e => e.type === 'sale' && Math.abs(e.amount - amt) < 1 && Math.abs(new Date(e.timestamp).getTime() - _now) < 10000);
             if (_dup) { console.warn('[Guard] Duplicate sale ledger entry blocked', uniqueKey ? '(same id: ' + uniqueKey + ')' : '(within 10s window)'); return; }
 
@@ -15377,8 +15424,12 @@
             // When an existing invoice was edited, its ledger + credit entries were already updated
             // in place by _commitEditedCheckoutRecord — don't book the sale a second time.
             if (!_wasEdit) {
-                _recordSaleLedgerEntry(netPayable, Math.max(0, netPayable) - _creditAmt, mode, payment, 'checkout', { invoiceId: _savedInvoiceId });
+                _recordSaleLedgerEntry(netPayable, Math.max(0, netPayable) - _cartAdvAmt() - _creditAmt, mode, payment, 'checkout', { invoiceId: _savedInvoiceId });
                 if (_creditCid) _recordCreditSale(_creditCid, _creditAmt, _savedInvoiceId);
+                // Order advance used on this sale: wipe the order (or keep any leftover). The advance was
+                // posted to the ledger once when received; this sale entry records only the balance above.
+                const _advInv = _savedInvoiceId ? invoiceHistory.find(r => r.id === _savedInvoiceId) : null;
+                if (_advInv && _advInv.advance) _invOrderConsume(_advInv, false);
             }
 
             // --- Deduct tracked loose-preset stock (e.g. Nosepin) for this sale ---
@@ -16370,7 +16421,7 @@
                         <div class="ledger-entry-icon ${iconClass}">${icons[e.type]||'📝'}</div>
                         <div class="ledger-entry-body">
                             <div class="ledger-entry-title">${labels[e.type]||e.type}${(_ledgerEditFull(e) || _supEntryEditable(e) || _ojEntryEditable(e)) ? `<button class="ledger-entry-edit" data-entry-id="${String(e.id).replace(/"/g,'&quot;')}" aria-label="Edit entry" title="Edit">✏️</button>` : ''}</div>
-                            <div class="ledger-entry-meta">${time}${_ledgerTagHtml(e)}${e.source === 'checkout' ? ' · checkout' : e.source === 'invoice' ? ' · From Invoice' : e.source === 'installment' ? ' · From Installment Plan' : e.source === 'credit' ? ' · Credit Received' : ' · Manual'}</div>
+                            <div class="ledger-entry-meta">${time}${_ledgerTagHtml(e)}${e.source === 'checkout' ? ' · checkout' : e.source === 'invoice' ? ' · From Invoice' : e.source === 'installment' ? ' · From Installment Plan' : e.source === 'credit' ? ' · Credit Received' : e.source === 'order' ? ' · Order Book' : ' · Manual'}</div>
                             ${e.note ? `<div class="ledger-entry-note">${e.note}</div>` : ''}
                         </div>
                         <div class="ledger-entry-amount ${isPos ? 'positive' : 'negative'}">${isPos?'+':'-'}₹${_fmt(e.amount)}</div>
@@ -18225,6 +18276,10 @@
             showCustomAlert('Entry saved!');
         }
         function deleteLedgerEntry(id) {
+            const _oe = ledgerEntries.find(e => e.id === id);
+            if (_oe && _oe.orderAdvanceId && orders.some(o => (o.advances || []).some(a => a.id === _oe.orderAdvanceId))) {
+                showCustomAlert('This is an advance of a pending order. Remove it from the Order Book (✕ next to the advance) so both stay in step.'); return;
+            }
             if (!checkPin()) return;
             _deleteLedgerRecord(id, () => {
                 renderLedger();
@@ -18747,6 +18802,9 @@
         let invPrintHtml = '';
         let currentInvTrack = 'A'; // 'A' or 'B'
         let invCreditorId = null; // creditor account linked to the manual invoice being built (Credit feature)
+        let invAdvance = null; // order advance applied to the invoice being built: {orderId,max,locked,rec}
+        let orders = []; try { orders = JSON.parse(localStorage.getItem('suhagOrders') || '[]') || []; } catch (e) { orders = []; }
+        let _orderSyncStarted = false, _orderSyncRetries = 0;
         let invEditingId = null; // set by invReloadBill() when editing an existing invoice; save paths reuse this id instead of minting a new record
         let invTrackBUnlocked = false;
 
@@ -19122,6 +19180,9 @@
             if (_mb) _mb.style.display = (typeof _isTrackBActive === 'function' && _isTrackBActive()) ? 'flex' : 'none';
             const _ma = document.getElementById('inv-manage-a-btn');
             if (_ma) _ma.style.display = (typeof _isTrackBActive === 'function' && _isTrackBActive()) ? 'flex' : 'none';
+            const _as = document.getElementById('inv-adv-sep-row');
+            if (_as) _as.style.display = (typeof _isTrackBActive === 'function' && _isTrackBActive()) ? 'flex' : 'none';
+            const _asc = document.getElementById('inv-adv-sep'); if (_asc) _asc.checked = invAdvSeparate;
             const bgEl = document.getElementById('inv-with-bg');
             if (bgEl) bgEl.checked = invGetWithBgPref();
             _renderCustomFullPageBgPreview();
@@ -19141,6 +19202,12 @@
                     <input type="checkbox" ${invUpiBothTracks.indexOf(e.upi) !== -1 ? 'checked' : ''} onchange="invToggleUpiBoth(${i}, this.checked)" style="width:18px; height:18px; margin:0;">
                     <span style="font-size:13px; font-weight:700;">${invEscH(e.name || 'UPI')}<span style="display:block; font-size:11px; font-weight:500; color:#888;">${invEscH(e.upi)}</span></span>
                 </label>`).join('');
+        }
+        function invSetAdvSeparate(on) {
+            invAdvSeparate = !!on;
+            localStorage.setItem('invAdvSeparate', on ? '1' : '0'); // offline-fallback cache
+            window.dbSafeUpdate({ 'jewelryData/config/advSeparate': !!on });
+            invToast(on ? 'Advance will show as its own line on invoices' : 'Advance will be combined into Cash/UPI/Card');
         }
         function invToggleUpiBoth(idx, on) {
             const e = shopUpiIds[idx]; if (!e) return;
@@ -19709,7 +19776,22 @@
         function invDashOr(n, decimals) {
             return (n && n > 0) ? n.toFixed(decimals) : '—';
         }
-        function invPaymentHtml(receipt, method, details, outstanding, netPayable) {
+        // advAmt > 0 (only when the Track B "mention advance separately" setting is on) adds an ADVANCE row.
+        function invPaymentHtml(receipt, method, details, outstanding, netPayable, advAmt) {
+            const core = _invPaymentHtmlCore(receipt, method, details, outstanding, netPayable);
+            if (!(advAmt > 0)) return core;
+            return `<tr><td style="padding:3px 5px;border:.5px solid #bbb;font-size:9px;font-weight:700;">ADVANCE</td><td style="padding:3px 5px;border:.5px solid #bbb;text-align:right;font-size:9px;font-weight:700;">₹${Number(advAmt).toFixed(2)}</td></tr>` + core;
+        }
+        function _invPayHtmlA(receipt, method, details, outstanding, netPayable, adv) {
+            const d = _invDispPay(receipt, method, details, adv);
+            return invPaymentHtml(d.receipt, d.method, d.details, outstanding, netPayable, (invAdvSeparate && adv && adv.amount > 0) ? adv.amount : 0);
+        }
+        function _invPaymentHtmlCore(receipt, method, details, outstanding, netPayable) {
+            // A split that ended up using only ONE payment mode (e.g. Cash + Credit) prints as a single normal line.
+            if (method === 'partial' && details) {
+                const _um = ['cash', 'upi', 'card'].filter(k => details[k] > 0);
+                if (_um.length === 1) { method = _um[0]; details = null; }
+            }
             const returnAmt = (netPayable !== undefined && netPayable < 0) ? Math.abs(Math.round(netPayable)) : 0;
             if (!method || method === 'none') {
                 let html = '';
@@ -19941,6 +20023,7 @@
             // Display: Gross → Tax → Old Jewellery → Round Off → Net
             const taxTotal = t.sgst + t.cgst + t.igst;
             const netAfterOG = t.rounded - ogTotal; // can be negative (return to customer)
+            const _advNow = invAdvanceAmt();
 
             el.innerHTML =
                 row('Gross Amount', `₹${sub.toFixed(2)}`) +
@@ -19958,7 +20041,15 @@
                 row('Round Off', `${t.rndOff >= 0 ? '+' : ''}₹${t.rndOff.toFixed(2)}`) +
                 `<div style="display:flex;justify-content:space-between;font-size:20px;font-weight:800;border-top:1px solid rgba(255,255,255,.2);margin-top:6px;padding-top:8px;color:${netAfterOG < 0 ? '#42a5f5' : 'inherit'};">
                     <span>${netAfterOG < 0 ? 'Return to Customer' : 'Net Amount'}</span><span>₹${netAfterOG.toFixed(2)}</span>
-                </div>`;
+                </div>` +
+                ((_advNow > 0 || (invAdvance && !invAdvance.locked))
+                    ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:13px;">
+                        <span style="color:rgba(255,255,255,.55);">Advance — ${escHtml(_invAdvanceName())}</span>
+                        <span style="color:#a5d6a7;"><span${invAdvance && !invAdvance.locked ? ' onclick="invAdvanceEdit()" style="cursor:pointer;border-bottom:1px dotted #a5d6a7;"' : ''}>-₹${_advNow.toFixed(2)}</span>${invAdvance && !invAdvance.locked ? '<span onclick="invAdvanceRemove()" style="margin-left:12px;cursor:pointer;color:#ff8a65;font-weight:800;font-size:16px;padding:0 4px;">✕</span>' : ''}</span>
+                      </div>` +
+                      `<div style="display:flex;justify-content:space-between;font-size:16px;font-weight:800;padding-top:4px;"><span>Balance to Pay</span><span>₹${Math.max(0, netAfterOG - _advNow).toFixed(2)}</span></div>`
+                    : '') +
+                (_advNow > netAfterOG + 0.5 && netAfterOG > 0 ? row('⚠ Advance is more than the bill', '', '#ff8a65') : '');
         }
 
         // ─── LOAD FROM CART (live, in-app — same page, no URL hand-off needed) ───
@@ -20201,8 +20292,8 @@
                     desc: itmSettings.printName,
                     hsn: itmSettings.hsn, pc: 1,
                     grWt: parseFloat(gw.toFixed(3)), nlWt: parseFloat(nw.toFixed(3)),
-                    rate: parseFloat((_srateOf(d) || rv).toFixed(2)), // SRATE items use their own rate, not the metal rate
-                    pureRate: parseFloat((pureRate || 0).toFixed(2)),
+                    rate: parseFloat((_srateOf(d) || (item.bookedRate && metal === 'gold' ? item.bookedRate : rv)).toFixed(2)), // SRATE items use their own rate, not the metal rate; an order's booked rate wins when applied
+                    pureRate: parseFloat(((item.bookedPure && metal === 'gold' ? item.bookedPure : pureRate) || 0).toFixed(2)),
                     makingType: mk.makingType, makingPct: parseFloat((mk.makingPct || 0).toFixed(2)),
                     metal: metal,
                     itemName: d.itemName || item.barcode || '', // actual stock name, frozen — see invDescChange for why
@@ -20302,6 +20393,7 @@
         // ─── GENERATE & PRINT ───
         function invGenerate(skipPreviewModal, _confirmedMismatch) {
             if (!_invHasSavableContent(invRows)) { invToast('Add at least one item with a description and amount first'); return; }
+            if (invCurrentCreditAmt() > 0 && !invCreditorId) _invAutoCreditor();
             if (invCurrentCreditAmt() > 0 && !invCreditorId) {
                 showCustomAlert('Select a creditor first (tap "select creditor" next to Credit, or use the Creditor button at the top).');
                 return false;
@@ -20347,7 +20439,7 @@
                 const _ogTotal = invOgItems.reduce((s, i) => s + (i.value || 0), 0);
                 const _netAfterOG = Math.max(0, (_t.rounded || 0) - _ogTotal);
                 const _receipt = parseFloat(document.getElementById('inv-receipt').value) || 0;
-                const _remaining = _netAfterOG - _receipt - invCurrentCreditAmt(); // credit is deliberately left unpaid
+                const _remaining = _netAfterOG - _receipt - invCurrentCreditAmt() - _invAdvAmtNow(); // credit is deliberately left unpaid
                 if (Math.abs(_remaining) >= 1) {
                     const msg = _remaining > 0
                         ? `Amount received is ₹${_remaining.toFixed(2)} short of the bill total. Save anyway?`
@@ -20383,7 +20475,7 @@
             const { disc, taxable, sgst, cgst, igst, rounded, rndOff, isHome, pct } = t;
             const ogTotal = invOgItems.reduce((s,i) => s + (i.value||0), 0);
             const netAfterOG = rounded - ogTotal;
-            const outstanding = netAfterOG >= 0 ? Math.max(0, netAfterOG - receipt) : 0;
+            const outstanding = netAfterOG >= 0 ? Math.max(0, netAfterOG - receipt - _invAdvAmtNow()) : 0;
             // window._invForceFormat is a one-shot override — set right
             // before triggering a specific print (see reprintLastInvoice),
             // consumed here, then cleared immediately so it can never leak
@@ -20448,7 +20540,7 @@
             // clipped/overlapped.
             // Every extra payment row (split lines, Outstanding…) also takes height in the
             // totals box, so reserve one less filler row for each — keeps the header intact.
-            const _payRowsM = (invPaymentHtml(receipt, paymentMethod, paymentDetails, outstanding, netAfterOG).match(/<tr/g) || []).length;
+            const _payRowsM = (_invPayHtmlA(receipt, paymentMethod, paymentDetails, outstanding, netAfterOG, _invAdvanceForRecord()).match(/<tr/g) || []).length;
             const TARGET_ROWS = Math.max(4, (ogTotalM > 0 ? 11 : 12) - Math.max(0, _payRowsM - 1));
             const fillerCount = Math.max(0, TARGET_ROWS - invRows.length);
             const fillerCellCount = 5 + (showRate ? 1 : 0) + (showMaking ? 1 : 0) + 1;
@@ -20577,7 +20669,7 @@
                     ${fp.taxRowsHtml.replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                     ${ogRowsM.replace(/padding:3px 6px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                     <tr><td style="padding:${ROWPAD};font-size:11px;font-weight:800;${HB}">Net Amount</td><td style="padding:${ROWPAD};font-size:11px;font-weight:800;text-align:right;${HB}">₹${netAmtM}</td></tr>
-                    ${invPaymentHtml(receipt, paymentMethod, paymentDetails, outstanding, netAfterOG).replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
+                    ${_invPayHtmlA(receipt, paymentMethod, paymentDetails, outstanding, netAfterOG, _invAdvanceForRecord()).replace(/border:\.5px solid #bbb;/g,HB).replace(/padding:3px 5px;font-size:9px;/g,`padding:${ROWPAD};${ROW_FONT}`)}
                   </table>
                 </div>
               </div>
@@ -20601,7 +20693,8 @@
                 totals: { sub, disc, taxable, sgst, cgst, igst, rounded, rndOff, receipt, outstanding },
                 receipt, draft: false,
                 paymentMethod, paymentDetails,
-                ...(invCurrentCreditAmt() > 0 && invCreditorId ? { creditorId: invCreditorId, creditAmount: invCurrentCreditAmt() } : {})
+                ...(invCurrentCreditAmt() > 0 && invCreditorId ? { creditorId: invCreditorId, creditAmount: invCurrentCreditAmt() } : {}),
+                ...(_invAdvanceForRecord() ? { advance: _invAdvanceForRecord() } : {})
             };
             window._invPendingIsEdit = _pendIsEdit;
             if (_pendIsEdit) window._invPendingRecord.editedAt = new Date().toISOString();
@@ -20710,6 +20803,7 @@
                     // New invoice → new ledger entry; edit → update its existing entry in place.
                     _invLedgerFromRecord(rec, isEdit);
                     _invCreditFromRecord(rec, isEdit);
+                    _invOrderConsume(rec, isEdit);
                     invRenderHistory();
                     invReset(); // clear the form so the next invoice starts fresh
                     // Bulk print: if there are more queued invoices, move straight on to
@@ -20776,6 +20870,7 @@
             }
             _invLedgerFromRecord(rec, isEdit);
             _invCreditFromRecord(rec, isEdit);
+                    _invOrderConsume(rec, isEdit);
             invRenderHistory();
 
             queuePrintJob(invPrintHtml, 'Invoice ' + rec.billNo);
@@ -20958,6 +21053,7 @@
                 (!latest || new Date(inv.timestamp || 0) > new Date(latest.timestamp || 0)) ? inv : latest
             , null);
             if (!last) { showCustomAlert('No invoices found yet.'); return; }
+            if (last.advance) { showCustomAlert('This invoice used an order advance, so it cannot be edited from the cart. Open it from Invoice History to edit.'); return; }
 
             const alreadyEditingThis = window._cartEditInv && window._cartEditInv.id === last.id;
             if ((cart.length || oldGoldItems.length) && !alreadyEditingThis &&
@@ -21027,6 +21123,7 @@
                 const c = JSON.parse(JSON.stringify(record));
                 c.id = m.id; c.track = m.track || 'A'; c.mirrorOf = record.id;
                 delete c.creditorId; delete c.creditAmount; delete c.cartSnapshot;
+                if (c.advance) c.advance = Object.assign({}, c.advance, { orderSnapshot: null, copied: true });
                 invoiceHistory = invoiceHistory.map(i => i.id === m.id ? c : i);
                 _saveInvoiceRecord(c);
             });
@@ -21064,6 +21161,7 @@
 
         function invSaveDraft() {
             if (!_invHasSavableContent(invRows)) { invToast('Add at least one item with a description and amount first'); return; }
+            if (invCurrentCreditAmt() > 0 && !invCreditorId) _invAutoCreditor();
             if (invCurrentCreditAmt() > 0 && !invCreditorId) {
                 showCustomAlert('Select a creditor first (tap "select creditor" next to Credit, or use the Creditor button at the top).');
                 return;
@@ -21083,7 +21181,7 @@
             const { disc, taxable, sgst, cgst, igst, rounded, rndOff } = t;
             const ogTotal = invOgItems.reduce((s,i) => s + (i.value||0), 0);
             const netAfterOG = rounded - ogTotal;
-            const outstanding = netAfterOG >= 0 ? Math.max(0, netAfterOG - receipt) : 0;
+            const outstanding = netAfterOG >= 0 ? Math.max(0, netAfterOG - receipt - _invAdvAmtNow()) : 0;
 
             // Update session-issued max so next bill number is ahead
             const prefix = invoiceSettings.invPrefix || 'SJ-';
@@ -21112,7 +21210,8 @@
                 totals: { sub, disc, taxable, sgst, cgst, igst, rounded, rndOff, receipt, outstanding },
                 receipt, draft: false,
                 paymentMethod, paymentDetails,
-                ...(invCurrentCreditAmt() > 0 && invCreditorId ? { creditorId: invCreditorId, creditAmount: invCurrentCreditAmt() } : {})
+                ...(invCurrentCreditAmt() > 0 && invCreditorId ? { creditorId: invCreditorId, creditAmount: invCurrentCreditAmt() } : {}),
+                ...(_invAdvanceForRecord() ? { advance: _invAdvanceForRecord() } : {})
             };
             if (isEdit) record.editedAt = new Date().toISOString();
 
@@ -21126,6 +21225,7 @@
             // New invoice → new ledger entry; edit → update its existing entry in place.
             _invLedgerFromRecord(record, isEdit);
             _invCreditFromRecord(record, isEdit);
+            _invOrderConsume(record, isEdit);
             invToast(isEdit ? '✅ Invoice updated — ' + billNo : '✅ Invoice saved — ' + billNo);
             invReset();
         }
@@ -21217,6 +21317,7 @@
             if (document.getElementById('inv-pay-card-amt')) document.getElementById('inv-pay-card-amt').value = '';
             if (document.getElementById('inv-pay-credit-amt')) document.getElementById('inv-pay-credit-amt').value = '';
             invCreditorId = null;
+            invAdvance = null; _invAdvanceRender();
             _renderInvCreditorUi();
             invRenderOg();
             invSetTodayDate();
@@ -21233,7 +21334,7 @@
             const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
             const t = invComputeTotals(sub, _invFinalAmtGross(), undefined, invExemptSub(invRows), invHmTotal(invRows));
             const ogTotal = invOgItems.reduce((s, i) => s + (i.value || 0), 0);
-            return Math.max(0, (t.rounded || 0) - ogTotal);
+            return Math.max(0, (t.rounded || 0) - ogTotal - invAdvanceAmt()); // balance after any order advance
         }
         // Credit amount currently entered — only counts in Partial mode.
         function invCurrentCreditAmt() {
@@ -21257,16 +21358,18 @@
             const b = document.getElementById('inv-creditor-btn');
             if (b) {
                 if (c) { b.textContent = '🧾 ' + c.name; b.style.background = '#2e7d32'; b.style.color = '#fff'; b.style.borderColor = '#2e7d32'; }
-                else { b.textContent = '🧾 Creditor'; b.style.background = '#fff'; b.style.color = '#c62828'; b.style.borderColor = '#c62828'; }
+                else { b.textContent = '🧾 Accounts'; b.style.background = '#fff'; b.style.color = '#c62828'; b.style.borderColor = '#c62828'; }
             }
             const s = document.getElementById('inv-pay-credit-who');
             if (s) {
                 if (c) { s.textContent = '→ ' + c.name; s.style.color = '#2e7d32'; }
+                else if (invAdvance && !invAdvance.locked && orders.find(x => x.id === invAdvance.orderId)) { s.textContent = '→ ' + orders.find(x => x.id === invAdvance.orderId).custName + ' (credit account)'; s.style.color = '#2e7d32'; }
                 else { s.textContent = '(tap to select creditor)'; s.style.color = '#c62828'; }
             }
         }
         // "Rest" button: puts whatever is still unpaid on credit.
         function invCreditFillRemaining() {
+            if (!invCreditorId) _invAutoCreditor();
             if (!invCreditorId) { openCreditorPicker('invoice'); return; }
             const net = _invNetAfterOG();
             const cash = parseFloat(document.getElementById('inv-pay-cash-amt').value) || 0;
@@ -21313,7 +21416,7 @@
             const finalAmt = _invFinalAmtGross();
             const t = invComputeTotals(sub, finalAmt, undefined, invExemptSub(invRows), invHmTotal(invRows));
             const ogTotal = invOgItems.reduce((s,i) => s + (i.value||0), 0);
-            const net = Math.max(0, (t.rounded || 0) - ogTotal);
+            const net = Math.max(0, (t.rounded || 0) - ogTotal - invAdvanceAmt()); // balance after any order advance
 
             if (mode === 'partial') {
                 document.getElementById('inv-pay-cash-amt').value = net > 0 ? net.toFixed(0) : '';
@@ -21357,6 +21460,535 @@
                 statusEl.textContent = '₹' + Math.abs(remaining).toFixed(0) + ' over';
                 statusEl.style.color = '#f44336';
             }
+        }
+
+
+        // ═══════════════════════════════════════════════════════════════════
+        // ORDER BOOK — gold ornament orders (booked rate / making / GST + advance)
+        // Firebase: orders/{id}. An order lives here only while pending; when an
+        // invoice that uses its advance is saved, the order is removed (a copy is
+        // kept on the invoice as invoice.advance.orderSnapshot so deleting that
+        // invoice brings the order back).
+        // LEDGER RULE (never double-count): an advance is posted to the Cash Ledger
+        // exactly ONCE, when it is received (source 'order', unique orderAdvanceId —
+        // the same convention installments/credit payments use). The invoice's own
+        // ledger entry only ever records what is collected on the invoice itself
+        // (Receipt Amount), so the advance is never posted a second time.
+        // ═══════════════════════════════════════════════════════════════════
+        const ORD_MAKING_TYPES = { '%': 'Making %', 'wastage': 'Wastage %', 'per_g': '₹ per gram', 'per_pc': '₹ per piece' };
+        function _ordRef(p) { return window.dbRef(window.firebaseDB, 'orders/' + p); }
+        function _ordMoney(n) { return '₹' + Math.round(n || 0).toLocaleString('en-IN'); }
+        function _ordAdvTotal(o) { return (o.advances || []).reduce((s, a) => s + (a.amount || 0), 0); }
+        function _ordLeft(o) { return Math.max(0, _ordAdvTotal(o) - (o.applied || 0)); }
+        function _ordPersistLocal() { try { localStorage.setItem('suhagOrders', JSON.stringify(orders)); } catch (e) {} }
+        function _ordClone(o) { return JSON.parse(JSON.stringify(o)); }
+        function _ordSave(o) {
+            const i = orders.findIndex(x => x.id === o.id);
+            if (i >= 0) orders[i] = o; else orders.push(o);
+            _ordPersistLocal(); _orderRefresh();
+            if (!window.dbSet || !window.firebaseDB) return;
+            window.dbSet(_ordRef(o.id), _ordClone(o)).catch(e => {
+                console.error('[Orders] save failed', e);
+                showCustomAlert('⚠️ Order saved on this device, but the cloud save failed: ' + (e && e.message ? e.message : e));
+            });
+        }
+        function _ordRemove(id) {
+            orders = orders.filter(x => x.id !== id);
+            _ordPersistLocal(); _orderRefresh();
+            if (!window.dbRemove || !window.firebaseDB) return;
+            window.dbRemove(_ordRef(id)).catch(e => console.error('[Orders] remove failed', e));
+        }
+        function startOrderSync() {
+            if (_orderSyncStarted) return;
+            if (!window.dbOnValue || !window.firebaseDB) {
+                if (_orderSyncRetries++ < 20) setTimeout(startOrderSync, 500);
+                return;
+            }
+            _orderSyncStarted = true;
+            window.dbOnValue(window.dbRef(window.firebaseDB, 'orders'), s => {
+                orders = Object.values(s.val() || {});
+                _bkLoaded.orders = true;
+                _ordPersistLocal(); _orderRefresh();
+            }, err => console.error('[Orders] read error', err));
+        }
+        function _orderRefresh() {
+            const bm = document.getElementById('order-book-modal');
+            if (bm && bm.style.display === 'flex') renderOrderBook();
+        }
+
+        // ── payment widget (cash / UPI / card / split), used by the new-order form and "+ Advance" ──
+        window._ordPayMode = {};
+        function _ordPayWidget(p) {
+            const btn = (m, l) => `<button type="button" id="${p}-m-${m}" onclick="_ordSetPay('${p}','${m}')" style="padding:9px 2px;font-size:12px;font-weight:700;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;box-shadow:none;margin:0;width:auto;">${l}</button>`;
+            const inp = (id, ph) => `<input type="number" id="${p}-${id}" placeholder="${ph}" min="0" step="1" oninput="_ordSplitSum('${p}')" style="margin:0;padding:8px;font-size:13px;width:100%;">`;
+            return `<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:8px;">${btn('cash', '💵 Cash')}${btn('upi', '📱 UPI')}${btn('card', '💳 Card')}${btn('partial', '⚡ Split')}</div>
+                <input type="number" id="${p}-amt" placeholder="Advance amount ₹" min="0" step="1" style="margin:0;width:100%;">
+                <div id="${p}-split" style="display:none;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:6px;">${inp('c', 'Cash ₹')}${inp('u', 'UPI ₹')}${inp('k', 'Card ₹')}</div>`;
+        }
+        function _ordSetPay(p, m) {
+            window._ordPayMode[p] = m;
+            ['cash', 'upi', 'card', 'partial'].forEach(k => {
+                const b = document.getElementById(p + '-m-' + k);
+                if (b) { b.style.borderColor = k === m ? '#B8860B' : '#ddd'; b.style.background = k === m ? '#FFF8E1' : '#fff'; }
+            });
+            const sp = document.getElementById(p + '-split'); if (sp) sp.style.display = m === 'partial' ? 'grid' : 'none';
+            const am = document.getElementById(p + '-amt'); if (am) am.readOnly = (m === 'partial');
+            if (m === 'partial') _ordSplitSum(p);
+        }
+        function _ordSplitSum(p) {
+            if ((window._ordPayMode[p] || 'cash') !== 'partial') return;
+            const g = id => parseFloat(document.getElementById(p + '-' + id)?.value) || 0;
+            const t = g('c') + g('u') + g('k');
+            const am = document.getElementById(p + '-amt'); if (am) am.value = t > 0 ? t : '';
+        }
+        function _ordInitPay(p) {
+            const w = document.getElementById(p + '-wrap'); if (w) w.innerHTML = _ordPayWidget(p);
+            _ordSetPay(p, 'cash');
+        }
+        function _ordReadPay(p) {
+            const m = window._ordPayMode[p] || 'cash';
+            const g = id => parseFloat(document.getElementById(p + '-' + id)?.value) || 0;
+            if (m === 'partial') { const d = { cash: g('c'), upi: g('u'), card: g('k') }; return { mode: m, details: d, amount: d.cash + d.upi + d.card }; }
+            return { mode: m, details: null, amount: g('amt') };
+        }
+        function _ordPayLabel(pay) {
+            if (pay.mode !== 'partial') return { cash: 'Cash', upi: 'UPI', card: 'Card' }[pay.mode] || '';
+            const d = pay.details || {}, parts = [];
+            if (d.cash > 0) parts.push('Cash ₹' + d.cash.toFixed(0));
+            if (d.upi > 0) parts.push('UPI ₹' + d.upi.toFixed(0));
+            if (d.card > 0) parts.push('Card ₹' + d.card.toFixed(0));
+            return parts.join(' + ');
+        }
+        // Posts one advance into the order AND the Cash Ledger (once; guarded by orderAdvanceId).
+        function _ordAddAdvance(o, pay) {
+            const amt = Math.round(pay.amount);
+            const adv = { id: crypto.randomUUID(), ts: new Date().toISOString(), mode: pay.mode, amount: amt };
+            if (pay.details) adv.details = { cash: pay.details.cash || 0, upi: pay.details.upi || 0, card: pay.details.card || 0 };
+            o.advances = (o.advances || []).concat(adv);
+            _recordSaleLedgerEntry(amt, amt, pay.mode, pay.details, 'order', {
+                orderId: o.id, orderAdvanceId: adv.id,
+                note: 'Order advance — ' + o.custName + ' · ' + _ordPayLabel(pay)
+            });
+            return adv;
+        }
+        // How much of an order's advance was cash / UPI / card (scaled to the amount applied) — for the invoice export.
+        function _ordByMode(o, amt) {
+            const tot = { cash: 0, upi: 0, card: 0 };
+            (o.advances || []).forEach(a => {
+                if (a.mode === 'partial' && a.details) { tot.cash += a.details.cash || 0; tot.upi += a.details.upi || 0; tot.card += a.details.card || 0; }
+                else if (tot[a.mode] !== undefined) tot[a.mode] += a.amount || 0;
+            });
+            const all = tot.cash + tot.upi + tot.card;
+            if (all <= 0) return { cash: 0, upi: 0, card: 0 };
+            const f = Math.min(1, amt / all);
+            const r = { cash: Math.round(tot.cash * f), upi: Math.round(tot.upi * f), card: Math.round(tot.card * f) };
+            const diff = Math.round(amt) - (r.cash + r.upi + r.card); // keep the parts adding up to the amount exactly
+            if (diff) { const big = ['cash', 'upi', 'card'].sort((x, y) => r[y] - r[x])[0]; r[big] += diff; }
+            return r;
+        }
+
+        // ── Order Book screen ──
+        function openOrderBook() { closeOptions(); document.getElementById('order-book-modal').style.display = 'flex'; renderOrderBook(); }
+        function closeOrderBook() { document.getElementById('order-book-modal').style.display = 'none'; }
+        function renderOrderBook() {
+            const el = document.getElementById('ord-list'); if (!el) return;
+            const q = (document.getElementById('ord-search')?.value || '').trim().toLowerCase();
+            const list = orders.filter(o => !q || [o.custName, o.custMob, o.note, o.stamp].join(' ').toLowerCase().includes(q))
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            const held = orders.reduce((s, o) => s + _ordLeft(o), 0);
+            const sm = document.getElementById('ord-summary');
+            if (sm) sm.innerHTML = `${orders.length} pending order${orders.length === 1 ? '' : 's'} · advance held <b>${_ordMoney(held)}</b>`;
+            if (!list.length) { el.innerHTML = '<div style="text-align:center;color:#999;padding:40px 10px;font-size:14px;">' + (orders.length ? 'No match.' : 'No pending orders.<br>Tap “+ New Order” to book one.') + '</div>'; return; }
+            const btn = (c, t, f) => `<button onclick="${f}" style="width:auto;margin:0;padding:7px 12px;font-size:12px;font-weight:700;border-radius:8px;border:none;box-shadow:none;background:${c};color:#fff;">${t}</button>`;
+            el.innerHTML = list.map(o => {
+                const left = _ordLeft(o);
+                const d = new Date(o.createdAt);
+                const advRows = (o.advances || []).map(a => `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#555;padding:2px 0;">
+                    <span>${isNaN(d) ? '' : new Date(a.ts).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} · ${a.mode === 'partial' ? _ordPayLabel({ mode: 'partial', details: a.details }) : ({ cash: 'Cash', upi: 'UPI', card: 'Card' }[a.mode] || a.mode)}</span>
+                    <span><b>${_ordMoney(a.amount)}</b> <span onclick="ordRemoveAdvance('${o.id}','${a.id}')" style="color:#c62828;cursor:pointer;padding:0 4px;">✕</span></span></div>`).join('');
+                return `<div style="background:#fff;border-radius:12px;padding:12px;margin-bottom:10px;box-shadow:0 1px 6px rgba(0,0,0,.07);">
+                    <div style="display:flex;justify-content:space-between;gap:8px;">
+                        <div style="min-width:0;"><div style="font-size:15px;font-weight:800;">${invEscH(o.custName)}</div>
+                        <div style="font-size:12px;color:#777;">${invEscH(o.custMob || '')}${o.custAddr ? ' · ' + invEscH(o.custAddr) : ''}</div></div>
+                        <div style="font-size:11px;color:#999;white-space:nowrap;">${isNaN(d) ? '' : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;">
+                        <span style="background:#FFF8E1;border-radius:6px;padding:3px 8px;font-size:12px;font-weight:700;">${invEscH(o.stamp)} @ ${_ordMoney(o.rate)}/g</span>
+                    </div>
+                    ${o.note ? `<div style="font-size:12px;color:#444;margin-bottom:6px;">📝 ${invEscH(o.note)}</div>` : ''}
+                    ${advRows || '<div style="font-size:12px;color:#999;">No advance received yet</div>'}
+                    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;border-top:1px solid #eee;margin-top:6px;padding-top:6px;">
+                        <span>Advance available</span><span style="color:#2e7d32;">${_ordMoney(left)}</span></div>
+                    ${o.applied > 0 ? `<div style="font-size:11px;color:#999;">${_ordMoney(o.applied)} already used on an invoice</div>` : ''}
+                    <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;">
+                        ${btn('#2e7d32', '+ Advance', `ordOpenAdvance('${o.id}')`)}${btn('#1D6BB5', 'Edit', `ordOpenForm('${o.id}')`)}${btn('#c62828', 'Cancel order', `ordOpenCancel('${o.id}')`)}
+                    </div></div>`;
+            }).join('');
+        }
+
+        // ── new / edit order form ──
+        let _ordEditId = null;
+        function ordOpenForm(id) {
+            _ordEditId = id || null;
+            const o = id ? orders.find(x => x.id === id) : null;
+            const sel = document.getElementById('ord-f-stamp');
+            const stamps = Object.keys((rates && rates.gold) || {});
+            sel.innerHTML = stamps.map(s => `<option value="${invEscH(s)}">${invEscH(s)}</option>`).join('');
+            document.getElementById('ord-form-title').textContent = o ? 'Edit Order' : 'New Order';
+            document.getElementById('ord-f-name').value = o ? o.custName : (document.getElementById('inv-cust-name')?.value || '');
+            document.getElementById('ord-f-mob').value = o ? (o.custMob || '') : '';
+            document.getElementById('ord-f-addr').value = o ? (o.custAddr || '') : '';
+            if (o && stamps.indexOf(o.stamp) < 0) sel.insertAdjacentHTML('beforeend', `<option value="${invEscH(o.stamp)}">${invEscH(o.stamp)}</option>`);
+            sel.value = o ? o.stamp : (stamps.includes('22K') ? '22K' : stamps[0] || '');
+            document.getElementById('ord-f-rate').value = o ? o.rate : '';
+            if (!o) ordStampChanged();
+            document.getElementById('ord-f-note').value = o ? (o.note || '') : '';
+            document.getElementById('ord-f-advbox').style.display = o ? 'none' : 'block';
+            if (!o) { _ordInitPay('ofp'); }
+            document.getElementById('order-form-modal').style.display = 'flex';
+        }
+        function ordCloseForm() { document.getElementById('order-form-modal').style.display = 'none'; }
+        function ordStampChanged() {
+            const st = document.getElementById('ord-f-stamp').value;
+            const r = rates && rates.gold && rates.gold[st];
+            if (r) document.getElementById('ord-f-rate').value = parseFloat(parseFloat(r).toFixed(2));
+        }
+        function ordSaveForm() {
+            const name = document.getElementById('ord-f-name').value.trim();
+            const rate = parseFloat(document.getElementById('ord-f-rate').value) || 0;
+            if (!name) { showCustomAlert('Enter the customer name.'); return; }
+            if (rate <= 0) { showCustomAlert('Enter the booked rate per gram.'); return; }
+            const fields = {
+                custName: name,
+                custMob: document.getElementById('ord-f-mob').value.trim(),
+                custAddr: document.getElementById('ord-f-addr').value.trim(),
+                metal: 'gold',
+                stamp: document.getElementById('ord-f-stamp').value,
+                rate: rate,
+                note: document.getElementById('ord-f-note').value.trim()
+            };
+            if (_ordEditId) {
+                const o = orders.find(x => x.id === _ordEditId); if (!o) return;
+                const st = fields.stamp === o.stamp;
+                Object.assign(o, fields);
+                if (!st || !o.pureRate) o.pureRate = parseFloat((getPureRate('gold') || 0).toFixed(2));
+                _ordSave(o);
+            } else {
+                const pay = _ordReadPay('ofp');
+                const o = Object.assign({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), advances: [], applied: 0,
+                    pureRate: parseFloat((getPureRate('gold') || 0).toFixed(2)) }, fields);
+                if (pay.amount > 0) _ordAddAdvance(o, pay);
+                _ordSave(o);
+            }
+            ordCloseForm();
+            invToast('✅ Order saved');
+        }
+
+        // ── add advance / remove advance / cancel ──
+        let _ordAdvId = null;
+        function ordOpenAdvance(id) {
+            const o = orders.find(x => x.id === id); if (!o) return;
+            _ordAdvId = id;
+            document.getElementById('ord-a-who').textContent = o.custName + ' — advance so far ' + _ordMoney(_ordLeft(o));
+            _ordInitPay('oap');
+            document.getElementById('order-adv-modal').style.display = 'flex';
+        }
+        function ordCloseAdvance() { document.getElementById('order-adv-modal').style.display = 'none'; }
+        function ordSaveAdvance() {
+            const o = orders.find(x => x.id === _ordAdvId); if (!o) return;
+            const pay = _ordReadPay('oap');
+            if (!(pay.amount > 0)) { showCustomAlert('Enter the advance amount.'); return; }
+            _ordAddAdvance(o, pay);
+            _ordSave(o);
+            ordCloseAdvance();
+            invToast('✅ Advance added');
+        }
+        function ordRemoveAdvance(orderId, advId) {
+            const o = orders.find(x => x.id === orderId); if (!o) return;
+            const a = (o.advances || []).find(x => x.id === advId); if (!a) return;
+            if (_ordAdvTotal(o) - a.amount < (o.applied || 0) - 0.5) { showCustomAlert('Part of this advance has already been used on an invoice, so it cannot be removed.'); return; }
+            if (!checkPin()) return;
+            const le = ledgerEntries.find(e => e.orderAdvanceId === advId);
+            if (le) _deleteLedgerRecord(le.id, () => renderLedger());
+            o.advances = o.advances.filter(x => x.id !== advId);
+            _ordSave(o);
+        }
+        let _ordCancelId = null;
+        function ordOpenCancel(id) {
+            const o = orders.find(x => x.id === id); if (!o) return;
+            _ordCancelId = id;
+            const left = _ordLeft(o);
+            document.getElementById('ord-c-text').innerHTML = `Cancel the order of <b>${invEscH(o.custName)}</b>?` + (left > 0 ? `<br>Advance held: <b>${_ordMoney(left)}</b>` : '');
+            document.getElementById('ord-c-refund').style.display = left > 0 ? 'block' : 'none';
+            document.getElementById('order-cancel-modal').style.display = 'flex';
+        }
+        function ordCloseCancel() { document.getElementById('order-cancel-modal').style.display = 'none'; }
+        function ordDoCancel(how) { // how: 'cash' | 'upi' | 'keep' | 'none'
+            const o = orders.find(x => x.id === _ordCancelId); if (!o) return;
+            if (!checkPin()) return;
+            const left = Math.round(_ordLeft(o));
+            if (left > 0 && (how === 'cash' || how === 'upi')) {
+                const entry = {
+                    id: crypto.randomUUID(), type: 'out', amount: left, cashPortion: how === 'cash' ? left : 0,
+                    ...(how === 'upi' ? { mode: 'upi' } : {}),
+                    note: 'Order advance refund — ' + o.custName, timestamp: new Date().toISOString(), source: 'order',
+                    orderId: o.id, orderRefundId: crypto.randomUUID(),
+                    ...(_ledgerTrackFor({}) === 'B' ? { track: 'B' } : {})
+                };
+                ledgerEntries.push(entry); _saveLedgerLocal(); _saveLedgerRecord(entry); renderLedger();
+            }
+            _ordRemove(o.id);
+            ordCloseCancel();
+            invToast('Order cancelled');
+        }
+
+        // ═══ INVOICE SIDE ═══
+        function invAdvanceAmt() {
+            if (!invAdvance) return 0;
+            if (invAdvance.locked) return invAdvance.amount || 0;
+            return Math.max(0, Math.min(invAdvance.amount || 0, invAdvance.max || 0));
+        }
+        function _invNetBeforeAdv() {
+            const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
+            const t = invComputeTotals(sub, _invFinalAmtGross(), undefined, invExemptSub(invRows), invHmTotal(invRows));
+            const ogTotal = invOgItems.reduce((s, i) => s + (i.value || 0), 0);
+            return Math.max(0, (t.rounded || 0) - ogTotal);
+        }
+        // The advance object stored on the invoice (null if no order is applied).
+        function _invAdvanceForRecord() {
+            if (!invAdvance) return null;
+            if (invAdvance.locked) return invAdvance.rec || null;
+            const o = orders.find(x => x.id === invAdvance.orderId); if (!o) return null;
+            let amt = Math.round(invAdvanceAmt());
+            const _nb = Math.round(_invNetBeforeAdv()); if (_nb > 0 && amt > _nb) amt = _nb; // advance can never exceed the bill
+            return { orderId: o.id, amount: amt, byMode: _ordByMode(o, amt), orderSnapshot: _ordClone(o) };
+        }
+        function _invAdvAmtNow() { const a = _invAdvanceForRecord(); return a ? (a.amount || 0) : 0; }
+        function _invAdvanceName() {
+            if (!invAdvance) return '';
+            const o = invAdvance.locked ? (invAdvance.rec && invAdvance.rec.orderSnapshot) : orders.find(x => x.id === invAdvance.orderId);
+            return o ? o.custName : 'order';
+        }
+        // The invoice shows ONE normal payment: the advance is folded into Cash / UPI / Card by how it was received.
+        function _invDispPay(receipt, method, details, adv) {
+            if (invAdvSeparate) return { receipt: receipt, method: method, details: details }; // Track B setting: advance shown on its own line
+            if (!adv || !(adv.amount > 0)) return { receipt: receipt, method: method, details: details };
+            const bm = adv.byMode || {};
+            let c = 0, u = 0, k = 0;
+            if (method === 'partial' && details) { c = details.cash || 0; u = details.upi || 0; k = details.card || 0; }
+            else if (method === 'cash') c = receipt; else if (method === 'upi') u = receipt; else if (method === 'card') k = receipt;
+            c += bm.cash || 0; u += bm.upi || 0; k += bm.card || 0;
+            const rem = adv.amount - ((bm.cash || 0) + (bm.upi || 0) + (bm.card || 0)); if (rem > 0) c += rem;
+            const n = (c > 0 ? 1 : 0) + (u > 0 ? 1 : 0) + (k > 0 ? 1 : 0);
+            const m = n === 0 ? 'none' : n === 1 ? (c > 0 ? 'cash' : u > 0 ? 'upi' : 'card') : 'partial';
+            return { receipt: c + u + k, method: m, details: m === 'partial' ? { cash: c, upi: u, card: k } : (details || {}) };
+        }
+        function _invDispPayArgs(receipt, method, details) {
+            const d = _invDispPay(receipt, method, details, _invAdvanceForRecord());
+            return [d.receipt, d.method, d.details];
+        }
+        function _invAdvanceRender() {
+            const b = document.getElementById('inv-use-booked-rate');
+            if (b) {
+                const o = (invAdvance && !invAdvance.locked) ? orders.find(x => x.id === invAdvance.orderId) : null;
+                b.style.display = o ? 'block' : 'none';
+                if (o) b.textContent = 'Use booked rate — ' + o.stamp + ' @ ' + _ordMoney(o.rate) + '/g';
+            }
+            try { _renderInvCreditorUi(); } catch (e) {}
+        }
+        function invAdvanceChanged() {
+            invRecalc();
+            const m = window._invPaymentMethod;
+            if (m && m !== 'none' && !(invAdvance && invAdvance.locked)) invSelectPayMode(m); // refill Receipt with the balance
+        }
+        // Tap the advance amount in the totals to change it.
+        function invAdvanceEdit() {
+            if (!invAdvance || invAdvance.locked) return;
+            const v = prompt('Advance to use on this bill (₹) — up to ' + Math.round(invAdvance.max || 0), String(Math.round(invAdvanceAmt())));
+            if (v === null) return;
+            invAdvance.amount = Math.max(0, Math.min(parseFloat(v) || 0, invAdvance.max || 0));
+            invAdvanceChanged();
+        }
+        // ── CHECKOUT (cart) side of the Order Book ──────────────────────────
+        // Same rules as the invoice screen: the advance is posted to the ledger ONCE when received;
+        // the checkout's own ledger entry records only the balance collected now.
+        function _cartNetBeforeAdv() {
+            let t = 0; cart.forEach(i => t += i.finalPrice);
+            let og = 0; oldGoldItems.forEach(i => og += i.value);
+            return t - og - cartAdjustment;
+        }
+        function _cartAdvOrder() { return cartAdvance ? (orders.find(x => x.id === cartAdvance.orderId) || null) : null; }
+        function _cartAdvAmt() {
+            const o = _cartAdvOrder(); if (!o) return 0;
+            const net = Math.round(_cartNetBeforeAdv()); if (net <= 0) return 0;
+            const a = Math.max(0, Math.min(Math.round(cartAdvance.amount || 0), _ordLeft(o)));
+            return Math.min(a, net);
+        }
+        function _cartAdvanceForRecord() {
+            const o = _cartAdvOrder(), a = _cartAdvAmt();
+            if (!o || !(a > 0)) return null;
+            return { orderId: o.id, amount: a, byMode: _ordByMode(o, a), orderSnapshot: _ordClone(o) };
+        }
+        function _cartPersistAdvance() { try { localStorage.setItem('suhagPriceCheckerCartAdvance', JSON.stringify(cartAdvance)); } catch (e) {} }
+        function _cartClearAdvance() { cartAdvance = null; try { localStorage.removeItem('suhagPriceCheckerCartAdvance'); } catch (e) {} }
+        function _cartAdvRender() {
+            if (cartAdvance && !_cartAdvOrder() && typeof _bkLoaded !== 'undefined' && _bkLoaded.orders) _cartClearAdvance(); // order no longer exists
+            const o = _cartAdvOrder();
+            try { _renderPayCreditorLine(); } catch (e) {}
+            const star = document.getElementById('cart-order-star');
+            if (star) { star.style.display = o ? 'inline-block' : 'none'; if (o) star.title = 'Apply booked rate — ' + o.stamp + ' @ ' + _ordMoney(o.rate) + '/g'; }
+            const line = document.getElementById('cart-adv-line');
+            if (!line) return;
+            if (!o) { line.style.display = 'none'; line.innerHTML = ''; return; }
+            line.style.display = 'flex';
+            line.innerHTML = `<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">📕 Advance · ${invEscH(o.stamp)} @ ${_ordMoney(o.rate)}/g</span>` +
+                `<span style="flex-shrink:0;"><span onclick="cartAdvanceEdit()" style="cursor:pointer;border-bottom:1px dashed #2e7d32;">${_ordMoney(_cartAdvAmt())}</span> <span onclick="cartAdvanceRemove()" role="button" aria-label="Remove advance" style="cursor:pointer;color:#c62828;padding:0 4px;">✕</span></span>`;
+        }
+        function cartOrderApply(orderId) {
+            const o = orders.find(x => x.id === orderId); if (!o) return;
+            const net = Math.round(_cartNetBeforeAdv());
+            cartAdvance = { orderId: o.id, amount: net > 0 ? Math.min(_ordLeft(o), net) : _ordLeft(o) };
+            _cartPersistAdvance();
+            cartCustomer = { name: o.custName || '', mobile: o.custMob || '', address: o.custAddr || '' };
+            try { localStorage.setItem('suhagPriceCheckerCartCustomer', JSON.stringify(cartCustomer)); } catch (e) {}
+            openCart();
+            invToast('📕 ' + o.custName + ' — advance ' + _ordMoney(_cartAdvAmt()) + ' applied');
+        }
+        function cartAdvanceEdit() {
+            const o = _cartAdvOrder(); if (!o) return;
+            const v = prompt('Advance to use on this bill (₹) — up to ' + Math.round(_ordLeft(o)), String(Math.round(_cartAdvAmt())));
+            if (v === null) return;
+            cartAdvance.amount = Math.max(0, Math.min(parseFloat(v) || 0, _ordLeft(o)));
+            _cartPersistAdvance();
+            openCart();
+        }
+        function cartAdvanceRemove() { _cartClearAdvance(); openCart(); }
+        // Re-prices the cart's gold items of the order's stamp at the booked rate (making stays as it was).
+        function cartOrderUseRate() {
+            const o = _cartAdvOrder(); if (!o) return;
+            const stampLC = String(o.stamp || '').toLowerCase();
+            const livePure = getPureRate('gold') || 0;
+            const liveRate = (rates.gold && rates.gold[o.stamp]) || 0;
+            const bookedPure = (liveRate && livePure) ? o.rate * livePure / liveRate : (o.pureRate || 0);
+            const tx = (typeof taxRate === 'number') ? taxRate : 0;
+            let done = 0, skipped = 0;
+            const mk = (type, input, metalVal, w, pure) => {
+                if (type === 'per pc' || type === 'per_pc') return input;
+                if (type === 'per g' || type === 'per_g') return input * w;
+                if (type === 'wastage') return pure * w * (input / 100);
+                if (type === '%') return metalVal * (input / 100);
+                return null;
+            };
+            cart.forEach(item => {
+                if (item.type === 'repair' || item.type === 'custom') return;
+                if (item.type === 'loose') {
+                    if ((item.metal || '').toLowerCase() !== 'gold' || String(item.stamp || '').toLowerCase() !== stampLC) return;
+                    if (item.makingType === 'mrp' || item.makingType === 'srate' || item.rate === undefined || item.subtotal === undefined) { skipped++; return; }
+                    if (Math.abs(item.rate - o.rate) < 0.005) return; // already at the booked rate
+                    const w = item.weight || 0, curPure = item.bookedPure || livePure;
+                    const chk = mk(item.makingType, item.makingValue || 0, w * item.rate, w, curPure);
+                    if (chk === null || Math.abs((w * item.rate + chk) - item.subtotal) > 1.5) { skipped++; return; }
+                    const sub = w * o.rate + mk(item.makingType, item.makingValue || 0, w * o.rate, w, bookedPure);
+                    const t = (item.taxRateApplied != null) ? item.taxRateApplied : tx;
+                    item.rate = o.rate; item.bookedRate = o.rate; item.bookedPure = parseFloat(bookedPure.toFixed(2));
+                    item.subtotal = parseFloat(sub.toFixed(2)); item.finalPrice = parseFloat((sub + sub * t / 100).toFixed(2));
+                    done++; return;
+                }
+                const d = productData[item.barcode]; if (!d) return;
+                if ((d.metal || '').toLowerCase() !== 'gold' || String(d.stamp || '').toLowerCase() !== stampLC) return;
+                if (_srateOf(d) > 0 || _productUsesMrp(d)) { skipped++; return; }
+                if (item.bookedRate && Math.abs(item.bookedRate - o.rate) < 0.005) return; // already applied
+                const ov = item.makingOverride;
+                let type, input;
+                if (ov) { type = ov.makingType || ov.type; input = (ov.makingInput != null) ? ov.makingInput : ov.input; }
+                else if (d.makingWastage > 0) { type = 'wastage'; input = d.makingWastage; }
+                else if (d.makingPercent > 0) { type = '%'; input = d.makingPercent; }
+                else if (d.makingPerGram > 0) { type = 'per g'; input = d.makingPerGram; }
+                else { type = 'per pc'; input = d.makingPerPc || 0; }
+                if (type === 'MRP' || typeof input !== 'number') { skipped++; return; }
+                const w = (item.weightOverride != null) ? item.weightOverride : (d.netWeight || 0);
+                const oc = d.otherCharge || 0, hm = item.hmAmount || 0;
+                const price = (rate, pure) => { const mv = w * rate; const m = mk(type, input, mv, w, pure); if (m === null) return null; const sb = mv + m + oc; return sb + sb * tx / 100 + hm; };
+                const cur = price(item.bookedRate || liveRate, item.bookedPure || livePure);
+                const np = price(o.rate, bookedPure);
+                if (cur === null || np === null || !(np > 0) || Math.abs(cur - item.finalPrice) > 1.5) { skipped++; return; }
+                item.bookedRate = o.rate; item.bookedPure = parseFloat(bookedPure.toFixed(2));
+                item.finalPrice = parseFloat(np.toFixed(2)); done++;
+            });
+            if (done) { _autoRoundCartAdjustment(); localStorage.setItem('suhagPriceCheckerCart', JSON.stringify(cart)); openCart(); }
+            invToast(done ? `⭐ Booked rate ${_ordMoney(o.rate)}/g applied to ${done} item${done > 1 ? 's' : ''}` + (skipped ? ` · ${skipped} left as is` : '')
+                          : (skipped ? `${skipped} item(s) could not be re-priced automatically` : `No ${o.stamp} gold item in the cart`));
+        }
+        // Credit on an order account: the order's customer becomes (or is matched to) a credit account.
+        function _ordEnsureCreditor(o) {
+            const d10 = x => String(x || '').replace(/\D/g, '').slice(-10);
+            const m = d10(o.custMob);
+            let c = creditors.find(x => m.length >= 10 ? d10(x.mobile) === m : (!d10(x.mobile) && (x.name || '').trim().toLowerCase() === (o.custName || '').trim().toLowerCase()));
+            if (c) return c;
+            const now = new Date().toISOString();
+            c = { id: crypto.randomUUID(), name: o.custName || 'Customer', mobile: o.custMob || '', address: o.custAddr || '', aadhaarNo: '', createdAt: now, updatedAt: now };
+            creditors.push(c);
+            try { window.dbSet(_cdRef('creditors/' + c.id), c).catch(e => console.error('[Credit] auto-create failed', e)); } catch (e) { console.error(e); }
+            return c;
+        }
+        function _cartAutoCreditor() {
+            if (cartCreditorId) return;
+            const o = _cartAdvOrder(); if (!o) return;
+            const c = _ordEnsureCreditor(o);
+            _setCartCreditor(c.id, c);
+        }
+        function _invAutoCreditor() {
+            if (invCreditorId || !invAdvance || invAdvance.locked) return;
+            const o = orders.find(x => x.id === invAdvance.orderId); if (!o) return;
+            const c = _ordEnsureCreditor(o);
+            _setInvCreditor(c.id, c);
+        }
+        function invOrderApply(orderId) {
+            const o = orders.find(x => x.id === orderId); if (!o) return;
+            invAdvance = { orderId: o.id, max: _ordLeft(o), amount: 0, locked: false };
+            const setIfEmpty = (id, v) => { const el = document.getElementById(id); if (el && !el.value.trim() && v) el.value = v; };
+            setIfEmpty('inv-cust-name', o.custName); setIfEmpty('inv-cust-mob', o.custMob); setIfEmpty('inv-cust-addr', o.custAddr);
+            const net = _invNetBeforeAdv();
+            let amt = _ordLeft(o); if (net > 0) amt = Math.min(amt, Math.round(net));
+            invAdvance.amount = amt;
+            _invAdvanceRender();
+            invAdvanceChanged();
+            invToast('📕 ' + o.custName + ' — advance ' + _ordMoney(amt) + ' applied');
+        }
+        function invAdvanceRemove() {
+            if (invAdvance && invAdvance.locked) return;
+            invAdvance = null;
+            _invAdvanceRender(); invRecalc();
+            const m = window._invPaymentMethod; if (m && m !== 'none') invSelectPayMode(m);
+        }
+        // Sets the booked rate on the bill's gold items of the same stamp.
+        function invOrderUseRate() {
+            if (!invAdvance || invAdvance.locked) return;
+            const o = orders.find(x => x.id === invAdvance.orderId); if (!o) return;
+            let n = 0;
+            invRows.forEach(r => {
+                if (String(r.stamp || '').toLowerCase() === String(o.stamp || '').toLowerCase() && (r.metal || 'gold') === 'gold') {
+                    r.rate = o.rate; if (o.pureRate) r.pureRate = o.pureRate; n++;
+                }
+            });
+            invRenderRows(); invRecalc();
+            invToast(n ? `Booked rate applied to ${n} item${n > 1 ? 's' : ''}` : `No ${o.stamp} gold item in the bill yet — add it, then tap again`);
+        }
+        // After an invoice that used an order's advance is saved: the order is used up (wiped) — or keeps any leftover advance.
+        function _invOrderConsume(rec, isEdit) {
+            const a = rec && rec.advance;
+            if (isEdit || !a || a.copied) return;
+            const o = orders.find(x => x.id === a.orderId); if (!o) return;
+            o.applied = (o.applied || 0) + (a.amount || 0);
+            if (_ordLeft(o) < 1) _ordRemove(o.id); else _ordSave(o);
+        }
+        // Invoice deleted: bring its order back (or give the advance back to the still-pending order).
+        function _invOrderRestore(inv) {
+            const a = inv && inv.advance;
+            if (!a || a.copied || !a.orderSnapshot) return;
+            const o = orders.find(x => x.id === a.orderId);
+            if (o) { o.applied = Math.max(0, (o.applied || 0) - (a.amount || 0)); _ordSave(o); }
+            else _ordSave(_ordClone(a.orderSnapshot));
         }
 
 
@@ -21568,8 +22200,9 @@
                 ${t.disc>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#ff8a65;margin-bottom:6px;"><span>Discount</span><span>-₹${t.disc.toFixed(2)}</span></div>`:''}
                 ${ogTotal>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#8d6e63;margin-bottom:6px;"><span>Old Jewellery</span><span>-₹${ogTotal.toFixed(2)}</span></div>`:''}
                 ${t.rounded?`<div style="display:flex;justify-content:space-between;font-size:15px;font-weight:800;margin-bottom:6px;"><span>Net Amount</span><span>₹${t.rounded}</span></div>`:''}
-                ${inv.receipt?`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);"><span>Receipt${_invPaymentLabel(inv)}</span><span>₹${inv.receipt}</span></div>`:''}
-                ${inv.paymentMethod === 'partial' && inv.paymentDetails ? `<div style="font-size:11.5px; color:#888; margin:2px 0 6px;">${['cash','upi','card'].filter(k => inv.paymentDetails[k] > 0).map(k => `${k.toUpperCase()}: ₹${inv.paymentDetails[k].toFixed(0)}`).join(' · ')}</div>` : ''}
+                ${(invAdvSeparate && inv.advance && inv.advance.amount > 0) ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);"><span>Advance</span><span>₹${Math.round(inv.advance.amount)}</span></div>` : ''}
+                ${(() => { const _d = _invDispPay(inv.receipt || 0, inv.paymentMethod, inv.paymentDetails, inv.advance); return _d.receipt ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);"><span>Receipt${_invPaymentLabel({ paymentMethod: _d.method })}</span><span>₹${_d.receipt}</span></div>` : ''; })()}
+                ${(() => { const _d = _invDispPay(inv.receipt || 0, inv.paymentMethod, inv.paymentDetails, inv.advance); return _d.method === 'partial' && _d.details ? `<div style="font-size:11.5px; color:#888; margin:2px 0 6px;">${['cash','upi','card'].filter(k => _d.details[k] > 0).map(k => `${k.toUpperCase()}: ₹${_d.details[k].toFixed(0)}`).join(' · ')}</div>` : ''; })()}
                 ${_cdPayTbl}
                 ${outstandingNow>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:#c00;font-weight:700;"><span>Outstanding</span><span>₹${outstandingNow}</span></div>`:(_cdPaid>0&&outstanding>0?`<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--green);font-weight:700;"><span>Outstanding</span><span>Cleared ✓</span></div>`:'')}
                 <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px;">
@@ -22064,6 +22697,7 @@
             }
             // Restore the linked creditor too, so re-saving keeps the credit entry in step.
             invCreditorId = inv.creditorId || null;
+            invAdvance = inv.advance ? { orderId: inv.advance.orderId, amount: inv.advance.amount || 0, locked: true, rec: inv.advance } : null; _invAdvanceRender();
             _renderInvCreditorUi();
             // Restore the ORIGINAL invoice date onto the printed-date field — otherwise
             // it keeps whatever date was last left in the box (usually today's), and a
@@ -22181,6 +22815,7 @@
                 if (!isNaN(d)) dateEl.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
             }
             _invClampCopiedDateToTrackA(dateEl);
+            if (inv.advance) { invAdvance = { orderId: inv.advance.orderId, amount: inv.advance.amount || 0, locked: true, rec: Object.assign({}, inv.advance, { orderSnapshot: null, copied: true }) }; _invAdvanceRender(); }
 
             // Bill number is intentionally left as the fresh Track A number that
             // invReset() already filled in — Track A and Track B keep independent
@@ -22224,6 +22859,7 @@
                 return;
             }
 
+            _invOrderRestore(inv);
             invoiceHistory = invoiceHistory.filter(i => i.id !== id);
             _saveInvoiceLocal();
             _deleteInvoiceRecord(id);
@@ -22371,6 +23007,7 @@
                 } else if (pm === 'card') {
                     card = receipt;
                 }
+                if (inv.advance && inv.advance.byMode) { upi += inv.advance.byMode.upi || 0; cash += inv.advance.byMode.cash || 0; card += inv.advance.byMode.card || 0; }
                 upi = r2(upi); cash = r2(cash); card = r2(card);
 
                 const row = ws.addRow([
@@ -22887,6 +23524,67 @@
                 <button onclick="closeAdhocDialog()" style="flex:1; margin:0; padding:12px; font-size:14px; background:#eee; color:#333; box-shadow:none;">Cancel</button>
                 <button onclick="adhocConfirm()" style="flex:1; margin:0; padding:12px; font-size:14px; font-weight:800; background:#4CAF50; color:white;">OK</button>
             </div>
+        </div>
+    </div>
+
+    <!-- ═══ ORDER BOOK ═══ -->
+    <div id="order-book-modal" style="display:none; position:fixed; inset:0; background:var(--bg, #f5f5f5); z-index:1600; flex-direction:column;">
+        <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 14px; background:#fff; border-bottom:1px solid #e0e0e0;">
+            <div style="font-size:17px; font-weight:800;">📕 Order Book</div>
+            <div style="display:flex; gap:8px;">
+                <button onclick="ordOpenForm()" style="width:auto; margin:0; padding:8px 14px; font-size:13px; font-weight:800; border-radius:8px; border:none; background:#B8860B; color:#fff; box-shadow:none;">+ New Order</button>
+                <button onclick="closeOrderBook()" style="width:auto; margin:0; padding:8px 12px; font-size:15px; border-radius:8px; border:none; background:#eee; color:#333; box-shadow:none;">✕</button>
+            </div>
+        </div>
+        <div style="padding:10px 14px 4px;"><input type="text" id="ord-search" placeholder="Search name / mobile" oninput="renderOrderBook()" style="margin:0; width:100%;"></div>
+        <div id="ord-summary" style="padding:4px 16px 8px; font-size:12.5px; color:#555;"></div>
+        <div id="ord-list" style="flex:1; overflow-y:auto; padding:0 14px 24px;"></div>
+    </div>
+
+    <div id="order-form-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1700; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:12px; max-width:440px; width:100%; max-height:92vh; overflow-y:auto; padding:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                <h4 id="ord-form-title" style="margin:0;">New Order</h4>
+                <span onclick="ordCloseForm()" style="cursor:pointer; font-size:20px; padding:0 6px;">✕</span>
+            </div>
+            <input type="text" id="ord-f-name" placeholder="Customer name *" style="margin:0 0 7px; width:100%;">
+            <input type="tel" id="ord-f-mob" placeholder="Mobile" style="margin:0 0 7px; width:100%;">
+            <input type="text" id="ord-f-addr" placeholder="Address (optional)" style="margin:0 0 10px; width:100%;">
+            <div style="font-size:11px; font-weight:700; color:#777; margin-bottom:4px;">BOOKED RATE</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:7px;">
+                <select id="ord-f-stamp" onchange="ordStampChanged()" style="margin:0; width:100%;"></select>
+                <input type="number" id="ord-f-rate" placeholder="Rate ₹ per gram *" step="0.01" style="margin:0; width:100%;">
+            </div>
+            <input type="text" id="ord-f-note" placeholder="Note, e.g. 2 bangles ~40g (optional)" style="margin:0 0 10px; width:100%;">
+            <div id="ord-f-advbox">
+                <div style="font-size:11px; font-weight:700; color:#777; margin-bottom:4px;">ADVANCE RECEIVED (optional)</div>
+                <div id="ofp-wrap"></div>
+            </div>
+            <button onclick="ordSaveForm()" style="margin:12px 0 0; width:100%; padding:12px; font-size:15px; font-weight:800; border-radius:10px; border:none; background:#B8860B; color:#fff; box-shadow:none;">Save Order</button>
+        </div>
+    </div>
+
+    <div id="order-adv-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1700; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:12px; max-width:400px; width:100%; padding:16px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <h4 style="margin:0;">+ Advance</h4><span onclick="ordCloseAdvance()" style="cursor:pointer; font-size:20px; padding:0 6px;">✕</span>
+            </div>
+            <div id="ord-a-who" style="font-size:12.5px; color:#666; margin-bottom:10px;"></div>
+            <div id="oap-wrap"></div>
+            <button onclick="ordSaveAdvance()" style="margin:12px 0 0; width:100%; padding:12px; font-size:15px; font-weight:800; border-radius:10px; border:none; background:#2e7d32; color:#fff; box-shadow:none;">Add Advance</button>
+        </div>
+    </div>
+
+    <div id="order-cancel-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1700; align-items:center; justify-content:center;">
+        <div style="background:white; border-radius:16px; margin:12px; max-width:400px; width:100%; padding:16px;">
+            <h4 style="margin:0 0 8px;">Cancel order</h4>
+            <div id="ord-c-text" style="font-size:14px; margin-bottom:12px;"></div>
+            <div id="ord-c-refund">
+                <button onclick="ordDoCancel('cash')" style="width:100%; margin:0 0 7px; padding:11px; font-size:14px; font-weight:700; border-radius:9px; border:none; background:#c62828; color:#fff; box-shadow:none;">Cancel &amp; refund in Cash</button>
+                <button onclick="ordDoCancel('upi')" style="width:100%; margin:0 0 7px; padding:11px; font-size:14px; font-weight:700; border-radius:9px; border:none; background:#c62828; color:#fff; box-shadow:none;">Cancel &amp; refund by UPI / Card</button>
+                <button onclick="ordDoCancel('keep')" style="width:100%; margin:0 0 7px; padding:11px; font-size:14px; font-weight:700; border-radius:9px; border:none; background:#6d4c41; color:#fff; box-shadow:none;">Cancel &amp; keep the advance (no refund)</button>
+            </div>
+            <button onclick="ordCloseCancel()" style="width:100%; margin:4px 0 0; padding:10px; font-size:14px; font-weight:700; border-radius:9px; border:none; background:#eee; color:#333; box-shadow:none;">Back</button>
         </div>
     </div>
 
@@ -23846,7 +24544,7 @@
             <div style="background:var(--surface); border-radius:var(--radius); padding:14px; margin-bottom:12px; box-shadow:0 1px 6px rgba(0,0,0,.06);">
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px;">
                     <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase;">Customer</div>
-                    <button type="button" id="inv-creditor-btn" onclick="openCreditorPicker('invoice')" style="width:auto; margin:0; padding:5px 11px; font-size:12px; font-weight:700; border-radius:8px; border:1.5px solid #c62828; background:#fff; color:#c62828; box-shadow:none; max-width:58%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🧾 Creditor</button>
+                    <button type="button" id="inv-creditor-btn" onclick="openCreditorPicker('invoice')" style="width:auto; margin:0; padding:5px 11px; font-size:12px; font-weight:700; border-radius:8px; border:1.5px solid #c62828; background:#fff; color:#c62828; box-shadow:none; max-width:58%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">🧾 Accounts</button>
                 </div>
                 <div style="display:flex; flex-direction:column; gap:7px;">
                     <input type="text" id="inv-cust-name" placeholder="Customer Name" style="margin:0;">
@@ -23881,6 +24579,7 @@
                     <button onclick="invAddRow()" style="background:var(--gold); color:white; border:none; border-radius:8px; padding:6px 12px; font-size:12px; font-weight:700; cursor:pointer; box-shadow:none; width:auto; margin:0;">+ Add Item</button>
                 </div>
                 <div id="inv-rows"></div>
+                <button type="button" id="inv-use-booked-rate" onclick="invOrderUseRate()" style="display:none; width:100%; background:#2e7d32; color:white; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:700; margin-top:6px; cursor:pointer; box-shadow:none;">Use booked rate</button>
                 <button onclick="invLoadFromCart()" style="width:100%; background:var(--blue); color:white; border:none; border-radius:10px; padding:10px; font-size:13px; font-weight:700; margin-top:6px; cursor:pointer; box-shadow:none;">📦 Load from Cart</button>
             </div>
 
@@ -24098,6 +24797,10 @@
                 <button id="inv-manage-a-btn" onclick="invOpenManageA()" style="width:100%; text-align:left; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; font-size:14px; font-weight:700; color:var(--text); cursor:pointer; box-shadow:none; margin:0; display:none; align-items:center; justify-content:space-between;">
                     <span>🛠️ Manage Track A (Track B)</span><span style="color:#bbb;">›</span>
                 </button>
+                <label id="inv-adv-sep-row" style="display:none; align-items:center; gap:10px; background:#fafafa; border:1.5px solid var(--border); border-radius:11px; padding:14px; font-size:14px; font-weight:700; cursor:pointer;">
+                    <input type="checkbox" id="inv-adv-sep" onchange="invSetAdvSeparate(this.checked)" style="width:18px; height:18px; accent-color:var(--gold); margin:0; flex-shrink:0;">
+                    <span>📕 Advance <span style="display:block; font-size:11px; font-weight:500; color:#888;">Tick: invoice shows the order advance as its own line. Untick: combined into Cash/UPI/Card. Synced on all devices.</span></span>
+                </label>
             </div>
         </div>
     </div>
