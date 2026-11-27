@@ -2173,6 +2173,10 @@
 
                     <button class="stepper-btn" onclick="adjustMaking('modal-loose-making-percent', 0.25)">+</button>
                 </div>
+                <div id="loose-keep-preset-row" style="display:none; align-items:center; gap:8px; margin-top:12px;">
+                    <input type="checkbox" id="loose-keep-preset" style="width:20px; height:20px; margin:0; flex:none; cursor:pointer;">
+                    <label for="loose-keep-preset" style="margin:0; font-size:14px; font-weight:600; cursor:pointer;">Keep preset <span id="loose-keep-preset-name" style="font-weight:400; color:#888;"></span></label>
+                </div>
             </div>
             <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 16px;">
                 <button id="save-loose-defaults-btn" onclick="saveLooseDefaultsToCloud()"
@@ -8145,6 +8149,12 @@
 
             document.getElementById('modal-loose-stamp-select').value = stamp;
 
+            // "Keep preset" tick: only offered while a preset is active, always starts unticked
+            const _kpRow = document.getElementById('loose-keep-preset-row');
+            document.getElementById('loose-keep-preset').checked = false;
+            document.getElementById('loose-keep-preset-name').textContent = currentLoosePresetName ? '(' + currentLoosePresetName + ')' : '';
+            _kpRow.style.display = currentLoosePresetName ? 'flex' : 'none';
+
             updateModalRateDisplay();
 
             document.getElementById('modal-loose-stamp-select').onchange = updateModalRateDisplay;
@@ -8157,9 +8167,12 @@
         }
 
         function updateLooseInputs() {
-            // Hide the preset badge if we manually override settings
-            document.getElementById('loose-active-preset').style.display = 'none';
-            currentLoosePresetName = null;
+            // Hide the preset badge if we manually override settings (unless "Keep preset" is ticked)
+            const _keepPreset = !!currentLoosePresetName && !!document.getElementById('loose-keep-preset')?.checked;
+            if (!_keepPreset) {
+                document.getElementById('loose-active-preset').style.display = 'none';
+                currentLoosePresetName = null;
+            }
             const newMetal = document.getElementById('modal-loose-metal-select').value;
             const newStamp = document.getElementById('modal-loose-stamp-select').value;
             const newMaking = parseFloat(document.getElementById('modal-loose-making-percent').value);
