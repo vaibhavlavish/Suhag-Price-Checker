@@ -21635,6 +21635,7 @@
             const stamps = Object.keys((rates && rates.gold) || {});
             sel.innerHTML = stamps.map(s => `<option value="${invEscH(s)}">${invEscH(s)}</option>`).join('');
             document.getElementById('ord-form-title').textContent = o ? 'Edit Order' : 'New Order';
+            { const _d = o ? new Date(o.createdAt) : new Date(); document.getElementById('ord-f-date').value = isNaN(_d) ? '' : _localDateStr(_d); }
             document.getElementById('ord-f-name').value = o ? o.custName : (document.getElementById('inv-cust-name')?.value || '');
             document.getElementById('ord-f-mob').value = o ? (o.custMob || '') : '';
             document.getElementById('ord-f-addr').value = o ? (o.custAddr || '') : '';
@@ -21667,15 +21668,25 @@
                 rate: rate,
                 note: document.getElementById('ord-f-note').value.trim()
             };
+            // Order date: keep the original time-of-day when the date is unchanged; today = now.
+            const _dv = document.getElementById('ord-f-date').value;
+            const _ordTs = (old) => {
+                if (!_dv) return old || new Date().toISOString();
+                if (old && _localDateStr(new Date(old)) === _dv) return old;
+                if (_dv === _localDateStr(new Date())) return new Date().toISOString();
+                const [y, m, d] = _dv.split('-').map(Number);
+                return new Date(y, m - 1, d, 12, 0, 0).toISOString();
+            };
             if (_ordEditId) {
                 const o = orders.find(x => x.id === _ordEditId); if (!o) return;
                 const st = fields.stamp === o.stamp;
                 Object.assign(o, fields);
+                o.createdAt = _ordTs(o.createdAt);
                 if (!st || !o.pureRate) o.pureRate = parseFloat((getPureRate('gold') || 0).toFixed(2));
                 _ordSave(o);
             } else {
                 const pay = _ordReadPay('ofp');
-                const o = Object.assign({ id: crypto.randomUUID(), createdAt: new Date().toISOString(), advances: [], applied: 0,
+                const o = Object.assign({ id: crypto.randomUUID(), createdAt: _ordTs(null), advances: [], applied: 0,
                     pureRate: parseFloat((getPureRate('gold') || 0).toFixed(2)) }, fields);
                 if (pay.amount > 0) _ordAddAdvance(o, pay);
                 _ordSave(o);
@@ -23547,6 +23558,8 @@
                 <h4 id="ord-form-title" style="margin:0;">New Order</h4>
                 <span onclick="ordCloseForm()" style="cursor:pointer; font-size:20px; padding:0 6px;">✕</span>
             </div>
+            <label style="font-size:11px; color:#888; display:block; margin-bottom:2px;">Order date</label>
+            <input type="date" id="ord-f-date" style="margin:0 0 7px; width:100%;">
             <input type="text" id="ord-f-name" placeholder="Customer name *" style="margin:0 0 7px; width:100%;">
             <input type="tel" id="ord-f-mob" placeholder="Mobile" style="margin:0 0 7px; width:100%;">
             <input type="text" id="ord-f-addr" placeholder="Address (optional)" style="margin:0 0 10px; width:100%;">
