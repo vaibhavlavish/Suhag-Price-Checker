@@ -15481,7 +15481,13 @@
             let oldGoldTotal = 0; oldGoldItems.forEach(i => oldGoldTotal += i.value);
             const netPayable = total - oldGoldTotal - cartAdjustment;
 
-            const built = _invBuildPrintHtmlFromCart(cart, netPayable, window._selectedPayMode || 'none', null);
+            const _pvMode = window._selectedPayMode || 'none';
+            let _pvSplit = null;
+            if (_pvMode === 'partial') { // read the split live (no validation) so Credit etc. show in the preview
+                const _g = id => parseFloat((document.getElementById(id) || {}).value) || 0;
+                _pvSplit = { mode: 'partial', cash: _g('pay-cash-amt'), upi: _g('pay-upi-amt'), card: _g('pay-card-amt'), credit: _g('pay-credit-amt') };
+            }
+            const built = _invBuildPrintHtmlFromCart(cart, netPayable, _pvMode, _pvSplit);
             if (!built) { showCustomAlert('Nothing to preview.'); return; }
 
             const pc = document.getElementById('inv-preview-content');
