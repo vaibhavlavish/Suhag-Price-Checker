@@ -11115,10 +11115,10 @@
                 ${isActive ? `
                     <div style="font-size:10px; font-weight:700; letter-spacing:.08em; color:var(--text2); text-transform:uppercase; margin-bottom:6px;">Log a Payment</div>
                     <div style="display:flex; gap:6px; margin-bottom:6px;">
-                        <input type="number" id="inst-pay-amount" placeholder="Amount" step="0.01" style="margin:0; flex:1;">
+                        <input type="number" id="inst-pay-amount" placeholder="Amount" step="0.01" oninput="uqrRefresh('ipq')" style="margin:0; flex:1;">
                         <input type="date" id="inst-pay-date" style="margin:0; flex:1;" value="${new Date().toISOString().slice(0, 10)}">
                     </div>
-                    <select id="inst-pay-method" style="margin:0 0 6px;" onchange="document.getElementById('inst-pay-split-fields').style.display = this.value === 'partial' ? 'flex' : 'none';">
+                    <select id="inst-pay-method" style="margin:0 0 6px;" onchange="document.getElementById('inst-pay-split-fields').style.display = this.value === 'partial' ? 'flex' : 'none'; instPayQrSync();">
                         <option value="cash">Cash</option>
                         <option value="upi">UPI</option>
                         <option value="card">Card</option>
@@ -11126,9 +11126,10 @@
                     </select>
                     <div id="inst-pay-split-fields" style="display:none; gap:6px; margin-bottom:6px;">
                         <input type="number" id="inst-pay-split-cash" placeholder="Cash" step="0.01" style="margin:0; flex:1;">
-                        <input type="number" id="inst-pay-split-upi" placeholder="UPI" step="0.01" style="margin:0; flex:1;">
+                        <input type="number" id="inst-pay-split-upi" placeholder="UPI" step="0.01" oninput="uqrRefresh('ipq')" style="margin:0; flex:1;">
                         <input type="number" id="inst-pay-split-card" placeholder="Card" step="0.01" style="margin:0; flex:1;">
                     </div>
+                    <div id="ipq-host"></div>
                     <input type="text" id="inst-pay-note" placeholder="Note (optional)" style="margin:0 0 8px;">
                     <button onclick="logInstallmentPayment()" style="background:var(--gold); color:#fff; font-weight:800; padding:11px; border-radius:var(--radius); border:none; font-size:14px;">Add Payment</button>
                     <p class="note" id="inst-pay-status" style="margin-top:6px; text-align:center;"></p>
@@ -12710,6 +12711,7 @@
         }
         function _cdSetPayMode(m) {
             _cdEntryPayMode = m;
+            if (m === 'upi') uqrShow('cd-uqr', _uqrNum('creditor-entry-amount'), 'cd-uqr-host'); else uqrHide('cd-uqr');
             ['cash', 'upi', 'card'].forEach(k => {
                 const b = document.getElementById('cd-pm-' + k);
                 if (!b) return;
@@ -14501,6 +14503,12 @@
 
         function chooseUpiForPayment(idx) {
             closeModal('upi-pay-select-modal');
+            if (typeof window._upiQrContext === 'string' && window._upiQrContext.indexOf('g:') === 0) {
+                const _gid = window._upiQrContext.slice(2);
+                (window._uqr[_gid] = window._uqr[_gid] || {}).entry = shopUpiIds[idx];
+                _uqrRender(_gid);
+                return;
+            }
             if (window._upiQrContext === 'partial') {
                 window._selectedPartialUpiEntry = shopUpiIds[idx];
                 const amt = window._partialUpiAmount || (parseFloat(document.getElementById('pay-upi-amt').value) || 0);
@@ -14628,6 +14636,53 @@
             _renderUpiQrCore(entry, amt, { box: 'pay-partial-upi-qr-box', label: 'pay-partial-upi-qr-label', switchWrap: 'pay-partial-upi-switch-wrap' });
         }
         window._updatePartialUpiQrAmount = _updatePartialUpiQrAmount;
+
+        // ── Generic UPI QR panels (invoice, order book, creditor / installment payments) ──
+        // uqrShow(id, amtFn, hostId) draws a QR for amtFn() into panel `id` (panel markup is
+        // created inside hostId on first use). One UPI ID -> shown directly; several -> the
+        // usual chooser opens once, then the choice is remembered for that panel.
+        window._uqr = window._uqr || {};
+        function uqrMarkup(id) {
+            return `<div id="${id}-wrap" style="display:none; text-align:center; background:#fff; border-radius:10px; padding:10px; border:1px dashed #ddd; margin:6px 0; color:#333;">
+                <div id="${id}-box" style="display:inline-block; background:white; padding:10px; border-radius:12px; border:2px solid #e0e0e0; margin-bottom:6px;"></div>
+                <div id="${id}-label" style="font-size:12px; color:#888;"></div>
+                <div id="${id}-sw" style="display:none; margin-top:6px;">
+                    <span onclick="window._upiQrContext='g:${id}'; openUpiPaySelectModal();" style="font-size:12px; color:#1565C0; text-decoration:underline; cursor:pointer;">🔁 Switch UPI ID</span>
+                </div></div>`;
+        }
+        function _uqrRender(id) {
+            const st = window._uqr[id]; if (!st || !st.entry) return;
+            const box = document.getElementById(id + '-box'), lbl = document.getElementById(id + '-label');
+            if (!box || !lbl) return;
+            const amt = Math.max(0, parseFloat(st.amtFn && st.amtFn()) || 0);
+            if (amt <= 0) { box.innerHTML = ''; box.style.display = 'none'; lbl.textContent = 'Enter the UPI amount to show the QR'; return; }
+            _renderUpiQrCore(st.entry, amt, { box: id + '-box', label: id + '-label', switchWrap: id + '-sw' });
+        }
+        function uqrShow(id, amtFn, hostId) {
+            let w = document.getElementById(id + '-wrap');
+            if (!w && hostId) { const h = document.getElementById(hostId); if (h) { h.innerHTML = uqrMarkup(id); w = document.getElementById(id + '-wrap'); } }
+            if (!w) return;
+            const st = window._uqr[id] = window._uqr[id] || {};
+            st.amtFn = amtFn; w.style.display = 'block';
+            const box = document.getElementById(id + '-box'), lbl = document.getElementById(id + '-label');
+            if (!shopUpiIds || shopUpiIds.length === 0) {
+                box.innerHTML = ''; box.style.display = 'none';
+                lbl.innerHTML = '⚠️ No UPI ID set. <span style="text-decoration:underline; cursor:pointer; color:#1565C0;" onclick="openUpiIdSetting()">Add it in More → Settings</span>';
+                return;
+            }
+            if (st.entry && shopUpiIds.some(e => e.upi === st.entry.upi)) { _uqrRender(id); return; }
+            if (shopUpiIds.length === 1) { st.entry = shopUpiIds[0]; _uqrRender(id); return; }
+            lbl.textContent = 'Choose a UPI ID…';
+            window._upiQrContext = 'g:' + id; openUpiPaySelectModal();
+        }
+        function uqrHide(id) { const w = document.getElementById(id + '-wrap'); if (w) w.style.display = 'none'; }
+        function uqrRefresh(id) { const w = document.getElementById(id + '-wrap'); if (w && w.style.display !== 'none') _uqrRender(id); }
+        function uqrToggle(id, amtFn, hostId) {
+            const w = document.getElementById(id + '-wrap');
+            if (w && w.style.display !== 'none') uqrHide(id); else uqrShow(id, amtFn, hostId);
+        }
+        window.uqrShow = uqrShow; window.uqrHide = uqrHide; window.uqrRefresh = uqrRefresh; window.uqrToggle = uqrToggle; window.uqrMarkup = uqrMarkup;
+        function _uqrNum(id) { return () => parseFloat((document.getElementById(id) || {}).value) || 0; }
 
         function syncPartialPayment(changed) {
             let total = 0; cart.forEach(i => total += i.finalPrice);
@@ -18369,6 +18424,7 @@
             if (btn) btn.classList.add('selected');
             const partialSection = document.getElementById('ledger-inst-pay-partial-section');
             if (partialSection) partialSection.style.display = mode === 'partial' ? 'grid' : 'none';
+            if (mode !== 'partial') uqrHide('lipq');
             const qrSection = document.getElementById('ledger-inst-pay-upi-qr-section');
             if (qrSection) qrSection.style.display = mode === 'upi' ? 'block' : 'none';
             if (mode === 'partial') {
@@ -21318,6 +21374,7 @@
             document.querySelectorAll('.inv-pay-btn').forEach(b => b.classList.remove('selected'));
             const partialSection = document.getElementById('inv-partial-section');
             if (partialSection) partialSection.style.display = 'none';
+            uqrHide('inv-uqr'); uqrHide('inv-uqrp');
             if (document.getElementById('inv-pay-cash-amt')) document.getElementById('inv-pay-cash-amt').value = '';
             if (document.getElementById('inv-pay-upi-amt')) document.getElementById('inv-pay-upi-amt').value = '';
             if (document.getElementById('inv-pay-card-amt')) document.getElementById('inv-pay-card-amt').value = '';
@@ -21416,6 +21473,8 @@
             if (btn) btn.classList.add('selected');
             const partialSection = document.getElementById('inv-partial-section');
             if (partialSection) partialSection.style.display = mode === 'partial' ? 'block' : 'none';
+            if (mode === 'upi') uqrRefresh('inv-uqr'); else uqrHide('inv-uqr');
+            if (mode !== 'partial') uqrHide('inv-uqrp');
 
             // Compute net after old jewellery
             const sub = invRows.reduce((s, r) => s + invTaxableVal(r), 0);
@@ -21434,6 +21493,16 @@
             }
         }
 
+        function instPayQrSync() {
+            const m = (document.getElementById('inst-pay-method') || {}).value;
+            if (m === 'upi') uqrShow('ipq', _uqrNum('inst-pay-amount'), 'ipq-host');
+            else if (m === 'partial') uqrShow('ipq', _uqrNum('inst-pay-split-upi'), 'ipq-host');
+            else uqrHide('ipq');
+        }
+        window.instPayQrSync = instPayQrSync;
+        function invQrFull() { uqrShow('inv-uqr', _uqrNum('inv-receipt'), 'inv-uqr-host'); }
+        function invQrPartial() { uqrToggle('inv-uqrp', _uqrNum('inv-pay-upi-amt'), 'inv-uqrp-host'); }
+        window.invQrFull = invQrFull; window.invQrPartial = invQrPartial;
         function invSyncPartial(changed) {
             let cash = parseFloat(document.getElementById('inv-pay-cash-amt')?.value) || 0;
             const upi = parseFloat(document.getElementById('inv-pay-upi-amt')?.value) || 0;
@@ -21453,6 +21522,7 @@
             const paid = cash + upi + card;
             document.getElementById('inv-receipt').value = paid > 0 ? paid.toFixed(0) : '';
             window._invPaymentDetails = { cash, upi, card, credit };
+            uqrRefresh('inv-uqrp');
             const remaining = net - paid - credit;
             const statusEl = document.getElementById('inv-partial-status');
             if (!statusEl) return;
@@ -21528,8 +21598,10 @@
             const btn = (m, l) => `<button type="button" id="${p}-m-${m}" onclick="_ordSetPay('${p}','${m}')" style="padding:9px 2px;font-size:12px;font-weight:700;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;box-shadow:none;margin:0;width:auto;">${l}</button>`;
             const inp = (id, ph) => `<input type="number" id="${p}-${id}" placeholder="${ph}" min="0" step="1" oninput="_ordSplitSum('${p}')" style="margin:0;padding:8px;font-size:13px;width:100%;">`;
             return `<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-bottom:8px;">${btn('cash', '💵 Cash')}${btn('upi', '📱 UPI')}${btn('card', '💳 Card')}${btn('partial', '⚡ Split')}</div>
-                <input type="number" id="${p}-amt" placeholder="Advance amount ₹" min="0" step="1" style="margin:0;width:100%;">
-                <div id="${p}-split" style="display:none;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:6px;">${inp('c', 'Cash ₹')}${inp('u', 'UPI ₹')}${inp('k', 'Card ₹')}</div>`;
+                <input type="number" id="${p}-amt" placeholder="Advance amount ₹" min="0" step="1" oninput="uqrRefresh('${p}-qr')" style="margin:0;width:100%;">
+                <div id="${p}-split" style="display:none;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:6px;">${inp('c', 'Cash ₹')}${inp('u', 'UPI ₹')}${inp('k', 'Card ₹')}
+                    <button type="button" onclick="_ordPartialQr('${p}')" style="grid-column:1/-1;margin:0;padding:8px;font-size:12px;font-weight:800;border:1.5px solid #d1c4e9;border-radius:8px;background:#ede7f6;color:#5e35b1;cursor:pointer;box-shadow:none;">📱 Show QR for the UPI amount</button></div>
+                ${uqrMarkup(p + '-qr')}${uqrMarkup(p + '-qrp')}`;
         }
         function _ordSetPay(p, m) {
             window._ordPayMode[p] = m;
@@ -21539,10 +21611,14 @@
             });
             const sp = document.getElementById(p + '-split'); if (sp) sp.style.display = m === 'partial' ? 'grid' : 'none';
             const am = document.getElementById(p + '-amt'); if (am) am.readOnly = (m === 'partial');
+            if (m === 'upi') uqrShow(p + '-qr', _uqrNum(p + '-amt')); else uqrHide(p + '-qr');
+            if (m !== 'partial') uqrHide(p + '-qrp');
             if (m === 'partial') _ordSplitSum(p);
         }
+        function _ordPartialQr(p) { uqrToggle(p + '-qrp', _uqrNum(p + '-u')); }
         function _ordSplitSum(p) {
             if ((window._ordPayMode[p] || 'cash') !== 'partial') return;
+            uqrRefresh(p + '-qrp');
             const g = id => parseFloat(document.getElementById(p + '-' + id)?.value) || 0;
             const t = g('c') + g('u') + g('k');
             const am = document.getElementById(p + '-amt'); if (am) am.value = t > 0 ? t : '';
@@ -23860,8 +23936,12 @@
             </div>
             <div id="ledger-inst-pay-partial-section" style="display:none; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin-bottom:12px;">
                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">Cash</label><input type="number" id="ledger-inst-pay-split-cash" placeholder="0" step="0.01" style="margin:0; padding:8px; font-size:13px; width:100%;"></div>
-                <div><label style="font-size:10px; display:block; margin-bottom:2px;">UPI</label><input type="number" id="ledger-inst-pay-split-upi" placeholder="0" step="0.01" style="margin:0; padding:8px; font-size:13px; width:100%;"></div>
+                <div><label style="font-size:10px; display:block; margin-bottom:2px;">UPI</label><input type="number" id="ledger-inst-pay-split-upi" placeholder="0" step="0.01" oninput="uqrRefresh('lipq')" style="margin:0; padding:8px; font-size:13px; width:100%;"></div>
                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">Card</label><input type="number" id="ledger-inst-pay-split-card" placeholder="0" step="0.01" style="margin:0; padding:8px; font-size:13px; width:100%;"></div>
+                <div style="grid-column:1/-1;">
+                    <button type="button" onclick="uqrToggle('lipq', _uqrNum('ledger-inst-pay-split-upi'), 'lipq-host')" style="width:100%; margin:0; padding:8px; font-size:12px; font-weight:800; border:1.5px solid #d1c4e9; border-radius:8px; background:#ede7f6; color:#5e35b1; cursor:pointer; box-shadow:none;">📱 Show QR for the UPI amount</button>
+                    <div id="lipq-host"></div>
+                </div>
             </div>
 
             <input type="text" id="ledger-inst-pay-note" placeholder="Note (optional)" style="margin:0 0 12px; width:100%;">
@@ -24302,7 +24382,7 @@
 
     <!-- Receive payment / add credit -->
     <div id="creditor-entry-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1500; align-items:center; justify-content:center;">
-        <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; padding:18px; box-sizing:border-box;">
+        <div style="background:white; border-radius:16px; margin:16px; max-width:380px; width:100%; padding:18px; box-sizing:border-box; max-height:92vh; overflow-y:auto;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                 <h4 id="creditor-entry-title" style="margin:0; font-size:16px; font-weight:800;"></h4>
                 <button onclick="_cdHide('creditor-entry-modal')" style="background:#eee; border:none; border-radius:8px; padding:7px 12px; font-size:13px; font-weight:700; color:#555; cursor:pointer; box-shadow:none; width:auto; margin:0;">✕</button>
@@ -24312,12 +24392,13 @@
                 <div style="font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#8a6d1a;">Remaining Balance</div>
                 <div id="creditor-entry-remain-amt" style="font-size:26px; font-weight:800; color:#c62828; line-height:1.2;"></div>
             </div>
-            <input type="number" id="creditor-entry-amount" placeholder="Amount (₹)" min="0" step="1" oninput="_cdUpdateRemain()" style="margin:0 0 8px;">
+            <input type="number" id="creditor-entry-amount" placeholder="Amount (₹)" min="0" step="1" oninput="_cdUpdateRemain(); uqrRefresh('cd-uqr')" style="margin:0 0 8px;">
             <div id="creditor-entry-paymodes" style="display:flex; gap:8px; margin-bottom:8px;">
                 <button id="cd-pm-cash" onclick="_cdSetPayMode('cash')" style="flex:1; margin:0; padding:9px 4px; font-size:13px; border-radius:10px; box-shadow:none;">💵 Cash</button>
                 <button id="cd-pm-upi" onclick="_cdSetPayMode('upi')" style="flex:1; margin:0; padding:9px 4px; font-size:13px; border-radius:10px; box-shadow:none;">📱 UPI</button>
                 <button id="cd-pm-card" onclick="_cdSetPayMode('card')" style="flex:1; margin:0; padding:9px 4px; font-size:13px; border-radius:10px; box-shadow:none;">💳 Card</button>
             </div>
+            <div id="cd-uqr-host"></div>
             <input type="text" id="creditor-entry-note" placeholder="Note (optional)" style="margin:0 0 6px;">
             <div id="creditor-entry-alloc" style="display:none; margin-bottom:4px;">
                 <div style="display:flex; gap:8px; margin-bottom:4px;">
@@ -24633,27 +24714,29 @@
                         <label style="font-size:11px; display:block; margin-bottom:6px;">Payment Method</label>
                         <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-bottom:8px;">
                             <button type="button" onclick="invSelectPayMode('cash')" id="inv-pay-cash" class="inv-pay-btn" style="padding:9px 4px;font-size:12px;font-weight:600;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;box-shadow:none;margin:0;">💵<br><span style="font-size:10px;">Cash</span></button>
-                            <button type="button" onclick="invSelectPayMode('upi')" id="inv-pay-upi" class="inv-pay-btn" style="padding:9px 4px;font-size:12px;font-weight:600;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;box-shadow:none;margin:0;">📱<br><span style="font-size:10px;">UPI</span></button>
+                            <button type="button" onclick="invSelectPayMode('upi'); invQrFull();" id="inv-pay-upi" class="inv-pay-btn" style="padding:9px 4px;font-size:12px;font-weight:600;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;box-shadow:none;margin:0;">📱<br><span style="font-size:10px;">UPI</span></button>
                             <button type="button" onclick="invSelectPayMode('card')" id="inv-pay-card" class="inv-pay-btn" style="padding:9px 4px;font-size:12px;font-weight:600;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;box-shadow:none;margin:0;">💳<br><span style="font-size:10px;">Card</span></button>
                             <button type="button" onclick="invSelectPayMode('partial')" id="inv-pay-partial" class="inv-pay-btn" style="padding:9px 4px;font-size:12px;font-weight:600;border:1.5px solid #ddd;border-radius:8px;background:#fff;cursor:pointer;box-shadow:none;margin:0;">⚡<br><span style="font-size:10px;">Partial</span></button>
                         </div>
+                        <div id="inv-uqr-host"></div>
                         <div id="inv-partial-section" style="display:none;margin-bottom:8px;">
                             <div style="display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px;">
                                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">Cash (₹)</label><input type="number" id="inv-pay-cash-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial()" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
-                                <div><label style="font-size:10px; display:block; margin-bottom:2px;">UPI (₹)</label><input type="number" id="inv-pay-upi-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial()" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
+                                <div><label style="font-size:10px; display:block; margin-bottom:2px;">UPI (₹) <span onclick="invQrPartial()" style="font-weight:800; color:#5e35b1; background:#ede7f6; border-radius:5px; padding:1px 6px; cursor:pointer;">QR</span></label><input type="number" id="inv-pay-upi-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial()" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
                                 <div><label style="font-size:10px; display:block; margin-bottom:2px;">Card (₹)</label><input type="number" id="inv-pay-card-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial()" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
                             </div>
                             <div style="display:flex; align-items:flex-end; gap:6px; margin-top:6px;">
                                 <div style="flex:1;"><label style="font-size:10px; display:block; margin-bottom:2px;">Credit (₹) <span id="inv-pay-credit-who" onclick="openCreditorPicker('invoice')" style="font-weight:700; text-decoration:underline; cursor:pointer; color:#c62828;">(tap to select creditor)</span></label><input type="number" id="inv-pay-credit-amt" placeholder="0" min="0" step="1" oninput="invSyncPartial('credit')" style="margin:0;padding:7px 8px;font-size:13px;width:100%;"></div>
                                 <button type="button" onclick="invCreditFillRemaining()" title="Put the unpaid remainder on credit" style="flex-shrink:0; height:33px; padding:0 12px; background:#ffebee; border:1.5px solid #ef9a9a; border-radius:8px; font-size:12px; font-weight:800; color:#c62828; cursor:pointer; margin:0; width:auto; box-shadow:none;">Rest</button>
                             </div>
+                            <div id="inv-uqrp-host"></div>
                             <div id="inv-partial-status" style="font-size:11px;font-weight:600;margin-top:4px;"></div>
                         </div>
                     </div>
                     <!-- Receipt row -->
                     <div>
                         <label style="font-size:11px; display:block; margin-bottom:3px;">Receipt Amount (₹)</label>
-                        <input type="number" id="inv-receipt" placeholder="0" min="0" step="1" style="margin:0; width:100%;">
+                        <input type="number" id="inv-receipt" placeholder="0" min="0" step="1" oninput="uqrRefresh('inv-uqr')" style="margin:0; width:100%;">
                     </div>
                 </div>
             </div>
@@ -25220,7 +25303,7 @@
     </div>
 
     <!-- UPI selector shown at checkout when >1 UPI ID is configured -->
-    <div id="upi-pay-select-modal" class="modal" style="display:none; align-items:flex-end; z-index:1250;">
+    <div id="upi-pay-select-modal" class="modal" style="display:none; align-items:flex-end; z-index:2600;">
         <div style="background:white; border-radius:20px 20px 0 0; width:100%; max-width:480px; padding:22px 20px 32px; box-shadow:0 -8px 32px rgba(0,0,0,0.15); max-height:90vh; overflow-y:auto;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
                 <h3 style="margin:0; font-size:18px; color:#1a1a1a;">📱 Choose UPI ID</h3>
