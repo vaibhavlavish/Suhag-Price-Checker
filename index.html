@@ -21731,6 +21731,7 @@
             const left = _ordLeft(o);
             document.getElementById('ord-c-text').innerHTML = `Cancel the order of <b>${invEscH(o.custName)}</b>?` + (left > 0 ? `<br>Advance held: <b>${_ordMoney(left)}</b>` : '');
             document.getElementById('ord-c-refund').style.display = left > 0 ? 'block' : 'none';
+            document.getElementById('ord-c-plain').style.display = left > 0 ? 'none' : 'block';
             document.getElementById('order-cancel-modal').style.display = 'flex';
         }
         function ordCloseCancel() { document.getElementById('order-cancel-modal').style.display = 'none'; }
@@ -23597,6 +23598,7 @@
                 <button onclick="ordDoCancel('upi')" style="width:100%; margin:0 0 7px; padding:11px; font-size:14px; font-weight:700; border-radius:9px; border:none; background:#c62828; color:#fff; box-shadow:none;">Cancel &amp; refund by UPI / Card</button>
                 <button onclick="ordDoCancel('keep')" style="width:100%; margin:0 0 7px; padding:11px; font-size:14px; font-weight:700; border-radius:9px; border:none; background:#6d4c41; color:#fff; box-shadow:none;">Cancel &amp; keep the advance (no refund)</button>
             </div>
+            <button id="ord-c-plain" onclick="ordDoCancel('none')" style="display:none; width:100%; margin:0 0 7px; padding:11px; font-size:14px; font-weight:700; border-radius:9px; border:none; background:#c62828; color:#fff; box-shadow:none;">Cancel order</button>
             <button onclick="ordCloseCancel()" style="width:100%; margin:4px 0 0; padding:10px; font-size:14px; font-weight:700; border-radius:9px; border:none; background:#eee; color:#333; box-shadow:none;">Back</button>
         </div>
     </div>
