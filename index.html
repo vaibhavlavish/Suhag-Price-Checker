@@ -3071,34 +3071,67 @@
             const queueRef = window.dbRef(window.firebaseDB, 'printQueue');
             window.dbOnValue(queueRef, (snapshot) => {
                 const jobs = snapshot.val() || {};
+                const now = Date.now();
                 Object.values(jobs).forEach(job => {
-                    if (job && job.status === 'pending') _processPrintJob(job);
+                    if (!job || !job.id) return;
+                    const age = now - (Date.parse(job.requestedAt) || 0);
+                    if (job.status === 'pending') {
+                        // Anything older than PRINT_JOB_MAX_AGE_MS is a leftover (print server was off/offline when it was sent).
+                        // Never print it now — that is what made old invoices "randomly" print on refresh. Mark it expired instead.
+                        if (age > PRINT_JOB_MAX_AGE_MS) _setPrintJobStatus(job.id, 'expired');
+                        else _enqueuePrintJob(job);
+                    } else if (job.status === 'printing' && age > PRINT_JOB_MAX_AGE_MS) {
+                        _setPrintJobStatus(job.id, 'expired'); // claimed but this device died mid-print — don't retry blindly
+                    } else if (age > PRINT_JOB_CLEANUP_MS && job.status !== 'pending') {
+                        // finished/expired jobs carry the full invoice HTML — delete them so the queue stays small
+                        try { window.dbRemove(window.dbRef(window.firebaseDB, 'printQueue/' + job.id)); } catch (e) {}
+                    }
                 });
             }, (error) => {
                 console.error('[PrintServer] queue read failed', error);
             });
         }
 
-        // Jobs carry the FINISHED print HTML (built on the sending device,
-        // using the exact same builder that device's own local print would
-        // use) rather than a reference this device has to reconstruct —
-        // this is what lets one queue serve installment slips, invoices,
-        // and checkout receipts identically without needing a separate
-        // rebuild-from-record function per document type.
-        async function _processPrintJob(job){
-            if (_processingPrintJobIds.has(job.id)) return; // already being handled this session
-            if (!job.html) return;
+        const PRINT_JOB_MAX_AGE_MS = 10 * 60 * 1000;   // a pending job older than this is never printed
+        const PRINT_JOB_CLEANUP_MS = 60 * 60 * 1000;   // done/expired jobs removed after an hour
+        const PRINT_JOB_GAP_MS = 3500;                 // pause between jobs so each one finishes before the next loads
+        const _printJobQueue = [];
+        let _printJobRunning = false;
+
+        function _setPrintJobStatus(id, status) {
+            try { window.dbUpdate(window.dbRef(window.firebaseDB, 'printQueue/' + id), { status, printedAt: new Date().toISOString() }); } catch (e) {}
+        }
+
+        // Jobs print ONE AT A TIME, oldest first. Before, several jobs arriving together all wrote into the same
+        // print frame at once, so one overwrote another and some never printed (the "stuck" invoices).
+        function _enqueuePrintJob(job) {
+            if (!job.html || _processingPrintJobIds.has(job.id)) return;
             _processingPrintJobIds.add(job.id);
+            _printJobQueue.push(job);
+            _printJobQueue.sort((x, y) => (Date.parse(x.requestedAt) || 0) - (Date.parse(y.requestedAt) || 0));
+            _runPrintJobQueue();
+        }
 
+        async function _runPrintJobQueue() {
+            if (_printJobRunning) return;
+            _printJobRunning = true;
             try {
-                await window.dbUpdate(window.dbRef(window.firebaseDB, 'printQueue/' + job.id), { status: 'printing' });
-            } catch (e) { /* proceed anyway — better to risk a double-print than silently drop the job */ }
-
-            _executeLocalPrint(job.html);
-
-            try {
-                await window.dbUpdate(window.dbRef(window.firebaseDB, 'printQueue/' + job.id), { status: 'done', printedAt: new Date().toISOString() });
-            } catch (e) {}
+                while (_printJobQueue.length) {
+                    const job = _printJobQueue.shift();
+                    // Atomic claim: only ONE device/tab can flip pending -> printing, so a job can't print twice.
+                    let claimed = false;
+                    try {
+                        const r = await window.dbRunTransaction(
+                            window.dbRef(window.firebaseDB, 'printQueue/' + job.id + '/status'),
+                            cur => cur === 'pending' ? 'printing' : undefined);
+                        claimed = !!(r && r.committed);
+                    } catch (e) { claimed = false; }
+                    if (!claimed) { continue; } // already taken, or couldn't claim — never print unclaimed (avoids duplicates)
+                    try { _executeLocalPrint(job.html); } catch (e) { console.error('[PrintServer] print failed', e); }
+                    _setPrintJobStatus(job.id, 'done');
+                    await new Promise(r => setTimeout(r, PRINT_JOB_GAP_MS));
+                }
+            } finally { _printJobRunning = false; }
         }
 
         function openPrintServerModal(){
