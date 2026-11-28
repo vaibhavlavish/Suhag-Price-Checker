@@ -14907,12 +14907,17 @@
         function _invUpiForcesTrackA(rec) {
             if (!invUpiBothTracks.length || !rec) return false;
             let entry = null;
+            const _one = (shopUpiIds && shopUpiIds.length === 1 ? shopUpiIds[0] : null);
+            const _manual = rec.source !== 'checkout'; // manual Invoice tab uses its own UPI QR panels
+            const _uq = window._uqr || {};
             if (rec.paymentMethod === 'upi') {
-                entry = window._selectedUpiEntry || (shopUpiIds && shopUpiIds.length === 1 ? shopUpiIds[0] : null);
+                entry = (_manual ? (_uq['inv-uqr'] && _uq['inv-uqr'].entry) : window._selectedUpiEntry) || _one;
             } else if (rec.paymentMethod === 'partial' && rec.paymentDetails && rec.paymentDetails.upi > 0) {
-                entry = window._selectedPartialUpiEntry || (shopUpiIds && shopUpiIds.length === 1 ? shopUpiIds[0] : null);
+                entry = (_manual ? (_uq['inv-uqrp'] && _uq['inv-uqrp'].entry) : window._selectedPartialUpiEntry) || _one;
             }
-            return !!(entry && invUpiBothTracks.indexOf(entry.upi) !== -1);
+            if (!entry || !entry.upi) return false;
+            const _u = String(entry.upi).trim().toLowerCase();
+            return invUpiBothTracks.some(x => String(x).trim().toLowerCase() === _u);
         }
         function _invSaveTrackACopy(rec) {
             if (!rec || rec.track !== 'B') return;
@@ -19052,7 +19057,7 @@
         }
 
         function _invoiceFingerprint(inv) {
-            return [inv.billNo, inv.timestamp, inv.custName || '', JSON.stringify(inv.items), inv.totals ? JSON.stringify(inv.totals) : ''].join('|');
+            return [inv.track || '', inv.billNo, inv.timestamp, inv.custName || '', JSON.stringify(inv.items), inv.totals ? JSON.stringify(inv.totals) : ''].join('|');
         }
 
         function _saveInvoiceLocal() {
@@ -20874,6 +20879,7 @@
                         _saveAndDeleteInvoiceRecord(rec, _moveSrcId);
                     } else {
                         _saveInvoiceRecord(rec);
+                        if (!isEdit && !rec.draft) _invSaveTrackACopy(rec); // 'Manage Track A' UPI tick → also file a Track A copy
                     }
                     // New invoice → new ledger entry; edit → update its existing entry in place.
                     _invLedgerFromRecord(rec, isEdit);
@@ -20942,6 +20948,7 @@
                 _saveAndDeleteInvoiceRecord(rec, _moveSrcId);
             } else {
                 _saveInvoiceRecord(rec);
+                if (!isEdit && !rec.draft) _invSaveTrackACopy(rec); // 'Manage Track A' UPI tick → also file a Track A copy
             }
             _invLedgerFromRecord(rec, isEdit);
             _invCreditFromRecord(rec, isEdit);
@@ -21297,6 +21304,7 @@
             }
             _saveInvoiceLocal();
             _saveInvoiceRecord(record);
+            if (!isEdit && !record.draft) _invSaveTrackACopy(record); // 'Manage Track A' UPI tick → also file a Track A copy
             // New invoice → new ledger entry; edit → update its existing entry in place.
             _invLedgerFromRecord(record, isEdit);
             _invCreditFromRecord(record, isEdit);
